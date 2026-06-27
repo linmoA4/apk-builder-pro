@@ -145,7 +145,7 @@ public class MainActivity extends Activity {
     private Runnable autoSaveRunnable;
     private Runnable validationRunnable;
     private AppThemePalette palette;
-    private EditText pendingPickerTargetField;
+    private ImagePickerTarget pendingImagePickerTarget;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -523,8 +523,8 @@ public class MainActivity extends Activity {
         etMinSdk.setInputType(InputType.TYPE_CLASS_NUMBER);
         final EditText etTargetSdk = createDialogField("目标 SDK", "36", "36");
         etTargetSdk.setInputType(InputType.TYPE_CLASS_NUMBER);
-        final EditText etIconPath = createDialogField("图标路径", "点击下方按钮选择图片", "");
-        final EditText etSplashPath = createDialogField("启动图路径", "点击下方按钮选择图片", "");
+        final ImagePickerTarget iconTarget = buildImagePickerCard("应用图标", "建议使用方形 png / webp，选中后会直接显示预览");
+        final ImagePickerTarget splashTarget = buildImagePickerCard("启动图", "支持 png / jpg / webp，创建项目时会自动使用缓存文件");
 
         container.addView(buildFieldLabel("创建一个可直接打包的 Android 空壳工程"));
         container.addView(etAppName);
@@ -533,10 +533,8 @@ public class MainActivity extends Activity {
         container.addView(etVersionCode);
         container.addView(etMinSdk);
         container.addView(etTargetSdk);
-        container.addView(buildPickerRow("选择图标", etIconPath, false));
-        container.addView(etIconPath);
-        container.addView(buildPickerRow("选择启动图", etSplashPath, false));
-        container.addView(etSplashPath);
+        container.addView(iconTarget.cardView);
+        container.addView(splashTarget.cardView);
 
         new AlertDialog.Builder(this)
             .setTitle("创建项目")
@@ -565,8 +563,8 @@ public class MainActivity extends Activity {
                         targetSdk,
                         versionCode,
                         versionName.length() == 0 ? "1.0.0" : versionName,
-                        etIconPath.getText().toString().trim(),
-                        etSplashPath.getText().toString().trim()
+                        iconTarget.cachedPath,
+                        splashTarget.cachedPath
                     );
                     File rootDir = projectWorkspaceService.createProject(this, config);
                     logManager.appendLogLine("INFO", "项目已创建，可直接进入编辑页继续修改。");
@@ -584,36 +582,107 @@ public class MainActivity extends Activity {
             .show();
     }
 
-    private LinearLayout buildPickerRow(String buttonText, final EditText targetField, final boolean zipOnly) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(10), 0, dp(10));
+    private ImagePickerTarget buildImagePickerCard(final String title, String hintText) {
+        final ImagePickerTarget target = new ImagePickerTarget();
 
-        Button button = new Button(this);
-        button.setText(buttonText);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardParams.bottomMargin = dp(12);
+        card.setLayoutParams(cardParams);
+
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setCornerRadius(dp(16));
         if (palette != null) {
-            button.setTextColor(palette.textPrimary);
-            button.setBackground(themeManager.createPrimaryButtonDrawable(palette));
+            cardBg.setColor(palette.surfaceRaised);
+            cardBg.setStroke(dp(1), palette.stroke);
         } else {
-            button.setTextColor(Color.WHITE);
-            button.setBackgroundColor(Color.parseColor("#2D7DFA"));
+            cardBg.setColor(Color.parseColor("#172033"));
+            cardBg.setStroke(dp(1), Color.parseColor("#2B3A55"));
         }
-        row.addView(button, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        card.setBackground(cardBg);
 
-        TextView hint = new TextView(this);
-        hint.setText(zipOnly ? "  仅可选择 zip 文件" : "  支持 png / jpg / webp");
-        hint.setTextColor(palette == null ? Color.parseColor("#95A1B6") : palette.textMuted);
-        hint.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(hint, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextColor(palette == null ? Color.WHITE : palette.textPrimary);
+        titleView.setTextSize(16f);
+        card.addView(titleView);
 
-        button.setOnClickListener(new View.OnClickListener() {
+        TextView hintView = new TextView(this);
+        hintView.setText(hintText);
+        hintView.setTextColor(palette == null ? Color.parseColor("#95A1B6") : palette.textMuted);
+        hintView.setPadding(0, dp(6), 0, dp(12));
+        card.addView(hintView);
+
+        ImageView preview = new ImageView(this);
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(132));
+        previewParams.bottomMargin = dp(10);
+        preview.setLayoutParams(previewParams);
+        preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        preview.setAdjustViewBounds(false);
+        GradientDrawable previewBg = new GradientDrawable();
+        previewBg.setCornerRadius(dp(12));
+        previewBg.setColor(palette == null ? Color.parseColor("#101826") : palette.surface);
+        previewBg.setStroke(dp(1), palette == null ? Color.parseColor("#30415F") : palette.stroke);
+        preview.setBackground(previewBg);
+        preview.setPadding(dp(10), dp(10), dp(10), dp(10));
+        card.addView(preview);
+
+        TextView statusView = new TextView(this);
+        statusView.setTextColor(palette == null ? Color.parseColor("#95A1B6") : palette.textSecondary);
+        statusView.setPadding(0, 0, 0, dp(10));
+        card.addView(statusView);
+
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        actionRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        Button pickButton = new Button(this);
+        pickButton.setText("选择图片");
+        if (palette != null) {
+            pickButton.setTextColor(palette.textPrimary);
+            pickButton.setBackground(themeManager.createPrimaryButtonDrawable(palette));
+        } else {
+            pickButton.setTextColor(Color.WHITE);
+            pickButton.setBackgroundColor(Color.parseColor("#2D7DFA"));
+        }
+        actionRow.addView(pickButton, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        Button clearButton = new Button(this);
+        clearButton.setText("清除");
+        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clearParams.leftMargin = dp(10);
+        if (palette != null) {
+            clearButton.setTextColor(palette.textSecondary);
+            clearButton.setBackground(themeManager.createGhostButtonDrawable(palette));
+        } else {
+            clearButton.setTextColor(Color.WHITE);
+            clearButton.setBackgroundColor(Color.parseColor("#3C465A"));
+        }
+        actionRow.addView(clearButton, clearParams);
+        card.addView(actionRow);
+
+        target.cardView = card;
+        target.previewView = preview;
+        target.statusView = statusView;
+        target.clearButton = clearButton;
+        updateImagePickerCard(target, null);
+
+        pickButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                pendingPickerTargetField = targetField;
+                pendingImagePickerTarget = target;
                 launchImagePicker();
             }
         });
-        return row;
+        clearButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                updateImagePickerCard(target, null);
+            }
+        });
+        return target;
     }
 
     private void launchZipImportPicker() {
@@ -704,21 +773,48 @@ public class MainActivity extends Activity {
     }
 
     private void applyPickedImageUri(final Uri uri) {
-        if (pendingPickerTargetField == null) {
-            toast("当前没有待写入的图片输入框");
+        if (pendingImagePickerTarget == null) {
+            toast("当前没有待更新的图片区域");
             return;
         }
         try {
             takeReadPermission(uri);
             File cachedImage = copyDocumentUriToTempFile(uri, "picked_image", guessImageExtension(uri));
-            pendingPickerTargetField.setText(cachedImage.getAbsolutePath());
+            updateImagePickerCard(pendingImagePickerTarget, cachedImage);
         } catch (Exception e) {
             logManager.appendLogLine("ERROR", "读取图片失败：" + e);
             appendExceptionDetailToLogs(e);
             toast("读取图片失败");
         } finally {
-            pendingPickerTargetField = null;
+            pendingImagePickerTarget = null;
         }
+    }
+
+    private void updateImagePickerCard(ImagePickerTarget target, File cachedImage) {
+        if (target == null) {
+            return;
+        }
+        target.cachedPath = cachedImage == null ? "" : cachedImage.getAbsolutePath();
+        if (cachedImage == null || !cachedImage.exists()) {
+            target.previewView.setImageDrawable(null);
+            target.previewView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            target.previewView.setImageResource(android.R.drawable.ic_menu_gallery);
+            target.statusView.setText("未选择图片");
+            target.clearButton.setEnabled(false);
+            target.clearButton.setAlpha(0.5f);
+            return;
+        }
+        Bitmap bitmap = BitmapFactory.decodeFile(cachedImage.getAbsolutePath());
+        if (bitmap != null) {
+            target.previewView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            target.previewView.setImageBitmap(bitmap);
+        } else {
+            target.previewView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            target.previewView.setImageResource(android.R.drawable.ic_menu_report_image);
+        }
+        target.statusView.setText("已选择：" + cachedImage.getName());
+        target.clearButton.setEnabled(true);
+        target.clearButton.setAlpha(1f);
     }
 
     private File copyDocumentUriToTempFile(Uri uri, String prefix, String fallbackExtension) throws Exception {
@@ -1810,6 +1906,9 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null) {
+            if (requestCode == REQUEST_PICK_IMAGE) {
+                pendingImagePickerTarget = null;
+            }
             return;
         }
         if (requestCode == REQUEST_FILE_BROWSER && resultCode == RESULT_OK && data != null) {
@@ -1822,6 +1921,9 @@ public class MainActivity extends Activity {
         }
         Uri pickedUri = data.getData();
         if (pickedUri == null) {
+            if (requestCode == REQUEST_PICK_IMAGE) {
+                pendingImagePickerTarget = null;
+            }
             return;
         }
         if (requestCode == REQUEST_IMPORT_ZIP) {
@@ -2043,6 +2145,14 @@ public class MainActivity extends Activity {
         public int compare(File a, File b) {
             return a.getName().compareToIgnoreCase(b.getName());
         }
+    }
+
+    private static class ImagePickerTarget {
+        LinearLayout cardView;
+        ImageView previewView;
+        TextView statusView;
+        Button clearButton;
+        String cachedPath = "";
     }
 
     private interface PathPickListener {
