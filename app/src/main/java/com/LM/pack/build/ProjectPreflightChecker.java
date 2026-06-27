@@ -1,13 +1,17 @@
 package com.LM.pack.build;
 
 import com.LM.pack.env.EnvironmentManager;
+import com.LM.pack.env.IntegrityVerifier;
 import com.LM.pack.model.BuildIssue;
 import com.LM.pack.model.EnvironmentState;
 import com.LM.pack.project.ProjectManager;
+import java.io.FileInputStream;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.ZipFile;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.xml.sax.SAXParseException;
 
@@ -79,9 +83,15 @@ public class ProjectPreflightChecker {
         File wrapperProperties = new File(projectDir, "gradle/wrapper/gradle-wrapper.properties");
         if (!wrapperJar.exists()) {
             issues.add(new BuildIssue(wrapperJar.getAbsolutePath(), -1, "缺少 gradle-wrapper.jar。", "可在应用自定义弹窗里一键从仓库源或官方源补齐 `gradle/wrapper/gradle-wrapper.jar`。"));
+        } else if (wrapperJar.length() == 0L) {
+            issues.add(new BuildIssue(wrapperJar.getAbsolutePath(), -1, "gradle-wrapper.jar 为空文件。", "删除损坏文件后重新下载官方 `gradle-wrapper.jar`。"));
+        } else {
+            validateWrapperJarIntegrity(wrapperJar, wrapperProperties, issues);
         }
         if (!wrapperProperties.exists()) {
             issues.add(new BuildIssue(wrapperProperties.getAbsolutePath(), -1, "缺少 gradle-wrapper.properties。", "可在应用自定义弹窗里一键补齐 `gradle/wrapper/gradle-wrapper.properties`。"));
+        } else {
+            validateWrapperProperties(wrapperProperties, issues);
         }
     }
 
@@ -161,6 +171,7 @@ public class ProjectPreflightChecker {
     ) {
         File localProperties = new File(projectDir, "local.properties");
         if (!environmentManager.isExistingDirectory(sdkDir)) {
+            issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "Android SDK 目录不可用。", "先在设置页登记有效的 Android SDK 目录，再重新执行预检查。"));
             return;
         }
 
@@ -175,6 +186,7 @@ public class ProjectPreflightChecker {
         if (compileSdk > 0) {
             File platformDir = new File(new File(sdkDir, "platforms"), "android-" + compileSdk);
             if (!platformDir.exists() || !platformDir.isDirectory()) {
+                issues.add(new BuildIssue(appGradleFile == null ? localProperties.getAbsolutePath() : appGradleFile.getAbsolutePath(), -1, "缺少 Android 平台 android-" + compileSdk + "。", "先安装 `platforms;android-" + compileSdk + "`，再重新构建。"));
                 return;
             }
         }
@@ -184,6 +196,7 @@ public class ProjectPreflightChecker {
         if (buildToolsVersion.length() > 0) {
             File expectedBuildTools = new File(buildToolsRoot, buildToolsVersion);
             if (!expectedBuildTools.exists() || !expectedBuildTools.isDirectory()) {
+                issues.add(new BuildIssue(appGradleFile == null ? localProperties.getAbsolutePath() : appGradleFile.getAbsolutePath(), -1, "缺少 Build-Tools " + buildToolsVersion + "。", "先安装 `build-tools;" + buildToolsVersion + "`，再重新构建。"));
                 return;
             }
             return;
@@ -191,8 +204,92 @@ public class ProjectPreflightChecker {
 
         File[] children = buildToolsRoot.listFiles();
         if (children == null || children.length == 0) {
+            issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "没有检测到任何 Build-Tools。", "先准备至少一个可用的 `build-tools` 版本，再继续构建。"));
             return;
         }
+    }
+
+    private void validateWrapperJarIntegrity(File wrapperJar, File wrapperProperties, ArrayList<BuildIssue> issues) {
+        ZipFile zipFile = null;
+        try {
+            zipFile = new ZipFile(wrapperJar);
+        } catch (Exception e) {
+            issues.add(new BuildIssue(wrapperJar.getAbsolutePath(), -1, "gradle-wrapper.jar 已损坏或不是有效的 JAR。", "删除该文件后重新下载官方 `gradle-wrapper.jar`。"));
+            return;
+        } finally {
+            if (zipFile != null) {
+                try {
+                    zipFile.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        String gradleVersion = readWrapperGradleVersion(wrapperProperties);
+        String expectedSha256 = environmentManager.getGradleWrapperSha256(gradleVersion);
+        if (expectedSha256.length() > 0 && !IntegrityVerifier.matchesSha256(wrapperJar, expectedSha256)) {
+            issues.add(new BuildIssue(wrapperJar.getAbsolutePath(), -1, "gradle-wrapper.jar 校验值不匹配。", "重新补齐官方 `gradle-wrapper.jar`，避免使用被篡改或版本不匹配的 Wrapper。"));
+        }
+    }
+
+    private void validateWrapperProperties(File wrapperProperties, ArrayList<BuildIssue> issues) {
+        Properties properties = new Properties();
+        FileInputStream inputStream = null;
+        try {
+            inputStream = new FileInputStream(wrapperProperties);
+            properties.load(inputStream);
+            String distributionUrl = safeText(properties.getProperty("distributionUrl"));
+            String declaredSha256 = safeText(properties.getProperty("distributionSha256Sum"));
+            String gradleVersion = extractGradleVersionFromDistributionUrl(distributionUrl);
+            String expectedSha256 = environmentManager.getGradleDistributionSha256(gradleVersion);
+            if (distributionUrl.length() == 0) {
+                issues.add(new BuildIssue(wrapperProperties.getAbsolutePath(), -1, "gradle-wrapper.properties 缺少 distributionUrl。", "补齐官方 Gradle 分发地址和 `distributionSha256Sum`。"));
+                return;
+            }
+            if (expectedSha256.length() > 0 && declaredSha256.length() == 0) {
+                issues.add(new BuildIssue(wrapperProperties.getAbsolutePath(), -1, "gradle-wrapper.properties 缺少 distributionSha256Sum。", "补齐官方 SHA-256 校验值，避免下载到损坏或被替换的 Gradle 包。"));
+            } else if (expectedSha256.length() > 0 && !expectedSha256.equalsIgnoreCase(declaredSha256)) {
+                issues.add(new BuildIssue(wrapperProperties.getAbsolutePath(), -1, "distributionSha256Sum 与目标 Gradle 版本不匹配。", "把 `distributionSha256Sum` 改成对应版本的官方 SHA-256。"));
+            }
+        } catch (Exception e) {
+            issues.add(new BuildIssue(wrapperProperties.getAbsolutePath(), -1, "读取 gradle-wrapper.properties 失败。", "检查 Wrapper 配置文件是否可读且格式正确。"));
+        } finally {
+            if (inputStream != null) {
+                try {
+                    inputStream.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    private String readWrapperGradleVersion(File wrapperProperties) {
+        if (wrapperProperties == null || !wrapperProperties.exists()) {
+            return EnvironmentManager.DEFAULT_GRADLE_VERSION;
+        }
+        Properties properties = new Properties();
+        FileInputStream inputStream = null;
+        try {
+            inputStream = new FileInputStream(wrapperProperties);
+            properties.load(inputStream);
+            return extractGradleVersionFromDistributionUrl(properties.getProperty("distributionUrl"));
+        } catch (Exception e) {
+            return EnvironmentManager.DEFAULT_GRADLE_VERSION;
+        } finally {
+            if (inputStream != null) {
+                try {
+                    inputStream.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    private String extractGradleVersionFromDistributionUrl(String distributionUrl) {
+        Matcher matcher = Pattern.compile("gradle-([0-9][^/\\\\-]*)-").matcher(safeText(distributionUrl));
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return EnvironmentManager.DEFAULT_GRADLE_VERSION;
     }
 
     private String readBuildToolsVersion(File appGradleFile) {

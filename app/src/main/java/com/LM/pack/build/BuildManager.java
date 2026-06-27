@@ -2,6 +2,7 @@ package com.LM.pack.build;
 
 import android.content.Context;
 import com.LM.pack.env.EnvironmentManager;
+import com.LM.pack.env.IntegrityVerifier;
 import com.LM.pack.model.BuildIssue;
 import com.LM.pack.model.BuildResult;
 import java.io.BufferedInputStream;
@@ -134,7 +135,7 @@ public class BuildManager {
                     ensureDir(wrapperDir);
                     File wrapperJar = new File(wrapperDir, "gradle-wrapper.jar");
                     File wrapperProperties = new File(wrapperDir, "gradle-wrapper.properties");
-                    if (!wrapperJar.exists() || wrapperJar.length() == 0L) {
+                    if (shouldRefreshWrapperJar(wrapperJar, gradleVersion)) {
                         String url = useOfficialSource
                             ? environmentManager.getOfficialWrapperJarUrl(gradleVersion)
                             : environmentManager.getRepositoryWrapperJarUrl();
@@ -142,8 +143,9 @@ public class BuildManager {
                             listener.onProgress("正在下载 gradle-wrapper.jar ...", 18, false);
                         }
                         downloadToFile(url, wrapperJar, null, "正在下载 gradle-wrapper.jar");
+                        verifyWrapperJar(wrapperJar, gradleVersion);
                     }
-                    if (!wrapperProperties.exists() || wrapperProperties.length() == 0L) {
+                    if (shouldRewriteWrapperProperties(wrapperProperties, gradleVersion)) {
                         if (listener != null) {
                             listener.onProgress("正在写入 gradle-wrapper.properties ...", 72, false);
                         }
@@ -509,6 +511,20 @@ public class BuildManager {
                 listener.onLogLine("正在从外置下载链路获取 Gradle " + gradleVersion + " 安装包。");
                 downloadToFile(downloadUrl, archiveFile, progressCallback, "正在下载 Gradle " + gradleVersion);
             }
+            if (!verifyGradleArchive(archiveFile, gradleVersion)) {
+                listener.onLogLine("检测到 Gradle 安装包校验不通过，准备重新下载。");
+                if (archiveFile.exists()) {
+                    archiveFile.delete();
+                }
+                String downloadUrl = resolveAvailableGradleUrl(gradleVersion);
+                if (downloadUrl == null) {
+                    throw new IllegalStateException("没有可用的 Gradle 下载地址");
+                }
+                downloadToFile(downloadUrl, archiveFile, progressCallback, "正在重新下载 Gradle " + gradleVersion);
+                if (!verifyGradleArchive(archiveFile, gradleVersion)) {
+                    throw new IllegalStateException("Gradle 安装包 SHA-256 校验失败");
+                }
+            }
             File installRoot = new File(environmentManager.getGradleInstallDir());
             File gradleBin = findGradleExecutable(installRoot);
             if (gradleBin != null) {
@@ -604,6 +620,73 @@ public class BuildManager {
                 connection.disconnect();
             }
         }
+    }
+
+    private boolean shouldRefreshWrapperJar(File wrapperJar, String gradleVersion) {
+        if (wrapperJar == null || !wrapperJar.exists() || wrapperJar.length() == 0L) {
+            return true;
+        }
+        String expectedSha256 = environmentManager.getGradleWrapperSha256(gradleVersion);
+        if (expectedSha256.length() == 0) {
+            return false;
+        }
+        return !IntegrityVerifier.matchesSha256(wrapperJar, expectedSha256);
+    }
+
+    private void verifyWrapperJar(File wrapperJar, String gradleVersion) throws Exception {
+        String expectedSha256 = environmentManager.getGradleWrapperSha256(gradleVersion);
+        if (expectedSha256.length() == 0) {
+            return;
+        }
+        if (!IntegrityVerifier.matchesSha256(wrapperJar, expectedSha256)) {
+            throw new IllegalStateException("gradle-wrapper.jar SHA-256 校验失败");
+        }
+    }
+
+    private boolean shouldRewriteWrapperProperties(File wrapperProperties, String gradleVersion) {
+        if (wrapperProperties == null || !wrapperProperties.exists() || wrapperProperties.length() == 0L) {
+            return true;
+        }
+        Properties properties = new Properties();
+        FileInputStream inputStream = null;
+        try {
+            inputStream = new FileInputStream(wrapperProperties);
+            properties.load(inputStream);
+            String currentUrl = safeText(properties.getProperty("distributionUrl"));
+            String currentSha256 = safeText(properties.getProperty("distributionSha256Sum"));
+            String expectedUrl = "https://services.gradle.org/distributions/gradle-" + safeGradleVersion(gradleVersion) + "-bin.zip";
+            String expectedSha256 = safeText(environmentManager.getGradleDistributionSha256(gradleVersion));
+            if (!expectedUrl.equals(currentUrl)) {
+                return true;
+            }
+            return expectedSha256.length() > 0 && !expectedSha256.equalsIgnoreCase(currentSha256);
+        } catch (Exception e) {
+            return true;
+        } finally {
+            try {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private boolean verifyGradleArchive(File archiveFile, String gradleVersion) {
+        String expectedSha256 = environmentManager.getGradleDistributionSha256(gradleVersion);
+        if (expectedSha256.length() == 0) {
+            return archiveFile != null && archiveFile.exists() && archiveFile.length() > 0L;
+        }
+        return IntegrityVerifier.matchesSha256(archiveFile, expectedSha256);
+    }
+
+    private String safeText(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private String safeGradleVersion(String value) {
+        String version = safeText(value);
+        return version.length() == 0 ? EnvironmentManager.DEFAULT_GRADLE_VERSION : version;
     }
 
     private void extractZip(File archiveFile, File targetDir, ProgressCallback progressCallback, String label) throws Exception {

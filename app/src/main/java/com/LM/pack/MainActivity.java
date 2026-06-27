@@ -5,9 +5,11 @@ import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -16,11 +18,11 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.OpenableColumns;
 import android.os.Handler;
 import android.provider.Settings;
 import android.text.InputType;
 import android.text.TextWatcher;
-import android.text.Editable;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -57,6 +59,8 @@ import com.LM.pack.theme.GlassProgressBarView;
 import com.LM.pack.theme.LiquidGlassBackgroundView;
 import com.LM.pack.theme.ThemeManager;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -64,10 +68,14 @@ import java.util.Comparator;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXParseException;
+import androidx.documentfile.provider.DocumentFile;
 
 public class MainActivity extends Activity {
 
     private static final int REQUEST_FILE_BROWSER = 4101;
+    private static final int REQUEST_IMPORT_ZIP = 4102;
+    private static final int REQUEST_IMPORT_FOLDER = 4103;
+    private static final int REQUEST_PICK_IMAGE = 4104;
 
     private Handler handler;
 
@@ -137,6 +145,7 @@ public class MainActivity extends Activity {
     private Runnable autoSaveRunnable;
     private Runnable validationRunnable;
     private AppThemePalette palette;
+    private EditText pendingPickerTargetField;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -487,20 +496,20 @@ public class MainActivity extends Activity {
     }
 
     private void showImportPicker() {
-        showStoragePicker("导入项目", true, false, new PathPickListener() {
-            @Override
-            public void onPicked(File path) {
-                if (path.isDirectory()) {
-                    importFolderProject(path);
-                    return;
+        new AlertDialog.Builder(this)
+            .setTitle("导入项目")
+            .setItems(new CharSequence[] {"导入 zip 压缩包", "导入项目目录"}, new android.content.DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(android.content.DialogInterface dialog, int which) {
+                    if (which == 0) {
+                        launchZipImportPicker();
+                    } else if (which == 1) {
+                        launchFolderImportPicker();
+                    }
                 }
-                if (projectWorkspaceService.isZipFile(path)) {
-                    importZipProject(path);
-                    return;
-                }
-                toast("这里只支持导入项目文件夹或 zip 压缩包");
-            }
-        });
+            })
+            .setNegativeButton("取消", null)
+            .show();
     }
 
     private void showCreateProjectDialog() {
@@ -600,15 +609,275 @@ public class MainActivity extends Activity {
         button.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                showStoragePicker("选择文件", false, zipOnly, new PathPickListener() {
-                    @Override
-                    public void onPicked(File path) {
-                        targetField.setText(path.getAbsolutePath());
-                    }
-                });
+                pendingPickerTargetField = targetField;
+                launchImagePicker();
             }
         });
         return row;
+    }
+
+    private void launchZipImportPicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/zip");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {"application/zip", "application/x-zip-compressed", "*/*"});
+        startActivityForResult(intent, REQUEST_IMPORT_ZIP);
+    }
+
+    private void launchFolderImportPicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        startActivityForResult(intent, REQUEST_IMPORT_FOLDER);
+    }
+
+    private void launchImagePicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        startActivityForResult(intent, REQUEST_PICK_IMAGE);
+    }
+
+    private void importZipProjectFromUri(final Uri uri) {
+        showProgressDialog("导入项目", "正在读取压缩包...", 0, false);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final File cachedZip = copyDocumentUriToTempFile(uri, "import_zip", ".zip");
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            importZipProject(cachedZip);
+                        }
+                    });
+                } catch (final Exception e) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            dismissProgressDialog();
+                            logManager.appendLogLine("ERROR", "读取 zip 文件失败：" + e);
+                            appendExceptionDetailToLogs(e);
+                            toast("读取 zip 文件失败");
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
+    private void importFolderProjectFromUri(final Uri treeUri) {
+        showProgressDialog("导入项目", "正在复制目录授权内容...", -1, true);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    takeReadPermission(treeUri);
+                    File tempRoot = new File(environmentManager.getImportTempDir(), "tree_import_" + System.currentTimeMillis());
+                    clearDirectory(tempRoot);
+                    ensureDir(tempRoot);
+                    DocumentFile pickedTree = DocumentFile.fromTreeUri(MainActivity.this, treeUri);
+                    if (pickedTree == null || !pickedTree.exists() || !pickedTree.isDirectory()) {
+                        throw new IllegalStateException("没有读取到可用的项目目录");
+                    }
+                    String rootName = safeText(pickedTree.getName(), "project_root");
+                    File copiedRoot = new File(tempRoot, sanitizeFileName(rootName));
+                    copyDocumentTreeToDirectory(pickedTree, copiedRoot);
+                    final File importSource = copiedRoot;
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            importFolderProject(importSource);
+                        }
+                    });
+                } catch (final Exception e) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            dismissProgressDialog();
+                            logManager.appendLogLine("ERROR", "读取项目目录失败：" + e);
+                            appendExceptionDetailToLogs(e);
+                            toast("读取项目目录失败");
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
+    private void applyPickedImageUri(final Uri uri) {
+        if (pendingPickerTargetField == null) {
+            toast("当前没有待写入的图片输入框");
+            return;
+        }
+        try {
+            takeReadPermission(uri);
+            File cachedImage = copyDocumentUriToTempFile(uri, "picked_image", guessImageExtension(uri));
+            pendingPickerTargetField.setText(cachedImage.getAbsolutePath());
+        } catch (Exception e) {
+            logManager.appendLogLine("ERROR", "读取图片失败：" + e);
+            appendExceptionDetailToLogs(e);
+            toast("读取图片失败");
+        } finally {
+            pendingPickerTargetField = null;
+        }
+    }
+
+    private File copyDocumentUriToTempFile(Uri uri, String prefix, String fallbackExtension) throws Exception {
+        ContentResolver resolver = getContentResolver();
+        String displayName = resolveDisplayName(uri);
+        String fileName = displayName.length() > 0 ? sanitizeFileName(displayName) : prefix + "_" + System.currentTimeMillis() + fallbackExtension;
+        if (fileName.indexOf('.') < 0 && fallbackExtension != null && fallbackExtension.length() > 0) {
+            fileName = fileName + fallbackExtension;
+        }
+        File targetDir = new File(environmentManager.getImportTempDir(), "picked_files");
+        ensureDir(targetDir);
+        File targetFile = new File(targetDir, fileName);
+        InputStream inputStream = null;
+        FileOutputStream outputStream = null;
+        try {
+            inputStream = resolver.openInputStream(uri);
+            if (inputStream == null) {
+                throw new IllegalStateException("无法打开所选文件");
+            }
+            outputStream = new FileOutputStream(targetFile);
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, len);
+            }
+        } finally {
+            if (inputStream != null) {
+                inputStream.close();
+            }
+            if (outputStream != null) {
+                outputStream.close();
+            }
+        }
+        return targetFile;
+    }
+
+    private void copyDocumentTreeToDirectory(DocumentFile sourceDir, File targetDir) throws Exception {
+        if (sourceDir == null || !sourceDir.exists()) {
+            throw new IllegalStateException("目录授权内容不可用");
+        }
+        ensureDir(targetDir);
+        DocumentFile[] children = sourceDir.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (int i = 0; i < children.length; i++) {
+            DocumentFile child = children[i];
+            if (child == null || !child.exists()) {
+                continue;
+            }
+            String childName = sanitizeFileName(safeText(child.getName(), "entry_" + i));
+            File target = new File(targetDir, childName);
+            if (child.isDirectory()) {
+                copyDocumentTreeToDirectory(child, target);
+            } else {
+                copyDocumentFile(child, target);
+            }
+        }
+    }
+
+    private void copyDocumentFile(DocumentFile documentFile, File targetFile) throws Exception {
+        ensureDir(targetFile.getParentFile());
+        InputStream inputStream = null;
+        FileOutputStream outputStream = null;
+        try {
+            inputStream = getContentResolver().openInputStream(documentFile.getUri());
+            if (inputStream == null) {
+                throw new IllegalStateException("无法读取文件：" + safeText(documentFile.getName(), "unknown"));
+            }
+            outputStream = new FileOutputStream(targetFile);
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, len);
+            }
+        } finally {
+            if (inputStream != null) {
+                inputStream.close();
+            }
+            if (outputStream != null) {
+                outputStream.close();
+            }
+        }
+    }
+
+    private void takeReadPermission(Uri uri) {
+        if (uri == null) {
+            return;
+        }
+        try {
+            int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            getContentResolver().takePersistableUriPermission(uri, flags);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String resolveDisplayName(Uri uri) {
+        if (uri == null) {
+            return "";
+        }
+        Cursor cursor = null;
+        try {
+            cursor = getContentResolver().query(uri, new String[] {OpenableColumns.DISPLAY_NAME}, null, null, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (index >= 0) {
+                    String value = cursor.getString(index);
+                    return value == null ? "" : value.trim();
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+        String lastSegment = uri.getLastPathSegment();
+        return lastSegment == null ? "" : lastSegment;
+    }
+
+    private String guessImageExtension(Uri uri) {
+        String displayName = resolveDisplayName(uri).toLowerCase();
+        if (displayName.endsWith(".jpg") || displayName.endsWith(".jpeg")) {
+            return ".jpg";
+        }
+        if (displayName.endsWith(".webp")) {
+            return ".webp";
+        }
+        return ".png";
+    }
+
+    private String sanitizeFileName(String value) {
+        String clean = safeText(value, "");
+        if (clean.length() == 0) {
+            return "file";
+        }
+        return clean.replace('\\', '_').replace('/', '_').replace(':', '_');
+    }
+
+    private void ensureDir(File dir) {
+        if (dir == null || dir.exists()) {
+            return;
+        }
+        dir.mkdirs();
+    }
+
+    private void clearDirectory(File dir) {
+        if (dir == null || !dir.exists()) {
+            return;
+        }
+        if (dir.isDirectory()) {
+            File[] children = dir.listFiles();
+            if (children != null) {
+                for (int i = 0; i < children.length; i++) {
+                    clearDirectory(children[i]);
+                }
+            }
+        }
+        dir.delete();
     }
 
     private LinearLayout buildDialogContainer() {
@@ -1540,12 +1809,31 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null) {
+            return;
+        }
         if (requestCode == REQUEST_FILE_BROWSER && resultCode == RESULT_OK && data != null) {
             String filePath = data.getStringExtra(FileBrowserActivity.EXTRA_SELECTED_FILE);
             if (filePath != null && filePath.length() > 0) {
                 openTextFile(new File(filePath));
                 hideFileDrawer();
             }
+            return;
+        }
+        Uri pickedUri = data.getData();
+        if (pickedUri == null) {
+            return;
+        }
+        if (requestCode == REQUEST_IMPORT_ZIP) {
+            importZipProjectFromUri(pickedUri);
+            return;
+        }
+        if (requestCode == REQUEST_IMPORT_FOLDER) {
+            importFolderProjectFromUri(pickedUri);
+            return;
+        }
+        if (requestCode == REQUEST_PICK_IMAGE) {
+            applyPickedImageUri(pickedUri);
         }
     }
 

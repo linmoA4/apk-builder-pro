@@ -38,6 +38,16 @@ public class EnvironmentManager {
     public static final String SDK_DISPLAY_NAME = "Android SDK Command-line Tools";
     public static final String DEFAULT_GRADLE_VERSION = "8.7";
     public static final String REPOSITORY_RAW_BASE = "https://raw.githubusercontent.com/linmoA4/apk-builder-pro/main";
+    public static final String DEFAULT_GRADLE_DISTRIBUTION_SHA256 = "544c35d6bd849ae8a5ed0bcea39ba677dc40f49df7d1835561582da2009b961d";
+    public static final String DEFAULT_GRADLE_WRAPPER_SHA256 = "cb0da6751c2b753a16ac168bb354870ebb1e162e9083f116729cec9c781156b8";
+
+    private static final LinkedHashMap<String, String> GRADLE_DISTRIBUTION_SHA256 = new LinkedHashMap<String, String>();
+    private static final LinkedHashMap<String, String> GRADLE_WRAPPER_SHA256 = new LinkedHashMap<String, String>();
+
+    static {
+        GRADLE_DISTRIBUTION_SHA256.put("8.7", DEFAULT_GRADLE_DISTRIBUTION_SHA256);
+        GRADLE_WRAPPER_SHA256.put("8.7", DEFAULT_GRADLE_WRAPPER_SHA256);
+    }
 
     public static final String[] JDK_NAMES = {
         "JDK 8 (长期支持版)",
@@ -523,14 +533,34 @@ public class EnvironmentManager {
         return "https://raw.githubusercontent.com/gradle/gradle/v" + normalizeGradleTag(gradleVersion) + "/gradle/wrapper/gradle-wrapper.properties";
     }
 
+    public String getGradleDistributionSha256(String gradleVersion) {
+        String version = safeText(gradleVersion);
+        if (version.length() == 0) {
+            version = DEFAULT_GRADLE_VERSION;
+        }
+        String value = GRADLE_DISTRIBUTION_SHA256.get(version);
+        return value == null ? "" : value;
+    }
+
+    public String getGradleWrapperSha256(String gradleVersion) {
+        String version = safeText(gradleVersion);
+        if (version.length() == 0) {
+            version = DEFAULT_GRADLE_VERSION;
+        }
+        String value = GRADLE_WRAPPER_SHA256.get(version);
+        return value == null ? "" : value;
+    }
+
     public String buildWrapperPropertiesContent(String gradleVersion) {
         String version = safeText(gradleVersion);
         if (version.length() == 0) {
             version = DEFAULT_GRADLE_VERSION;
         }
+        String distributionSha256 = getGradleDistributionSha256(version);
         return "distributionBase=GRADLE_USER_HOME\n"
             + "distributionPath=wrapper/dists\n"
             + "distributionUrl=https\\://services.gradle.org/distributions/gradle-" + version + "-bin.zip\n"
+            + (distributionSha256.length() == 0 ? "" : "distributionSha256Sum=" + distributionSha256 + "\n")
             + "networkTimeout=10000\n"
             + "validateDistributionUrl=true\n"
             + "zipStoreBase=GRADLE_USER_HOME\n"
