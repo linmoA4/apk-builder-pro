@@ -46,5 +46,6 @@ android {
 
 dependencies {
     implementation 'androidx.documentfile:documentfile:1.0.1'
+    implementation 'androidx.viewpager2:viewpager2:1.1.0'
     implementation 'org.apache.commons:commons-compress:1.26.2'
 }

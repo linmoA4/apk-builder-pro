@@ -34,8 +34,8 @@ public class EnvironmentManager {
     public static final String DOWNLOAD_ROUTE_CHINA = "china";
     public static final String DOWNLOAD_ROUTE_GLOBAL = "global";
 
-    public static final int DEFAULT_JDK_INDEX = 3;
-    public static final int DEFAULT_NDK_INDEX = 0;
+    public static final int DEFAULT_JDK_INDEX = 4;
+    public static final int DEFAULT_NDK_INDEX = 4;
     public static final int EMBEDDED_JDK_INDEX = DEFAULT_JDK_INDEX;
     public static final int EMBEDDED_NDK_INDEX = DEFAULT_NDK_INDEX;
     public static final String DEFAULT_DOWNLOAD_ROUTE = DOWNLOAD_ROUTE_CHINA;
@@ -58,7 +58,11 @@ public class EnvironmentManager {
         "JDK 8 (长期支持版)",
         "JDK 11 (长期支持版)",
         "JDK 17 (长期支持版)",
+        "JDK 20 (过渡版本)",
         "JDK 21 (当前推荐版)",
+        "JDK 22 (过渡版本)",
+        "JDK 23 (过渡版本)",
+        "JDK 24 (过渡版本)",
         "JDK 25 (前沿版本)",
         "JDK 26 (实验版本)"
     };
@@ -67,7 +71,11 @@ public class EnvironmentManager {
         "https://api.adoptium.net/v3/binary/latest/8/ga/linux/x64/jdk/hotspot/normal/eclipse",
         "https://api.adoptium.net/v3/binary/latest/11/ga/linux/x64/jdk/hotspot/normal/eclipse",
         "https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jdk/hotspot/normal/eclipse",
+        "https://api.adoptium.net/v3/binary/latest/20/ga/linux/x64/jdk/hotspot/normal/eclipse",
         "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse",
+        "https://api.adoptium.net/v3/binary/latest/22/ga/linux/x64/jdk/hotspot/normal/eclipse",
+        "https://api.adoptium.net/v3/binary/latest/23/ga/linux/x64/jdk/hotspot/normal/eclipse",
+        "https://api.adoptium.net/v3/binary/latest/24/ga/linux/x64/jdk/hotspot/normal/eclipse",
         "https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jdk/hotspot/normal/eclipse",
         "https://api.adoptium.net/v3/binary/latest/26/ga/linux/x64/jdk/hotspot/normal/eclipse"
     };
@@ -76,24 +84,49 @@ public class EnvironmentManager {
         {"https://api.adoptium.net/v3/binary/latest/8/ga/linux/x64/jdk/hotspot/normal/eclipse"},
         {"https://api.adoptium.net/v3/binary/latest/11/ga/linux/x64/jdk/hotspot/normal/eclipse"},
         {"https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jdk/hotspot/normal/eclipse"},
+        {"https://api.adoptium.net/v3/binary/latest/20/ga/linux/x64/jdk/hotspot/normal/eclipse"},
         {"https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse"},
+        {"https://api.adoptium.net/v3/binary/latest/22/ga/linux/x64/jdk/hotspot/normal/eclipse"},
+        {"https://api.adoptium.net/v3/binary/latest/23/ga/linux/x64/jdk/hotspot/normal/eclipse"},
+        {"https://api.adoptium.net/v3/binary/latest/24/ga/linux/x64/jdk/hotspot/normal/eclipse"},
         {"https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jdk/hotspot/normal/eclipse"},
         {"https://api.adoptium.net/v3/binary/latest/26/ga/linux/x64/jdk/hotspot/normal/eclipse"}
     };
 
     public static final String[] NDK_NAMES = {
+        "NDK r23c (旧项目兼容版)",
+        "NDK r24 (标准静态版)",
+        "NDK r25c (中期版本)",
+        "NDK r26d (较新过渡版)",
         "NDK r27c (稳定版，推荐)",
         "NDK r28c (较新稳定版)",
         "NDK r29 Beta 3 (测试版)"
     };
 
     public static final String[] NDK_URLS = {
+        "https://dl.google.com/android/repository/android-ndk-r23c-linux.zip",
+        "https://dl.google.com/android/repository/android-ndk-r24-linux.zip",
+        "https://dl.google.com/android/repository/android-ndk-r25c-linux.zip",
+        "https://dl.google.com/android/repository/android-ndk-r26d-linux.zip",
         "https://dl.google.com/android/repository/android-ndk-r27c-linux.zip",
         "https://dl.google.com/android/repository/android-ndk-r28c-linux.zip",
         "https://dl.google.com/android/repository/android-ndk-r29-beta3-linux.zip"
     };
 
     public static final String[][] NDK_FALLBACK_URLS = {
+        {
+            "https://googledownloads.cn/android/repository/android-ndk-r23c-linux.zip",
+            "https://redirector.gvt1.com/edgedl/android/repository/android-ndk-r23c-linux.zip"
+        },
+        {},
+        {
+            "https://googledownloads.cn/android/repository/android-ndk-r25c-linux.zip",
+            "https://redirector.gvt1.com/edgedl/android/repository/android-ndk-r25c-linux.zip"
+        },
+        {
+            "https://googledownloads.cn/android/repository/android-ndk-r26d-linux.zip",
+            "https://redirector.gvt1.com/edgedl/android/repository/android-ndk-r26d-linux.zip"
+        },
         {
             "https://googledownloads.cn/android/repository/android-ndk-r27c-linux.zip",
             "https://redirector.gvt1.com/edgedl/android/repository/android-ndk-r27c-linux.zip"
@@ -115,6 +148,41 @@ public class EnvironmentManager {
         "https://dl.google.com/android/repository/commandlinetools-linux-latest.zip",
         "https://googledownloads.cn/android/repository/commandlinetools-linux-latest.zip",
         "https://redirector.gvt1.com/edgedl/android/repository/commandlinetools-linux-13114758_latest.zip"
+    };
+
+    public static final String PLATFORM_TOOLS_OFFICIAL_URL = "https://dl.google.com/android/repository/platform-tools-latest-linux.zip";
+    public static final String PLATFORM_TOOLS_CHINA_URL = "https://googledownloads.cn/android/repository/platform-tools-latest-linux.zip";
+
+    public static final int[] ANDROID_API_LEVELS = {27, 28, 29, 30, 31, 32, 33, 34, 35, 36};
+    public static final String[] ANDROID_VERSION_NAMES = {
+        "Android 8.1", "Android 9", "Android 10", "Android 11", "Android 12",
+        "Android 12L", "Android 13", "Android 14", "Android 15", "Android 16"
+    };
+
+    public static final String[][] ANDROID_PLATFORM_URLS = {
+        {"platform-27_r03.zip", "https://dl.google.com/android/repository/platform-27_r03.zip"},
+        {"platform-28_r06.zip", "https://dl.google.com/android/repository/platform-28_r06.zip"},
+        {"platform-29_r05.zip", "https://dl.google.com/android/repository/platform-29_r05.zip"},
+        {"platform-30_r03.zip", "https://dl.google.com/android/repository/platform-30_r03.zip"},
+        {"platform-31_r01.zip", "https://dl.google.com/android/repository/platform-31_r01.zip"},
+        {"platform-32_r01.zip", "https://dl.google.com/android/repository/platform-32_r01.zip"},
+        {"platform-33-ext3_r03.zip", "https://dl.google.com/android/repository/platform-33-ext3_r03.zip"},
+        {"platform-34-ext7_r03.zip", "https://dl.google.com/android/repository/platform-34-ext7_r03.zip"},
+        {"platform-35_r02.zip", "https://dl.google.com/android/repository/platform-35_r02.zip"},
+        {"platform-36_r02.zip", "https://dl.google.com/android/repository/platform-36_r02.zip"}
+    };
+
+    public static final String[][] ANDROID_BUILD_TOOLS = {
+        {"27.0.3", "https://dl.google.com/android/repository/build-tools_r27.0.3-linux.zip"},
+        {"28.0.3", "https://dl.google.com/android/repository/build-tools_r28.0.3-linux.zip"},
+        {"29.0.3", "https://dl.google.com/android/repository/build-tools_r29.0.3-linux.zip"},
+        {"30.0.3", "https://dl.google.com/android/repository/build-tools_r30.0.3-linux.zip"},
+        {"31.0.0", "https://dl.google.com/android/repository/build-tools_r31-linux.zip"},
+        {"32.0.0", "https://dl.google.com/android/repository/build-tools_r32-linux.zip"},
+        {"33.0.3", "https://dl.google.com/android/repository/build-tools_r33.0.3-linux.zip"},
+        {"34.0.0", "https://dl.google.com/android/repository/build-tools_r34-linux.zip"},
+        {"35.0.1", "https://dl.google.com/android/repository/build-tools_r35.0.1_linux.zip"},
+        {"36.0.0", "https://dl.google.com/android/repository/build-tools_r36_linux.zip"}
     };
 
     public static final String[] GRADLE_VERIFIED_DIRECT_URLS = {
@@ -400,7 +468,19 @@ public class EnvironmentManager {
         int agpMinor = minorOfVersion(agpVersion);
         int javaLevel = parseJavaLevel(sourceCompatibility);
 
-        if (javaLevel >= 21 || gradleMajor >= 9 || (gradleMajor == 8 && gradleMinor >= 5) || agpMajor >= 9 || (agpMajor == 8 && agpMinor >= 2)) {
+        if (javaLevel >= 26 || gradleMajor >= 10 || agpMajor >= 10) {
+            return 9;
+        }
+        if (javaLevel >= 25 || gradleMajor >= 9 || agpMajor >= 9) {
+            return 8;
+        }
+        if (javaLevel >= 24 || (gradleMajor == 8 && gradleMinor >= 12) || agpMajor >= 8) {
+            return 7;
+        }
+        if (javaLevel >= 21 || gradleMajor >= 8 || agpMajor >= 8) {
+            return 4;
+        }
+        if (javaLevel >= 20) {
             return 3;
         }
         if (javaLevel >= 17 || gradleMajor >= 7 || agpMajor >= 7) {
@@ -415,12 +495,24 @@ public class EnvironmentManager {
     public int recommendNdkIndex(File projectDir) {
         String ndkVersion = findNdkVersion(projectDir);
         if (ndkVersion.startsWith("29") || ndkVersion.contains("r29")) {
-            return 2;
+            return 6;
         }
         if (ndkVersion.startsWith("28") || ndkVersion.contains("r28")) {
-            return 1;
+            return 5;
         }
-        return 0;
+        if (ndkVersion.startsWith("27") || ndkVersion.contains("r27")) {
+            return 4;
+        }
+        if (ndkVersion.startsWith("26") || ndkVersion.contains("r26")) {
+            return 3;
+        }
+        if (ndkVersion.startsWith("25") || ndkVersion.contains("r25")) {
+            return 2;
+        }
+        if (ndkVersion.startsWith("23") || ndkVersion.contains("r23")) {
+            return 0;
+        }
+        return 4;
     }
 
     public String recommendGradleVersion(File projectDir) {
@@ -435,9 +527,62 @@ public class EnvironmentManager {
         }
         String compileSdk = extractFromGradle(projectDir, "compileSdk(?:Version)?\\s*(?:=\\s*)?(\\d+)");
         if (compileSdk.length() > 0) {
-            return compileSdk + ".0.0";
+            return getDefaultBuildToolsForApi(parseIntSafe(compileSdk));
         }
         return "36.0.0";
+    }
+
+    public String getDefaultBuildToolsForApi(int apiLevel) {
+        for (int i = 0; i < ANDROID_API_LEVELS.length; i++) {
+            if (ANDROID_API_LEVELS[i] == apiLevel) {
+                return ANDROID_BUILD_TOOLS[i][0];
+            }
+        }
+        return apiLevel + ".0.0";
+    }
+
+    public String getAndroidPlatformUrl(int apiLevel) {
+        for (int i = 0; i < ANDROID_API_LEVELS.length; i++) {
+            if (ANDROID_API_LEVELS[i] == apiLevel) {
+                return ANDROID_PLATFORM_URLS[i][1];
+            }
+        }
+        return "";
+    }
+
+    public String getAndroidBuildToolsUrl(int apiLevel) {
+        for (int i = 0; i < ANDROID_API_LEVELS.length; i++) {
+            if (ANDROID_API_LEVELS[i] == apiLevel) {
+                return ANDROID_BUILD_TOOLS[i][1];
+            }
+        }
+        return "";
+    }
+
+    public String getAndroidPlatformFileName(int apiLevel) {
+        for (int i = 0; i < ANDROID_API_LEVELS.length; i++) {
+            if (ANDROID_API_LEVELS[i] == apiLevel) {
+                return ANDROID_PLATFORM_URLS[i][0];
+            }
+        }
+        return "platform-" + apiLevel + ".zip";
+    }
+
+    public String getAndroidBuildToolsFileName(int apiLevel) {
+        for (int i = 0; i < ANDROID_API_LEVELS.length; i++) {
+            if (ANDROID_API_LEVELS[i] == apiLevel) {
+                String[] parts = ANDROID_BUILD_TOOLS[i][1].split("/");
+                return parts[parts.length - 1];
+            }
+        }
+        return "build-tools-" + apiLevel + ".zip";
+    }
+
+    public String getPlatformToolsDownloadUrl() {
+        if (isChinaDownloadRoute()) {
+            return PLATFORM_TOOLS_CHINA_URL;
+        }
+        return PLATFORM_TOOLS_OFFICIAL_URL;
     }
 
     public String recommendCompileSdk(File projectDir) {
@@ -610,6 +755,14 @@ public class EnvironmentManager {
             return DOWNLOAD_ROUTE_GLOBAL;
         }
         return DOWNLOAD_ROUTE_CHINA;
+    }
+
+    private int parseIntSafe(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (Exception e) {
+            return -1;
+        }
     }
 
     private String escapePropertiesUrl(String url) {
