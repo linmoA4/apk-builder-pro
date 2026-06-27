@@ -172,24 +172,22 @@ public class ProjectManager {
         if (candidate == null || !candidate.exists() || !candidate.isDirectory()) {
             return null;
         }
-        if (looksLikeAndroidProject(candidate)) {
-            return candidate;
-        }
-        File[] children = candidate.listFiles();
-        if (children == null) {
+        ArrayList<File> candidates = new ArrayList<File>();
+        collectAndroidProjectCandidates(candidate, candidates);
+        if (candidates.isEmpty()) {
             return null;
         }
-        for (int i = 0; i < children.length; i++) {
-            File child = children[i];
-            if (!child.isDirectory()) {
-                continue;
-            }
-            File found = deepFindAndroidProject(child);
-            if (found != null) {
-                return found;
+        File best = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (int i = 0; i < candidates.size(); i++) {
+            File projectRoot = candidates.get(i);
+            int score = scoreAndroidProjectRoot(candidate, projectRoot);
+            if (best == null || score > bestScore) {
+                best = projectRoot;
+                bestScore = score;
             }
         }
-        return null;
+        return best;
     }
 
     public boolean looksLikeAndroidProject(File dir) {
@@ -270,9 +268,12 @@ public class ProjectManager {
         try {
             File appGradle = new File(projectRoot, "app/build.gradle");
             if (!appGradle.exists()) {
+                appGradle = new File(projectRoot, "app/build.gradle.kts");
+            }
+            if (!appGradle.exists()) {
                 return "";
             }
-            Matcher matcher = java.util.regex.Pattern.compile("versionName\\s+\"([^\"]+)\"").matcher(readText(appGradle));
+            Matcher matcher = java.util.regex.Pattern.compile("versionName\\s*(?:=\\s*)?\"([^\"]+)\"").matcher(readText(appGradle));
             if (matcher.find()) {
                 return matcher.group(1).trim();
             }
@@ -817,6 +818,73 @@ public class ProjectManager {
             }
         }
         return null;
+    }
+
+    private void collectAndroidProjectCandidates(File dir, ArrayList<File> candidates) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) {
+            return;
+        }
+        if (looksLikeAndroidProject(dir)) {
+            candidates.add(dir);
+        }
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (int i = 0; i < files.length; i++) {
+            File child = files[i];
+            if (child.isDirectory()) {
+                collectAndroidProjectCandidates(child, candidates);
+            }
+        }
+    }
+
+    private int scoreAndroidProjectRoot(File searchRoot, File projectRoot) {
+        int score = 0;
+        if (new File(projectRoot, "gradlew").exists()) {
+            score += 40;
+        }
+        if (new File(projectRoot, "settings.gradle").exists() || new File(projectRoot, "settings.gradle.kts").exists()) {
+            score += 30;
+        }
+        if (new File(projectRoot, "build.gradle").exists() || new File(projectRoot, "build.gradle.kts").exists()) {
+            score += 18;
+        }
+        if (new File(projectRoot, "gradle/wrapper/gradle-wrapper.properties").exists()) {
+            score += 16;
+        }
+        if (new File(projectRoot, "app/src/main/java").exists() || new File(projectRoot, "app/src/main/kotlin").exists()) {
+            score += 10;
+        }
+        if (new File(projectRoot, "app/src/main/res").exists()) {
+            score += 10;
+        }
+        if (new File(projectRoot, "local.properties").exists()) {
+            score += 5;
+        }
+        score -= relativeDepth(searchRoot, projectRoot);
+        score += projectRoot.getName().toLowerCase().contains("app") ? 2 : 0;
+        return score;
+    }
+
+    private int relativeDepth(File searchRoot, File projectRoot) {
+        try {
+            String rootPath = searchRoot.getCanonicalPath();
+            String projectPath = projectRoot.getCanonicalPath();
+            if (!projectPath.startsWith(rootPath)) {
+                return 0;
+            }
+            String relative = projectPath.substring(rootPath.length());
+            int depth = 0;
+            for (int i = 0; i < relative.length(); i++) {
+                if (relative.charAt(i) == File.separatorChar) {
+                    depth++;
+                }
+            }
+            return depth;
+        } catch (IOException e) {
+            return 0;
+        }
     }
 
     private String sanitizeName(String value) {

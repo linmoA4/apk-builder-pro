@@ -6,7 +6,6 @@ import android.app.ProgressDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
@@ -35,8 +34,10 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import com.LM.pack.build.BuildManager;
+import com.LM.pack.build.ProjectPreflightChecker;
+import com.LM.pack.editor.CodeEditorView;
+import com.LM.pack.editor.EditorTabManager;
 import com.LM.pack.env.EnvironmentManager;
-import com.LM.pack.env.ToolchainInstaller;
 import com.LM.pack.log.LogManager;
 import com.LM.pack.model.BuildIssue;
 import com.LM.pack.model.BuildResult;
@@ -48,45 +49,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import javax.xml.parsers.DocumentBuilderFactory;
-import org.xml.sax.SAXParseException;
 
 public class MainActivity extends Activity {
-
-    private static final String[] CORE_TOOL_ITEMS = {
-        "Gradle 官方发行版\nhttps://services.gradle.org/distributions/",
-        "Maven 中央仓库\nhttps://mvnrepository.com/",
-        "Google Maven 仓库\nhttps://maven.google.com/"
-    };
-
-    private static final String[] CROSS_PLATFORM_ITEMS = {
-        "Flutter 官方中文文档与下载\nhttps://flutterchina.club/",
-        "Flutter 清华镜像克隆\ngit clone -b master https://mirrors.tuna.tsinghua.edu.cn/git/flutter-sdk.git",
-        "Node.js 官方下载\nhttps://nodejs.org/",
-        "npm 淘宝镜像设置\nnpm config set registry https://registry.npm.taobao.org",
-        "Xamarin Android Workload\ndotnet workload install android",
-        "Xamarin 开源地址\nhttps://gitcode.com/gh_mirrors/xa/xamarin-android",
-        "uni-app 脚手架\nvue create -p dcloudio/uni-preset-vue my-first-uni-app",
-        "uni-app 源码与文档\nhttps://gitcode.com/dcloud/uni-app"
-    };
-
-    private static final String[] TEST_TOOL_ITEMS = {
-        "JUnit 4 发布页\nhttps://github.com/junit-team/junit4/releases/",
-        "JUnit 5 发布页\nhttps://github.com/junit-team/junit5/releases/",
-        "Android 模拟器 QEMU 核心\nhttps://qemu.weilnetz.de/w64/"
-    };
-
-    private static final String[] DEVOPS_TOOL_ITEMS = {
-        "Git 官方下载\nhttps://git-scm.com/",
-        "Postman 官方下载\nhttps://www.postman.com/downloads/"
-    };
-
-    private static final String[] MIRROR_COMMAND_ITEMS = {
-        "npm registry\nnpm config set registry https://registry.npm.taobao.org",
-        "npm disturl\nnpm config set disturl https://npm.taobao.org/dist",
-        "Flutter PUB_HOSTED_URL\nPUB_HOSTED_URL=https://pub.flutter-io.cn",
-        "Flutter FLUTTER_STORAGE_BASE_URL\nFLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn"
-    };
 
     private Handler handler;
     private ProgressDialog progressDialog;
@@ -95,7 +59,7 @@ public class MainActivity extends Activity {
     private EnvironmentManager environmentManager;
     private ProjectManager projectManager;
     private BuildManager buildManager;
-    private ToolchainInstaller toolchainInstaller;
+    private ProjectPreflightChecker preflightChecker;
     private EnvironmentState environmentState;
 
     private LinearLayout homePane;
@@ -103,6 +67,7 @@ public class MainActivity extends Activity {
     private LinearLayout emptyState;
     private LinearLayout fileDrawer;
     private LinearLayout suggestionCard;
+    private LinearLayout editorTabContainer;
     private TextView tvToolbarTitle;
     private TextView tvEditorProject;
     private TextView tvCurrentFilePath;
@@ -118,7 +83,7 @@ public class MainActivity extends Activity {
     private Button btnCopyFix;
     private ListView lvProjects;
     private ListView lvFiles;
-    private EditText etEditor;
+    private CodeEditorView etEditor;
 
     private final ArrayList<ProjectEntry> projectEntries = new ArrayList<ProjectEntry>();
     private final ArrayList<FileTreeItem> fileTreeItems = new ArrayList<FileTreeItem>();
@@ -127,6 +92,7 @@ public class MainActivity extends Activity {
 
     private ProjectAdapter projectAdapter;
     private FileTreeAdapter fileTreeAdapter;
+    private EditorTabManager editorTabManager;
     private ProjectEntry currentProject;
     private File currentOpenFile;
     private boolean projectPrepared = false;
@@ -145,7 +111,7 @@ public class MainActivity extends Activity {
         environmentManager = new EnvironmentManager(this, sharedPreferences);
         projectManager = new ProjectManager();
         buildManager = new BuildManager();
-        toolchainInstaller = new ToolchainInstaller(this, environmentManager);
+        preflightChecker = new ProjectPreflightChecker(projectManager, environmentManager);
         environmentState = environmentManager.loadState();
         selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
         selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
@@ -172,6 +138,7 @@ public class MainActivity extends Activity {
         emptyState = (LinearLayout) findViewById(R.id.emptyState);
         fileDrawer = (LinearLayout) findViewById(R.id.fileDrawer);
         suggestionCard = (LinearLayout) findViewById(R.id.suggestionCard);
+        editorTabContainer = (LinearLayout) findViewById(R.id.editorTabContainer);
         tvToolbarTitle = (TextView) findViewById(R.id.tvToolbarTitle);
         tvEditorProject = (TextView) findViewById(R.id.tvEditorProject);
         tvCurrentFilePath = (TextView) findViewById(R.id.tvCurrentFilePath);
@@ -187,7 +154,7 @@ public class MainActivity extends Activity {
         btnCopyFix = (Button) findViewById(R.id.btnCopyFix);
         lvProjects = (ListView) findViewById(R.id.lvProjects);
         lvFiles = (ListView) findViewById(R.id.lvFiles);
-        etEditor = (EditText) findViewById(R.id.etEditor);
+        etEditor = (CodeEditorView) findViewById(R.id.etEditor);
 
         TextView tvLogs = (TextView) findViewById(R.id.tvLogs);
         ScrollView logScrollView = (ScrollView) findViewById(R.id.logScrollView);
@@ -201,6 +168,27 @@ public class MainActivity extends Activity {
     private void initAdapters() {
         projectAdapter = new ProjectAdapter();
         fileTreeAdapter = new FileTreeAdapter();
+        editorTabManager = new EditorTabManager(this, editorTabContainer);
+        editorTabManager.setTabListener(new EditorTabManager.TabListener() {
+            @Override
+            public void onTabSelected(File file) {
+                if (file == null || sameFile(file, currentOpenFile)) {
+                    return;
+                }
+                saveCurrentFile();
+                loadFileIntoEditor(file, false);
+            }
+
+            @Override
+            public void onActiveTabClosed(File fallbackFile) {
+                saveCurrentFile();
+                if (fallbackFile != null) {
+                    loadFileIntoEditor(fallbackFile, false);
+                } else {
+                    clearEditor();
+                }
+            }
+        });
         lvProjects.setAdapter(projectAdapter);
         lvFiles.setAdapter(fileTreeAdapter);
     }
@@ -292,9 +280,10 @@ public class MainActivity extends Activity {
     }
 
     private void appendStartupLogs() {
-        logManager.appendLogLine("INFO", "新版首页已切换为项目卡片模式，可从右下角创建或导入工程。");
+        logManager.appendLogLine("INFO", "首页保持紧凑深色工作区，编辑区已切到更接近 AIDE 的多标签结构。");
         logManager.appendKeyValue("INFO", "当前 JDK", EnvironmentManager.JDK_NAMES[selectedJdkIndex]);
         logManager.appendKeyValue("INFO", "当前 NDK", EnvironmentManager.NDK_NAMES[selectedNdkIndex]);
+        logManager.appendKeyValue("INFO", "Android SDK", safeText(environmentState.getAndroidSdkDir(), "未登记"));
         logManager.appendKeyValue(
             "INFO",
             "JDK 安装状态",
@@ -339,12 +328,16 @@ public class MainActivity extends Activity {
         btnFabAdd.setVisibility(View.VISIBLE);
         btnToggleFiles.setText("目录");
         tvToolbarTitle.setText("APK Builder Pro");
+        suggestionCard.setVisibility(View.GONE);
         hideFileDrawer();
+        currentProject = null;
+        projectPrepared = false;
+        editorTabManager.clear();
+        clearEditor();
     }
 
     private void openProject(ProjectEntry entry) {
         currentProject = entry;
-        currentOpenFile = null;
         projectPrepared = true;
         homePane.setVisibility(View.GONE);
         editorPane.setVisibility(View.VISIBLE);
@@ -356,6 +349,7 @@ public class MainActivity extends Activity {
         suggestionCard.setVisibility(View.GONE);
         lastBuildIssues.clear();
         updateBugButtonState();
+        editorTabManager.clear();
         loadProjectFiles();
         fileDrawer.setVisibility(View.VISIBLE);
         btnToggleFiles.setText("收起");
@@ -366,22 +360,31 @@ public class MainActivity extends Activity {
     private void openDefaultEditorFile(ProjectEntry entry) {
         File manifestFile = new File(entry.getProjectDir(), "app/src/main/AndroidManifest.xml");
         File buildGradle = new File(entry.getProjectDir(), "app/build.gradle");
+        File buildGradleKts = new File(entry.getProjectDir(), "app/build.gradle.kts");
         String packageName = safeText(entry.getPackageName(), "");
         File mainJava = new File(entry.getProjectDir(), "app/src/main/java/" + packageName.replace('.', '/') + "/MainActivity.java");
+        File mainKt = new File(entry.getProjectDir(), "app/src/main/kotlin/" + packageName.replace('.', '/') + "/MainActivity.kt");
         if (mainJava.exists()) {
-            openTextFile(mainJava);
+            loadFileIntoEditor(mainJava, true);
+        } else if (mainKt.exists()) {
+            loadFileIntoEditor(mainKt, true);
         } else if (manifestFile.exists()) {
-            openTextFile(manifestFile);
+            loadFileIntoEditor(manifestFile, true);
         } else if (buildGradle.exists()) {
-            openTextFile(buildGradle);
+            loadFileIntoEditor(buildGradle, true);
+        } else if (buildGradleKts.exists()) {
+            loadFileIntoEditor(buildGradleKts, true);
         } else {
             File fallbackMainActivity = findFileBySuffix(new File(entry.getProjectDir()), "MainActivity.java");
-            if (fallbackMainActivity != null) {
-                openTextFile(fallbackMainActivity);
-                return;
+            if (fallbackMainActivity == null) {
+                fallbackMainActivity = findFileBySuffix(new File(entry.getProjectDir()), "MainActivity.kt");
             }
-            etEditor.setText("");
-            tvCurrentFilePath.setText("没有找到可编辑的文本文件");
+            if (fallbackMainActivity != null) {
+                loadFileIntoEditor(fallbackMainActivity, true);
+            } else {
+                clearEditor();
+                tvCurrentFilePath.setText("没有找到可编辑的文本文件");
+            }
         }
     }
 
@@ -389,27 +392,24 @@ public class MainActivity extends Activity {
         final String[] items = {"创建项目", "导入压缩包", "导入文件夹"};
         new AlertDialog.Builder(this)
             .setTitle("新建或导入")
-            .setItems(items, new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    if (which == 0) {
-                        showCreateProjectDialog();
-                    } else if (which == 1) {
-                        showStoragePicker("选择压缩包", false, true, new PathPickListener() {
-                            @Override
-                            public void onPicked(File path) {
-                                importZipProject(path);
-                            }
-                        });
-                    } else {
-                        toast("点击文件夹进入，长按文件夹才会选择导入。");
-                        showStoragePicker("选择项目文件夹", true, false, new PathPickListener() {
-                            @Override
-                            public void onPicked(File path) {
-                                importFolderProject(path);
-                            }
-                        });
-                    }
+            .setItems(items, (dialog, which) -> {
+                if (which == 0) {
+                    showCreateProjectDialog();
+                } else if (which == 1) {
+                    showStoragePicker("选择压缩包", false, true, new PathPickListener() {
+                        @Override
+                        public void onPicked(File path) {
+                            importZipProject(path);
+                        }
+                    });
+                } else {
+                    toast("点击文件夹进入，长按文件夹才会选择导入。");
+                    showStoragePicker("选择项目文件夹", true, false, new PathPickListener() {
+                        @Override
+                        public void onPicked(File path) {
+                            importFolderProject(path);
+                        }
+                    });
                 }
             })
             .show();
@@ -444,46 +444,43 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
             .setTitle("创建项目")
             .setView(container)
-            .setPositiveButton("创建", new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    try {
-                        String appName = etAppName.getText().toString().trim();
-                        String packageName = etPackageName.getText().toString().trim();
-                        String versionName = etVersionName.getText().toString().trim();
-                        int versionCode = parseInt(etVersionCode.getText().toString().trim(), 1);
-                        int minSdk = parseInt(etMinSdk.getText().toString().trim(), 29);
-                        int targetSdk = parseInt(etTargetSdk.getText().toString().trim(), 36);
+            .setPositiveButton("创建", (dialog, which) -> {
+                String appName = etAppName.getText().toString().trim();
+                String packageName = etPackageName.getText().toString().trim();
+                String versionName = etVersionName.getText().toString().trim();
+                int versionCode = parseInt(etVersionCode.getText().toString().trim(), 1);
+                int minSdk = parseInt(etMinSdk.getText().toString().trim(), 29);
+                int targetSdk = parseInt(etTargetSdk.getText().toString().trim(), 36);
 
-                        if (appName.length() == 0) {
-                            toast("应用名称不能为空");
-                            return;
-                        }
-                        if (!isValidPackageName(packageName)) {
-                            toast("包名格式不合法");
-                            return;
-                        }
-                        ProjectConfig config = new ProjectConfig(
-                            packageName,
-                            appName,
-                            minSdk,
-                            targetSdk,
-                            versionCode,
-                            versionName.length() == 0 ? "1.0.0" : versionName,
-                            etIconPath.getText().toString().trim(),
-                            etSplashPath.getText().toString().trim()
-                        );
-                        File rootDir = projectManager.createShellProject(this, config, environmentManager.getProjectRootDir(appName));
-                        logManager.appendLogLine("INFO", "项目已创建，可直接进入编辑页继续修改。");
-                        logManager.appendKeyValue("INFO", "创建目录", rootDir.getAbsolutePath());
-                        refreshProjectList();
-                        openProject(projectManager.readProjectEntry(rootDir));
-                    } catch (Exception e) {
-                        logManager.appendLogLine("ERROR", "创建项目失败：" + e.toString());
-                        logManager.appendKeyValue("ERROR", "目标目录", environmentManager.getProjectRootDir(appName));
-                        appendExceptionDetailToLogs(e);
-                        toast("创建项目失败");
-                    }
+                if (appName.length() == 0) {
+                    toast("应用名称不能为空");
+                    return;
+                }
+                if (!isValidPackageName(packageName)) {
+                    toast("包名格式不合法");
+                    return;
+                }
+                try {
+                    ProjectConfig config = new ProjectConfig(
+                        packageName,
+                        appName,
+                        minSdk,
+                        targetSdk,
+                        versionCode,
+                        versionName.length() == 0 ? "1.0.0" : versionName,
+                        etIconPath.getText().toString().trim(),
+                        etSplashPath.getText().toString().trim()
+                    );
+                    File rootDir = projectManager.createShellProject(this, config, environmentManager.getProjectRootDir(appName));
+                    logManager.appendLogLine("INFO", "项目已创建，可直接进入编辑页继续修改。");
+                    logManager.appendKeyValue("INFO", "创建目录", rootDir.getAbsolutePath());
+                    refreshProjectList();
+                    openProject(projectManager.readProjectEntry(rootDir));
+                } catch (Exception e) {
+                    logManager.appendLogLine("ERROR", "创建项目失败：" + e);
+                    logManager.appendKeyValue("ERROR", "目标目录", environmentManager.getProjectRootDir(appName));
+                    appendExceptionDetailToLogs(e);
+                    toast("创建项目失败");
                 }
             })
             .setNegativeButton("取消", null)
@@ -493,14 +490,13 @@ public class MainActivity extends Activity {
     private LinearLayout buildPickerRow(String buttonText, final EditText targetField, final boolean zipOnly) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, 10, 0, 10);
+        row.setPadding(0, dp(10), 0, dp(10));
 
         Button button = new Button(this);
         button.setText(buttonText);
         button.setTextColor(Color.WHITE);
         button.setBackgroundColor(Color.parseColor("#2D7DFA"));
-        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        row.addView(button, buttonParams);
+        row.addView(button, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView hint = new TextView(this);
         hint.setText(zipOnly ? "  仅可选择 zip 文件" : "  支持 png / jpg / webp");
@@ -525,7 +521,7 @@ public class MainActivity extends Activity {
     private LinearLayout buildDialogContainer() {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(40, 20, 40, 0);
+        container.setPadding(dp(20), dp(10), dp(20), 0);
         return container;
     }
 
@@ -533,7 +529,7 @@ public class MainActivity extends Activity {
         TextView label = new TextView(this);
         label.setText(text);
         label.setTextColor(Color.WHITE);
-        label.setPadding(0, 0, 0, 12);
+        label.setPadding(0, 0, 0, dp(12));
         return label;
     }
 
@@ -544,9 +540,9 @@ public class MainActivity extends Activity {
         editText.setTextColor(Color.WHITE);
         editText.setHintTextColor(Color.GRAY);
         editText.setBackgroundColor(Color.parseColor("#1E1E1E"));
-        editText.setPadding(20, 20, 20, 20);
+        editText.setPadding(dp(16), dp(16), dp(16), dp(16));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = 12;
+        params.bottomMargin = dp(12);
         editText.setLayoutParams(params);
         return editText;
     }
@@ -564,7 +560,7 @@ public class MainActivity extends Activity {
         container.addView(tvPath);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-            TextView tip = buildFieldLabel("提示：当前未授予“管理所有文件”权限，可能无法浏览下载目录/根目录。可以先授权，或把文件放到应用目录再导入。");
+            TextView tip = buildFieldLabel("提示：当前未授予“管理所有文件”权限，可能无法浏览下载目录或根目录。你可以先授权，再回来继续导入。");
             tip.setTextColor(Color.parseColor("#8FA3BF"));
             container.addView(tip);
 
@@ -593,7 +589,7 @@ public class MainActivity extends Activity {
             container.addView(btnGrant);
         }
 
-        container.addView(listView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 900));
+        container.addView(listView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(420)));
 
         final AlertDialog dialog = new AlertDialog.Builder(this)
             .setTitle(title)
@@ -698,7 +694,7 @@ public class MainActivity extends Activity {
                     projectManager.extractZipToTemp(zipFile, tempRoot);
                     final File detectedRoot = projectManager.deepFindAndroidProject(tempRoot);
                     if (detectedRoot == null) {
-                        throw new IllegalStateException("深度检查后仍未找到有效 Android 架构。");
+                        throw new IllegalStateException("没有从压缩包中识别到有效的 Android 工程根目录。");
                     }
                     final File importedRoot = projectManager.importProject(detectedRoot, stripExtension(zipFile.getName()), environmentManager.getImportedProjectRootDir());
                     handler.post(new Runnable() {
@@ -707,6 +703,7 @@ public class MainActivity extends Activity {
                             dismissProgressDialog();
                             logManager.appendLogLine("INFO", "压缩包已解压并导入到管理目录。");
                             logManager.appendKeyValue("INFO", "原压缩包保留", zipFile.getAbsolutePath());
+                            logManager.appendKeyValue("INFO", "识别根目录", detectedRoot.getAbsolutePath());
                             logManager.appendKeyValue("INFO", "导入目录", importedRoot.getAbsolutePath());
                             refreshProjectList();
                             openProject(projectManager.readProjectEntry(importedRoot));
@@ -717,7 +714,7 @@ public class MainActivity extends Activity {
                         @Override
                         public void run() {
                             dismissProgressDialog();
-                            logManager.appendLogLine("ERROR", "导入压缩包失败：" + e.toString());
+                            logManager.appendLogLine("ERROR", "导入压缩包失败：" + e);
                             appendExceptionDetailToLogs(e);
                             toast("导入压缩包失败");
                         }
@@ -744,6 +741,7 @@ public class MainActivity extends Activity {
                             dismissProgressDialog();
                             logManager.appendLogLine("INFO", "文件夹已导入到管理目录。");
                             logManager.appendKeyValue("INFO", "源目录", folder.getAbsolutePath());
+                            logManager.appendKeyValue("INFO", "识别根目录", detectedRoot.getAbsolutePath());
                             logManager.appendKeyValue("INFO", "实际导入目录", importedRoot.getAbsolutePath());
                             refreshProjectList();
                             openProject(projectManager.readProjectEntry(importedRoot));
@@ -754,7 +752,7 @@ public class MainActivity extends Activity {
                         @Override
                         public void run() {
                             dismissProgressDialog();
-                            logManager.appendLogLine("ERROR", "导入文件夹失败：" + e.toString());
+                            logManager.appendLogLine("ERROR", "导入文件夹失败：" + e);
                             appendExceptionDetailToLogs(e);
                             toast("导入文件夹失败");
                         }
@@ -825,6 +823,7 @@ public class MainActivity extends Activity {
             || name.endsWith(".kt")
             || name.endsWith(".xml")
             || name.endsWith(".gradle")
+            || name.endsWith(".kts")
             || name.endsWith(".properties")
             || name.endsWith(".txt")
             || name.endsWith(".md")
@@ -848,21 +847,64 @@ public class MainActivity extends Activity {
             fileTreeAdapter.notifyDataSetChanged();
             return;
         }
-        saveCurrentFile();
         openTextFile(item.file);
         hideFileDrawer();
     }
 
     private void openTextFile(File file) {
+        if (file == null) {
+            return;
+        }
+        if (!sameFile(file, currentOpenFile)) {
+            saveCurrentFile();
+        }
+        loadFileIntoEditor(file, true);
+    }
+
+    private void loadFileIntoEditor(File file, boolean trackTab) {
         try {
             String content = projectManager.readText(file);
             currentOpenFile = file;
+            etEditor.setFileName(file.getName());
             etEditor.setText(content);
-            tvCurrentFilePath.setText(file.getAbsolutePath());
+            tvCurrentFilePath.setText(buildDisplayPath(file));
+            suggestionCard.setVisibility(View.GONE);
+            if (trackTab) {
+                editorTabManager.openTab(file);
+            } else {
+                editorTabManager.activate(file);
+            }
         } catch (Exception e) {
             logManager.appendLogLine("ERROR", "打开文件失败：" + e.getMessage());
             toast("打开文件失败");
         }
+    }
+
+    private void clearEditor() {
+        currentOpenFile = null;
+        etEditor.setFileName("");
+        etEditor.setText("");
+        tvCurrentFilePath.setText("请选择一个文件");
+        suggestionCard.setVisibility(View.GONE);
+    }
+
+    private String buildDisplayPath(File file) {
+        if (file == null) {
+            return "请选择一个文件";
+        }
+        if (currentProject == null) {
+            return file.getAbsolutePath();
+        }
+        String projectRoot = currentProject.getProjectDir();
+        String fullPath = file.getAbsolutePath();
+        if (fullPath.startsWith(projectRoot)) {
+            String relative = fullPath.substring(projectRoot.length());
+            if (relative.startsWith(File.separator)) {
+                relative = relative.substring(1);
+            }
+            return currentProject.getProjectName() + "  /  " + relative;
+        }
+        return fullPath;
     }
 
     private void saveCurrentFile() {
@@ -906,7 +948,13 @@ public class MainActivity extends Activity {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final ArrayList<BuildIssue> issues = collectProjectErrors();
+                final ArrayList<BuildIssue> issues = preflightChecker.collectProjectIssues(
+                    new File(currentProject.getProjectDir()),
+                    projectPrepared,
+                    environmentState,
+                    selectedJdkIndex,
+                    selectedNdkIndex
+                );
                 handler.post(new Runnable() {
                     @Override
                     public void run() {
@@ -928,160 +976,12 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    private ArrayList<BuildIssue> collectProjectErrors() {
-        ArrayList<BuildIssue> issues = new ArrayList<BuildIssue>();
-        if (!projectPrepared || currentProject == null) {
-            issues.add(new BuildIssue("项目", -1, "当前没有可打包的项目。", "先从首页创建或导入工程，再进入编辑页打包。"));
-            return issues;
-        }
-        if (!environmentManager.isSelectedJdkInstalled(selectedJdkIndex, environmentState)) {
-            issues.add(new BuildIssue("JDK", -1, "当前所选 JDK 未安装。", "先进入设置安装或登记 JDK 目录。"));
-        }
-        if (!environmentManager.isSelectedNdkInstalled(selectedNdkIndex, environmentState)) {
-            issues.add(new BuildIssue("NDK", -1, "当前所选 NDK 未安装。", "先进入设置安装或登记 NDK 目录。"));
-        }
-        File projectDir = new File(currentProject.getProjectDir());
-        if (!projectDir.exists()) {
-            issues.add(new BuildIssue(projectDir.getAbsolutePath(), -1, "项目目录不存在。", "重新导入项目，确保目录仍然存在。"));
-            return issues;
-        }
-        validateRequiredStructure(projectDir, issues);
-        validateGradleWrapper(projectDir, issues);
-        validateAndroidSdkConfiguration(projectDir, issues);
-        validateXmlFile(new File(projectDir, "app/src/main/AndroidManifest.xml"), issues);
-        validateXmlDirectory(new File(projectDir, "app/src/main/res"), issues);
-        validateSourceDirectory(new File(projectDir, "app/src/main/java"), issues);
-        return issues;
-    }
-
-    private void validateRequiredStructure(File projectDir, ArrayList<BuildIssue> issues) {
-        File gradlew = new File(projectDir, "gradlew");
-        File appGradle = new File(projectDir, "app/build.gradle");
-        File manifest = new File(projectDir, "app/src/main/AndroidManifest.xml");
-        if (!gradlew.exists()) {
-            issues.add(new BuildIssue(gradlew.getAbsolutePath(), -1, "缺少 gradlew。", "补齐 Gradle Wrapper 后再打包。"));
-        }
-        if (!appGradle.exists()) {
-            issues.add(new BuildIssue(appGradle.getAbsolutePath(), -1, "缺少 app/build.gradle。", "检查导入目录是否选中了真正的 Android 工程根目录。"));
-        }
-        if (!manifest.exists()) {
-            issues.add(new BuildIssue(manifest.getAbsolutePath(), -1, "缺少 AndroidManifest.xml。", "确认项目结构至少包含 `app/src/main/AndroidManifest.xml`。"));
-        }
-    }
-
-    private void validateGradleWrapper(File projectDir, ArrayList<BuildIssue> issues) {
-        File wrapperJar = new File(projectDir, "gradle/wrapper/gradle-wrapper.jar");
-        File wrapperProperties = new File(projectDir, "gradle/wrapper/gradle-wrapper.properties");
-        if (!wrapperJar.exists()) {
-            issues.add(new BuildIssue(wrapperJar.getAbsolutePath(), -1, "缺少 gradle-wrapper.jar。", "补齐 `gradle/wrapper/gradle-wrapper.jar` 后再打包。"));
-        }
-        if (!wrapperProperties.exists()) {
-            issues.add(new BuildIssue(wrapperProperties.getAbsolutePath(), -1, "缺少 gradle-wrapper.properties。", "补齐 `gradle/wrapper/gradle-wrapper.properties` 后再打包。"));
-        }
-    }
-
-    private void validateAndroidSdkConfiguration(File projectDir, ArrayList<BuildIssue> issues) {
-        File localProperties = new File(projectDir, "local.properties");
-        if (!localProperties.exists()) {
-            return;
-        }
-        try {
-            String content = projectManager.readText(localProperties);
-            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("sdk\\.dir\\s*=\\s*(.+)").matcher(content);
-            if (!matcher.find()) {
-                issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "local.properties 中没有 sdk.dir。", "补充 `sdk.dir=`，否则 Gradle 无法找到 Android SDK。"));
-                return;
-            }
-            String sdkDir = matcher.group(1).trim().replace("\\\\", "\\");
-            if (!environmentManager.isExistingDirectory(sdkDir)) {
-                issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "sdk.dir 指向的目录不存在。", "检查 Android SDK 路径是否有效，并确认平台和 build-tools 已安装。"));
-            }
-        } catch (Exception e) {
-            issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "读取 local.properties 失败。", "检查文件编码和读写权限。"));
-        }
-    }
-
-    private void validateXmlDirectory(File dir, ArrayList<BuildIssue> issues) {
-        if (!dir.exists() || !dir.isDirectory()) {
-            return;
-        }
-        File[] files = dir.listFiles();
-        if (files == null) {
-            return;
-        }
-        for (int i = 0; i < files.length; i++) {
-            File file = files[i];
-            if (file.isDirectory()) {
-                validateXmlDirectory(file, issues);
-            } else if (file.getName().toLowerCase().endsWith(".xml")) {
-                validateXmlFile(file, issues);
-            }
-        }
-    }
-
-    private void validateXmlFile(File file, ArrayList<BuildIssue> issues) {
-        if (!file.exists()) {
-            return;
-        }
-        try {
-            DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file);
-        } catch (SAXParseException e) {
-            issues.add(new BuildIssue(file.getAbsolutePath(), e.getLineNumber(), e.getMessage(), "检查 XML 标签是否闭合、属性引号是否完整。"));
-        } catch (Exception e) {
-            issues.add(new BuildIssue(file.getAbsolutePath(), -1, e.getMessage(), "检查 XML 结构和资源引用。"));
-        }
-    }
-
-    private void validateSourceDirectory(File dir, ArrayList<BuildIssue> issues) {
-        if (!dir.exists() || !dir.isDirectory()) {
-            return;
-        }
-        File[] files = dir.listFiles();
-        if (files == null) {
-            return;
-        }
-        for (int i = 0; i < files.length; i++) {
-            File file = files[i];
-            if (file.isDirectory()) {
-                validateSourceDirectory(file, issues);
-            } else if (isTextEditableFile(file)) {
-                validateTextFile(file, issues);
-            }
-        }
-    }
-
-    private void validateTextFile(File file, ArrayList<BuildIssue> issues) {
-        try {
-            String content = projectManager.readText(file);
-            if (countChar(content, '{') != countChar(content, '}')) {
-                issues.add(new BuildIssue(file.getAbsolutePath(), -1, "大括号数量不匹配。", "检查是否有未闭合的代码块或多余的 `}`。"));
-            }
-            if (countChar(content, '(') != countChar(content, ')')) {
-                issues.add(new BuildIssue(file.getAbsolutePath(), -1, "小括号数量不匹配。", "检查方法调用和条件语句是否缺少括号。"));
-            }
-            if (content.indexOf('\u0000') >= 0) {
-                issues.add(new BuildIssue(file.getAbsolutePath(), -1, "文件内容异常。", "重新保存该文件为 UTF-8 文本。"));
-            }
-        } catch (Exception e) {
-            issues.add(new BuildIssue(file.getAbsolutePath(), -1, "读取文件失败：" + e.getMessage(), "确认文件可读且不是二进制格式。"));
-        }
-    }
-
-    private int countChar(String content, char target) {
-        int count = 0;
-        for (int i = 0; i < content.length(); i++) {
-            if (content.charAt(i) == target) {
-                count++;
-            }
-        }
-        return count;
-    }
-
     private void startRealBuild() {
         isBuildRunning = true;
         buildManager.runGradleBuild(
             currentProject.getProjectDir(),
             environmentState.getInstalledJdkDir(),
+            environmentState.getAndroidSdkDir(),
             environmentState.getInstalledNdkDir(),
             EnvironmentManager.JDK_NAMES[selectedJdkIndex],
             new BuildManager.BuildListener() {
@@ -1158,12 +1058,7 @@ public class MainActivity extends Activity {
         }
         new AlertDialog.Builder(this)
             .setTitle(title)
-            .setItems(items, new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    openIssue(issues.get(which));
-                }
-            })
+            .setItems(items, (dialog, which) -> openIssue(issues.get(which)))
             .setNegativeButton("关闭", null)
             .show();
     }
@@ -1246,307 +1141,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void showSettingsDialog() {
-        String[] items = {
-            "选择 JDK 版本",
-            "安装当前 JDK",
-            "选择 NDK 版本",
-            "安装当前 NDK",
-            "登记 JDK 路径",
-            "登记 NDK 路径",
-            "查看环境状态",
-            "查看安装目录规划",
-            "核心构建工具",
-            "跨平台开发框架",
-            "测试与仿真环境",
-            "版本控制与调试",
-            "国内镜像命令",
-            "输出全部工具链资料"
-        };
-
-        new AlertDialog.Builder(this)
-            .setTitle("工具链设置")
-            .setItems(items, new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    if (which == 0) {
-                        showJdkChooser();
-                    } else if (which == 1) {
-                        installSelectedJdk();
-                    } else if (which == 2) {
-                        showNdkChooser();
-                    } else if (which == 3) {
-                        installSelectedNdk();
-                    } else if (which == 4) {
-                        showRegisterEnvironmentDialog(true);
-                    } else if (which == 5) {
-                        showRegisterEnvironmentDialog(false);
-                    } else if (which == 6) {
-                        showEnvironmentStatus();
-                    } else if (which == 7) {
-                        showInstallDirectoryPlan();
-                    } else if (which == 8) {
-                        showInfoListDialog("核心构建与包管理工具", CORE_TOOL_ITEMS, "核心工具");
-                    } else if (which == 9) {
-                        showInfoListDialog("跨平台开发框架环境", CROSS_PLATFORM_ITEMS, "跨平台");
-                    } else if (which == 10) {
-                        showInfoListDialog("测试与仿真环境", TEST_TOOL_ITEMS, "测试环境");
-                    } else if (which == 11) {
-                        showInfoListDialog("版本控制与接口调试", DEVOPS_TOOL_ITEMS, "调试工具");
-                    } else if (which == 12) {
-                        showInfoListDialog("国内镜像与加速命令", MIRROR_COMMAND_ITEMS, "镜像命令");
-                    } else if (which == 13) {
-                        dumpAllToolResources();
-                    }
-                }
-            })
-            .setNegativeButton("关闭", null)
-            .show();
-    }
-
-    private void showInfoListDialog(final String title, final String[] items, final String tag) {
-        new AlertDialog.Builder(this)
-            .setTitle(title)
-            .setItems(items, new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    logManager.appendLogLine("INFO", "正在输出 " + tag + " 资料。");
-                    logManager.appendCatalogItem(tag, items[which]);
-                }
-            })
-            .setPositiveButton("全部输出到日志", new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    logManager.appendCatalogGroup(tag, items);
-                }
-            })
-            .setNegativeButton("关闭", null)
-            .show();
-    }
-
-    private void showRegisterEnvironmentDialog(final boolean forJdk) {
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(40, 20, 40, 0);
-
-        final EditText etPath = new EditText(this);
-        etPath.setHint(forJdk ? "输入已安装 JDK 目录" : "输入已安装 NDK 目录");
-        etPath.setText(forJdk ? environmentState.getInstalledJdkDir() : environmentState.getInstalledNdkDir());
-        etPath.setTextColor(Color.WHITE);
-        etPath.setHintTextColor(Color.GRAY);
-        etPath.setBackgroundColor(Color.parseColor("#1E1E1E"));
-        etPath.setPadding(20, 20, 20, 20);
-
-        container.addView(etPath);
-
-        new AlertDialog.Builder(this)
-            .setTitle(forJdk ? "登记 JDK 路径" : "登记 NDK 路径")
-            .setView(container)
-            .setPositiveButton("保存", new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    String path = etPath.getText().toString().trim();
-                    if (path.length() == 0) {
-                        logManager.appendLogLine("ERROR", (forJdk ? "JDK" : "NDK") + " 路径不能为空。");
-                        return;
-                    }
-                    if (!environmentManager.isExistingDirectory(path)) {
-                        logManager.appendLogLine("ERROR", (forJdk ? "JDK" : "NDK") + " 目录不存在，无法登记为已安装环境。");
-                        return;
-                    }
-                    if (forJdk) {
-                        environmentState = environmentManager.saveInstalledJdk(EnvironmentManager.JDK_NAMES[selectedJdkIndex], path);
-                        logManager.appendLogLine("INFO", "JDK 已登记为已安装。");
-                        logManager.appendKeyValue("INFO", "JDK 路径", path);
-                    } else {
-                        environmentState = environmentManager.saveInstalledNdk(EnvironmentManager.NDK_NAMES[selectedNdkIndex], path);
-                        logManager.appendLogLine("INFO", "NDK 已登记为已安装。");
-                        logManager.appendKeyValue("INFO", "NDK 路径", path);
-                    }
-                }
-            })
-            .setNegativeButton("取消", null)
-            .show();
-    }
-
-    private void showEnvironmentStatus() {
-        logManager.appendLogLine("INFO", "正在输出当前环境状态。");
-        logManager.appendKeyValue("INFO", "已登记 JDK", safeText(environmentState.getInstalledJdkName(), "未登记"));
-        logManager.appendKeyValue("INFO", "JDK 目录", safeText(environmentState.getInstalledJdkDir(), "未登记"));
-        logManager.appendKeyValue("INFO", "已登记 NDK", safeText(environmentState.getInstalledNdkName(), "未登记"));
-        logManager.appendKeyValue("INFO", "NDK 目录", safeText(environmentState.getInstalledNdkDir(), "未登记"));
-        logManager.appendKeyValue(
-            "INFO",
-            "当前所选 JDK 可用",
-            environmentManager.isSelectedJdkInstalled(selectedJdkIndex, environmentState) ? "是" : "否"
-        );
-        logManager.appendKeyValue(
-            "INFO",
-            "当前所选 NDK 可用",
-            environmentManager.isSelectedNdkInstalled(selectedNdkIndex, environmentState) ? "是" : "否"
-        );
-    }
-
-    private void showJdkChooser() {
-        new AlertDialog.Builder(this)
-            .setTitle("选择 JDK 版本")
-            .setSingleChoiceItems(EnvironmentManager.JDK_NAMES, selectedJdkIndex, new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    selectedJdkIndex = which;
-                }
-            })
-            .setPositiveButton("确定", new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    logManager.appendLogLine("INFO", "JDK 版本已切换。");
-                    environmentManager.saveSelectedJdkIndex(selectedJdkIndex);
-                    logManager.appendKeyValue("INFO", "已选 JDK", EnvironmentManager.JDK_NAMES[selectedJdkIndex]);
-                    logManager.appendKeyValue("INFO", "安装来源", describeJdkSource(selectedJdkIndex));
-                    logManager.appendKeyValue("INFO", "下载地址", EnvironmentManager.JDK_URLS[selectedJdkIndex]);
-                }
-            })
-            .setNegativeButton("取消", null)
-            .show();
-    }
-
-    private void showNdkChooser() {
-        new AlertDialog.Builder(this)
-            .setTitle("选择 NDK 版本")
-            .setSingleChoiceItems(EnvironmentManager.NDK_NAMES, selectedNdkIndex, new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    selectedNdkIndex = which;
-                }
-            })
-            .setPositiveButton("确定", new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    logManager.appendLogLine("INFO", "NDK 版本已切换。");
-                    environmentManager.saveSelectedNdkIndex(selectedNdkIndex);
-                    logManager.appendKeyValue("INFO", "已选 NDK", EnvironmentManager.NDK_NAMES[selectedNdkIndex]);
-                    logManager.appendKeyValue("INFO", "安装来源", describeNdkSource(selectedNdkIndex));
-                    logManager.appendKeyValue("INFO", "下载地址", EnvironmentManager.NDK_URLS[selectedNdkIndex]);
-                }
-            })
-            .setNegativeButton("取消", null)
-            .show();
-    }
-
-    private void installSelectedJdk() {
-        final String jdkName = EnvironmentManager.JDK_NAMES[selectedJdkIndex];
-        final String jdkUrl = EnvironmentManager.JDK_URLS[selectedJdkIndex];
-
-        logManager.appendLogLine("INFO", "开始安装 JDK...");
-        logManager.appendKeyValue("INFO", "JDK 版本", jdkName);
-        logManager.appendKeyValue("INFO", "安装来源", describeJdkSource(selectedJdkIndex));
-        logManager.appendKeyValue("INFO", "下载地址", jdkUrl);
-        logManager.appendKeyValue("INFO", "解压目录", environmentManager.getJdkInstallDir(jdkName));
-
-        showProgressDialog("工具链安装", "正在准备 JDK 安装资源...");
-        toolchainInstaller.installJdk(selectedJdkIndex, new ToolchainInstaller.InstallListener() {
-            @Override
-            public void onProgress(final String message, final int percent, final boolean indeterminate) {
-                handler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        updateProgressDialog(message);
-                        logManager.appendLogLine("INFO", message);
-                    }
-                });
-            }
-            
-            @Override
-            public void onSuccess(final String installedDir) {
-                handler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        dismissProgressDialog();
-                        environmentState = environmentManager.saveInstalledJdk(jdkName, installedDir);
-                        logManager.appendLogLine("INFO", "JDK 安装完成并已登记。");
-                        logManager.appendKeyValue("INFO", "JDK 路径", installedDir);
-                        toast("JDK 安装完成");
-                    }
-                });
-            }
-
-            @Override
-            public void onError(final String message) {
-                handler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        dismissProgressDialog();
-                        logManager.appendLogLine("ERROR", message);
-                        toast("JDK 安装失败");
-                    }
-                });
-            }
-        });
-    }
-
-    private void installSelectedNdk() {
-        final String ndkName = EnvironmentManager.NDK_NAMES[selectedNdkIndex];
-        final String ndkUrl = EnvironmentManager.NDK_URLS[selectedNdkIndex];
-
-        logManager.appendLogLine("INFO", "开始安装 NDK...");
-        logManager.appendKeyValue("INFO", "NDK 版本", ndkName);
-        logManager.appendKeyValue("INFO", "安装来源", describeNdkSource(selectedNdkIndex));
-        logManager.appendKeyValue("INFO", "下载地址", ndkUrl);
-        logManager.appendKeyValue("INFO", "解压目录", environmentManager.getNdkInstallDir(ndkName));
-
-        showProgressDialog("工具链安装", "正在准备 NDK 安装资源...");
-        toolchainInstaller.installNdk(selectedNdkIndex, new ToolchainInstaller.InstallListener() {
-            @Override
-            public void onProgress(final String message, final int percent, final boolean indeterminate) {
-                handler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        updateProgressDialog(message);
-                        logManager.appendLogLine("INFO", message);
-                    }
-                });
-            }
-            
-            @Override
-            public void onSuccess(final String installedDir) {
-                handler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        dismissProgressDialog();
-                        environmentState = environmentManager.saveInstalledNdk(ndkName, installedDir);
-                        logManager.appendLogLine("INFO", "NDK 安装完成并已登记。");
-                        logManager.appendKeyValue("INFO", "NDK 路径", installedDir);
-                        toast("NDK 安装完成");
-                    }
-                });
-            }
-
-            @Override
-            public void onError(final String message) {
-                handler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        dismissProgressDialog();
-                        logManager.appendLogLine("ERROR", message);
-                        toast("NDK 安装失败");
-                    }
-                });
-            }
-        });
-    }
-
-    private void showInstallDirectoryPlan() {
-        logManager.appendLogLine("INFO", "正在输出工具链目录规划。");
-        logManager.appendKeyValue("INFO", "安装策略", "默认内嵌 JDK 21 + NDK r27c，其余版本联网下载");
-        logManager.appendKeyValue("INFO", "安装包缓存目录", environmentManager.getPackageCacheDir());
-        logManager.appendKeyValue("INFO", "工作目录", environmentManager.getBaseDir());
-        logManager.appendKeyValue("INFO", "JDK 根目录", new java.io.File(environmentManager.getBaseDir(), "jdk").getAbsolutePath());
-        logManager.appendKeyValue("INFO", "NDK 根目录", new java.io.File(environmentManager.getBaseDir(), "ndk").getAbsolutePath());
-        logManager.appendKeyValue("INFO", "项目根目录", environmentManager.getManagedProjectRootDir());
-        logManager.appendKeyValue("INFO", "当前 JDK 目录", environmentManager.getJdkInstallDir(EnvironmentManager.JDK_NAMES[selectedJdkIndex]));
-        logManager.appendKeyValue("INFO", "当前 NDK 目录", environmentManager.getNdkInstallDir(EnvironmentManager.NDK_NAMES[selectedNdkIndex]));
-    }
-
     private void appendExceptionDetailToLogs(Exception e) {
         if (e == null) {
             return;
@@ -1558,24 +1152,14 @@ public class MainActivity extends Activity {
             t = t.getCause();
             depth++;
         }
-        logManager.appendLogLine("WARN", "提示: 如果报权限/无法创建目录，通常是 Android 11+ 的存储权限限制。建议把工程目录放到应用可写目录或改用系统文件选择器(SAF)。");
-    }
-
-    private void dumpAllToolResources() {
-        logManager.appendLogLine("INFO", "开始输出完整工具链资料库。");
-        logManager.appendCatalogGroup("核心工具", CORE_TOOL_ITEMS);
-        logManager.appendCatalogGroup("跨平台", CROSS_PLATFORM_ITEMS);
-        logManager.appendCatalogGroup("测试环境", TEST_TOOL_ITEMS);
-        logManager.appendCatalogGroup("调试工具", DEVOPS_TOOL_ITEMS);
-        logManager.appendCatalogGroup("镜像命令", MIRROR_COMMAND_ITEMS);
-        logManager.appendLogLine("INFO", "工具链资料库输出完成。");
+        logManager.appendLogLine("WARN", "提示: 如果报权限或无法创建目录，通常与 Android 11+ 的存储限制有关。");
     }
 
     private void appendBuildOutput(String line) {
         String lower = line.toLowerCase();
-        if (lower.indexOf("error") >= 0 || line.indexOf("失败") >= 0) {
+        if (lower.contains("error") || line.contains("失败")) {
             logManager.appendLogLine("ERROR", line);
-        } else if (lower.indexOf("warning") >= 0 || lower.indexOf("warn") >= 0) {
+        } else if (lower.contains("warning") || lower.contains("warn")) {
             logManager.appendLogLine("WARN", line);
         } else {
             logManager.appendLogLine("INFO", line);
@@ -1605,20 +1189,6 @@ public class MainActivity extends Activity {
 
     private boolean isValidPackageName(String packageName) {
         return packageName.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+");
-    }
-
-    private String describeJdkSource(int index) {
-        if (environmentManager.isEmbeddedJdk(index)) {
-            return "内嵌资源";
-        }
-        return "联网下载";
-    }
-
-    private String describeNdkSource(int index) {
-        if (environmentManager.isEmbeddedNdk(index)) {
-            return "内嵌资源";
-        }
-        return "联网下载";
     }
 
     private int parseInt(String value, int fallback) {
@@ -1666,6 +1236,10 @@ public class MainActivity extends Activity {
         return value.replaceAll("[\\\\/:*?\"<>|]", "_");
     }
 
+    private boolean sameFile(File first, File second) {
+        return first != null && second != null && first.getAbsolutePath().equals(second.getAbsolutePath());
+    }
+
     private class ProjectAdapter extends BaseAdapter {
         @Override
         public int getCount() {
@@ -1708,7 +1282,6 @@ public class MainActivity extends Activity {
                 TextView title = new TextView(MainActivity.this);
                 title.setTextColor(Color.parseColor("#F3F7FD"));
                 title.setTextSize(14f);
-                title.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
                 textColumn.addView(title);
 
                 TextView sub = new TextView(MainActivity.this);

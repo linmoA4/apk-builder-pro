@@ -66,6 +66,7 @@ public class SettingsActivity extends Activity {
     private Button btnBackSettings;
     private Button btnInstallJdk;
     private Button btnInstallNdk;
+    private Button btnSaveSdkPath;
     private Button btnSaveJdkPath;
     private Button btnSaveNdkPath;
     private Button btnCoreTools;
@@ -73,9 +74,11 @@ public class SettingsActivity extends Activity {
     private Button btnTestTools;
     private Button btnDevopsTools;
     private Button btnMirrorTools;
+    private EditText etSdkPath;
     private EditText etJdkPath;
     private EditText etNdkPath;
     private TextView tvEnvironmentSummary;
+    private TextView tvSdkHint;
     private TextView tvJdkSourceHint;
     private TextView tvNdkSourceHint;
     private TextView tvDirectoryPlan;
@@ -112,6 +115,7 @@ public class SettingsActivity extends Activity {
         btnBackSettings = (Button) findViewById(R.id.btnBackSettings);
         btnInstallJdk = (Button) findViewById(R.id.btnInstallJdk);
         btnInstallNdk = (Button) findViewById(R.id.btnInstallNdk);
+        btnSaveSdkPath = (Button) findViewById(R.id.btnSaveSdkPath);
         btnSaveJdkPath = (Button) findViewById(R.id.btnSaveJdkPath);
         btnSaveNdkPath = (Button) findViewById(R.id.btnSaveNdkPath);
         btnCoreTools = (Button) findViewById(R.id.btnCoreTools);
@@ -119,9 +123,11 @@ public class SettingsActivity extends Activity {
         btnTestTools = (Button) findViewById(R.id.btnTestTools);
         btnDevopsTools = (Button) findViewById(R.id.btnDevopsTools);
         btnMirrorTools = (Button) findViewById(R.id.btnMirrorTools);
+        etSdkPath = (EditText) findViewById(R.id.etSdkPath);
         etJdkPath = (EditText) findViewById(R.id.etJdkPath);
         etNdkPath = (EditText) findViewById(R.id.etNdkPath);
         tvEnvironmentSummary = (TextView) findViewById(R.id.tvEnvironmentSummary);
+        tvSdkHint = (TextView) findViewById(R.id.tvSdkHint);
         tvJdkSourceHint = (TextView) findViewById(R.id.tvJdkSourceHint);
         tvNdkSourceHint = (TextView) findViewById(R.id.tvNdkSourceHint);
         tvDirectoryPlan = (TextView) findViewById(R.id.tvDirectoryPlan);
@@ -154,6 +160,13 @@ public class SettingsActivity extends Activity {
             @Override
             public void onClick(View v) {
                 installSelectedNdk();
+            }
+        });
+
+        btnSaveSdkPath.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                saveRegisteredSdkPath();
             }
         });
 
@@ -249,12 +262,29 @@ public class SettingsActivity extends Activity {
 
     private void refreshUi() {
         environmentState = environmentManager.loadState();
+        etSdkPath.setText(environmentState.getAndroidSdkDir());
         etJdkPath.setText(environmentState.getInstalledJdkDir());
         etNdkPath.setText(environmentState.getInstalledNdkDir());
         tvEnvironmentSummary.setText(buildEnvironmentSummary());
+        tvSdkHint.setText(buildSdkHint());
         tvJdkSourceHint.setText("当前选择：" + EnvironmentManager.JDK_NAMES[selectedJdkIndex] + "  ·  " + describeJdkSource(selectedJdkIndex));
         tvNdkSourceHint.setText("当前选择：" + EnvironmentManager.NDK_NAMES[selectedNdkIndex] + "  ·  " + describeNdkSource(selectedNdkIndex));
         tvDirectoryPlan.setText(buildDirectoryPlan());
+    }
+
+    private void saveRegisteredSdkPath() {
+        String path = etSdkPath.getText().toString().trim();
+        if (path.length() == 0) {
+            toast("Android SDK 路径不能为空");
+            return;
+        }
+        if (!environmentManager.isExistingDirectory(path)) {
+            toast("Android SDK 目录不存在");
+            return;
+        }
+        environmentState = environmentManager.saveAndroidSdkDir(path);
+        refreshUi();
+        toast("Android SDK 路径已登记");
     }
 
     private void saveRegisteredPath(boolean forJdk) {
@@ -378,6 +408,8 @@ public class SettingsActivity extends Activity {
 
     private String buildEnvironmentSummary() {
         StringBuilder builder = new StringBuilder();
+        builder.append("Android SDK 路径：").append(safeText(environmentState.getAndroidSdkDir(), "未登记")).append('\n');
+        builder.append("Android SDK 可用：").append(environmentManager.isAndroidSdkRegistered(environmentState) ? "是" : "否").append('\n');
         builder.append("已登记 JDK：").append(safeText(environmentState.getInstalledJdkName(), "未登记")).append('\n');
         builder.append("JDK 路径：").append(safeText(environmentState.getInstalledJdkDir(), "未登记")).append('\n');
         builder.append("已登记 NDK：").append(safeText(environmentState.getInstalledNdkName(), "未登记")).append('\n');
@@ -390,12 +422,20 @@ public class SettingsActivity extends Activity {
         return builder.toString();
     }
 
+    private String buildSdkHint() {
+        if (environmentManager.isAndroidSdkRegistered(environmentState)) {
+            return "已登记有效 SDK。构建前会校验 `platforms/android-<compileSdk>`、`build-tools`、`platform-tools`，缺少 `local.properties` 时也会自动生成。";
+        }
+        return "请先登记 Android SDK 根目录。后续会用它写入 `local.properties` 的 `sdk.dir`，并检查平台包与 build-tools。";
+    }
+
     private String buildDirectoryPlan() {
         StringBuilder builder = new StringBuilder();
         builder.append("安装策略：默认优先使用内置 assets 中的 JDK 21 和 NDK r27c，其余版本联网下载。\n");
-        builder.append("注意：当前应用只管理 JDK / NDK，不会自动安装 Android SDK；若项目构建报找不到 SDK，需要你在项目里补充 `local.properties` 的 `sdk.dir`。\n");
+        builder.append("Android SDK：这里只登记系统中已有的 SDK 根目录，不负责安装；构建前会优先复用这里的路径自动生成或修复项目 `local.properties`。\n");
         builder.append("工作目录：").append(environmentManager.getBaseDir()).append('\n');
         builder.append("安装包缓存目录：").append(environmentManager.getPackageCacheDir()).append('\n');
+        builder.append("已登记 SDK：").append(safeText(environmentState.getAndroidSdkDir(), "未登记")).append('\n');
         builder.append("JDK 根目录：").append(new java.io.File(environmentManager.getBaseDir(), "jdk").getAbsolutePath()).append('\n');
         builder.append("NDK 根目录：").append(new java.io.File(environmentManager.getBaseDir(), "ndk").getAbsolutePath()).append('\n');
         builder.append("项目根目录：").append(environmentManager.getManagedProjectRootDir()).append('\n');

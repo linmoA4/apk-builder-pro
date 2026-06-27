@@ -324,48 +324,13 @@
                     android:scrollbars="none">
 
                     <LinearLayout
+                        android:id="@+id/editorTabContainer"
                         android:layout_width="wrap_content"
                         android:layout_height="match_parent"
                         android:gravity="center_vertical"
                         android:orientation="horizontal"
                         android:paddingLeft="8dp"
-                        android:paddingRight="8dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="26dp"
-                            android:background="@drawable/bg_tab_active"
-                            android:gravity="center_vertical"
-                            android:paddingLeft="10dp"
-                            android:paddingRight="10dp"
-                            android:text="当前文件"
-                            android:textColor="@color/text_chip"
-                            android:textSize="12sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="26dp"
-                            android:layout_marginLeft="6dp"
-                            android:background="@drawable/bg_tab_idle"
-                            android:gravity="center_vertical"
-                            android:paddingLeft="10dp"
-                            android:paddingRight="10dp"
-                            android:text="AndroidManifest.xml"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="26dp"
-                            android:layout_marginLeft="6dp"
-                            android:background="@drawable/bg_tab_idle"
-                            android:gravity="center_vertical"
-                            android:paddingLeft="10dp"
-                            android:paddingRight="10dp"
-                            android:text="build.gradle"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp" />
-                    </LinearLayout>
+                        android:paddingRight="8dp" />
                 </HorizontalScrollView>
 
                 <TextView
@@ -471,7 +436,7 @@
                                 android:textStyle="bold" />
                         </LinearLayout>
 
-                        <EditText
+                        <com.LM.pack.editor.CodeEditorView
                             android:id="@+id/etEditor"
                             android:layout_width="match_parent"
                             android:layout_height="0dp"

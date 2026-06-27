@@ -12,6 +12,7 @@ public class EnvironmentManager {
     public static final String PREFS_NAME = "lm_pack_tool_state";
     private static final String KEY_JDK_NAME = "installed_jdk_name";
     private static final String KEY_JDK_DIR = "installed_jdk_dir";
+    private static final String KEY_ANDROID_SDK_DIR = "android_sdk_dir";
     private static final String KEY_NDK_NAME = "installed_ndk_name";
     private static final String KEY_NDK_DIR = "installed_ndk_dir";
     private static final String KEY_SELECTED_JDK_INDEX = "selected_jdk_index";
@@ -90,6 +91,7 @@ public class EnvironmentManager {
         return new EnvironmentState(
             sharedPreferences.getString(KEY_JDK_NAME, ""),
             sharedPreferences.getString(KEY_JDK_DIR, ""),
+            sharedPreferences.getString(KEY_ANDROID_SDK_DIR, ""),
             sharedPreferences.getString(KEY_NDK_NAME, ""),
             sharedPreferences.getString(KEY_NDK_DIR, "")
         );
@@ -107,6 +109,13 @@ public class EnvironmentManager {
         sharedPreferences.edit()
             .putString(KEY_NDK_NAME, name)
             .putString(KEY_NDK_DIR, dir)
+            .apply();
+        return loadState();
+    }
+
+    public EnvironmentState saveAndroidSdkDir(String dir) {
+        sharedPreferences.edit()
+            .putString(KEY_ANDROID_SDK_DIR, dir == null ? "" : dir)
             .apply();
         return loadState();
     }
@@ -149,6 +158,10 @@ public class EnvironmentManager {
     public boolean isSelectedNdkInstalled(int selectedNdkIndex, EnvironmentState state) {
         return NDK_NAMES[selectedNdkIndex].equals(state.getInstalledNdkName())
             && isExistingDirectory(state.getInstalledNdkDir());
+    }
+
+    public boolean isAndroidSdkRegistered(EnvironmentState state) {
+        return state != null && isExistingDirectory(state.getAndroidSdkDir());
     }
 
     public boolean isExistingDirectory(String path) {

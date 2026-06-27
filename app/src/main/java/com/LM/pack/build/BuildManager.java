@@ -19,6 +19,7 @@ public class BuildManager {
     public void runGradleBuild(
         final String projectDir,
         final String jdkDir,
+        final String sdkDir,
         final String ndkDir,
         final String selectedJdkName,
         final BuildListener listener
@@ -26,7 +27,7 @@ public class BuildManager {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                executeGradleBuild(projectDir, jdkDir, ndkDir, selectedJdkName, listener);
+                executeGradleBuild(projectDir, jdkDir, sdkDir, ndkDir, selectedJdkName, listener);
             }
         }).start();
     }
@@ -34,6 +35,7 @@ public class BuildManager {
     private void executeGradleBuild(
         String projectDir,
         String jdkDir,
+        String sdkDir,
         String ndkDir,
         String selectedJdkName,
         BuildListener listener
@@ -54,12 +56,19 @@ public class BuildManager {
             listener.onLogLine("开始执行真实构建命令。");
             listener.onLogLine("构建目录: " + projectDir);
             listener.onLogLine("JDK 环境: " + selectedJdkName);
+            if (sdkDir != null && sdkDir.length() > 0) {
+                listener.onLogLine("Android SDK: " + sdkDir);
+            }
             listener.onLogLine("Gradle 任务: assembleDebug --stacktrace");
 
             ProcessBuilder processBuilder = new ProcessBuilder("./gradlew", "assembleDebug", "--stacktrace");
             processBuilder.directory(projectRoot);
             processBuilder.redirectErrorStream(true);
             processBuilder.environment().put("JAVA_HOME", jdkDir);
+            if (sdkDir != null && sdkDir.length() > 0) {
+                processBuilder.environment().put("ANDROID_HOME", sdkDir);
+                processBuilder.environment().put("ANDROID_SDK_ROOT", sdkDir);
+            }
             processBuilder.environment().put("ANDROID_NDK_HOME", ndkDir);
             processBuilder.environment().put("ANDROID_NDK_ROOT", ndkDir);
             processBuilder.environment().put("PATH", jdkDir + "/bin:" + processBuilder.environment().get("PATH"));
