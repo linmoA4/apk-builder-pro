@@ -34,10 +34,10 @@ public class ProjectPreflightChecker {
             return issues;
         }
         if (!environmentManager.isSelectedJdkInstalled(selectedJdkIndex, environmentState)) {
-            issues.add(new BuildIssue("JDK", -1, "当前所选 JDK 未安装。", "先进入设置安装或登记 JDK 目录。"));
+            issues.add(new BuildIssue("JDK", -1, "当前所选 JDK 未安装。", "建议使用 " + environmentManager.getSelectedJdkName(selectedJdkIndex) + "。先进入设置页按推荐链接下载并登记，再继续打包。"));
         }
         if (!environmentManager.isSelectedNdkInstalled(selectedNdkIndex, environmentState)) {
-            issues.add(new BuildIssue("NDK", -1, "当前所选 NDK 未安装。", "先进入设置安装或登记 NDK 目录。"));
+            issues.add(new BuildIssue("NDK", -1, "当前所选 NDK 未安装。", "建议使用 " + environmentManager.getSelectedNdkName(selectedNdkIndex) + "。先进入设置页按推荐链接下载并登记，再继续打包。"));
         }
         if (!projectDir.exists()) {
             issues.add(new BuildIssue(projectDir.getAbsolutePath(), -1, "项目目录不存在。", "重新导入项目，确保目录仍然存在。"));
@@ -78,10 +78,10 @@ public class ProjectPreflightChecker {
         File wrapperJar = new File(projectDir, "gradle/wrapper/gradle-wrapper.jar");
         File wrapperProperties = new File(projectDir, "gradle/wrapper/gradle-wrapper.properties");
         if (!wrapperJar.exists()) {
-            issues.add(new BuildIssue(wrapperJar.getAbsolutePath(), -1, "缺少 gradle-wrapper.jar。", "补齐 `gradle/wrapper/gradle-wrapper.jar` 后再打包。"));
+            issues.add(new BuildIssue(wrapperJar.getAbsolutePath(), -1, "缺少 gradle-wrapper.jar。", "可在应用自定义弹窗里一键从仓库源或官方源补齐 `gradle/wrapper/gradle-wrapper.jar`。"));
         }
         if (!wrapperProperties.exists()) {
-            issues.add(new BuildIssue(wrapperProperties.getAbsolutePath(), -1, "缺少 gradle-wrapper.properties。", "补齐 `gradle/wrapper/gradle-wrapper.properties` 后再打包。"));
+            issues.add(new BuildIssue(wrapperProperties.getAbsolutePath(), -1, "缺少 gradle-wrapper.properties。", "可在应用自定义弹窗里一键补齐 `gradle/wrapper/gradle-wrapper.properties`。"));
         }
     }
 

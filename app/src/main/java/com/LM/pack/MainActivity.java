@@ -2,6 +2,7 @@ package com.LM.pack;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -1037,7 +1038,9 @@ public class MainActivity extends Activity {
                     updateBugButtonState();
                     logManager.appendLogLine("ERROR", "打包前检查未通过，已停止构建。");
                     appendIssueListToLogs("预检查发现的问题", lastBuildIssues);
-                    showIssueDialog("检查发现错误", lastBuildIssues);
+                    if (!maybeShowWrapperRepairDialog("检查发现错误", lastBuildIssues)) {
+                        showIssueDialog("检查发现错误", lastBuildIssues);
+                    }
                 }
 
                 @Override
@@ -1068,7 +1071,9 @@ public class MainActivity extends Activity {
                         logManager.appendLogLine("ERROR", result.getMessage());
                         if (!lastBuildIssues.isEmpty()) {
                             appendIssueListToLogs("构建失败的问题列表", lastBuildIssues);
-                            showIssueDialog("构建失败，可点击定位错误", lastBuildIssues);
+                            if (!maybeShowWrapperRepairDialog("构建失败，可点击定位错误", lastBuildIssues)) {
+                                showIssueDialog("构建失败，可点击定位错误", lastBuildIssues);
+                            }
                         } else {
                             toast("打包失败");
                         }
@@ -1102,24 +1107,122 @@ public class MainActivity extends Activity {
         logManager.appendLogLine("ERROR", "---- 结束 ----");
     }
 
+    private boolean maybeShowWrapperRepairDialog(String title, final ArrayList<BuildIssue> issues) {
+        if (currentProject == null || issues == null || issues.isEmpty()) {
+            return false;
+        }
+        boolean missingWrapper = false;
+        final ArrayList<String> missingItems = new ArrayList<String>();
+        for (int i = 0; i < issues.size(); i++) {
+            BuildIssue issue = issues.get(i);
+            String lower = issue.getMessage() == null ? "" : issue.getMessage().toLowerCase();
+            if (lower.contains("gradle-wrapper.jar") || lower.contains("gradle-wrapper.properties")) {
+                missingWrapper = true;
+                missingItems.add(issue.getDisplayText());
+            }
+        }
+        if (!missingWrapper) {
+            return false;
+        }
+        showWrapperRepairDialog(title, missingItems);
+        return true;
+    }
+
     private void showIssueDialog(String title, final ArrayList<BuildIssue> issues) {
         final String[] items = new String[issues.size()];
         for (int i = 0; i < issues.size(); i++) {
             items[i] = issues.get(i).getDisplayText();
         }
-        ListView listView = new ListView(this);
+        final Dialog dialog = createAppDialog(title + "（" + issues.size() + "条）", "点任意错误可直接定位到文件和行号。");
+        ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
+        Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
+        Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
+        Button btnNeutral = (Button) dialog.findViewById(R.id.btnDialogNeutral);
         listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, items));
-        listView.setOnItemClickListener((parent, view, which, id) -> openIssue(issues.get(which)));
-        new AlertDialog.Builder(this)
-            .setTitle(title + "（" + issues.size() + "条）")
-            .setView(listView)
-            .setPositiveButton("一键提取全部错误", (dialog, which) -> {
+        listView.setOnItemClickListener((parent, view, which, id) -> {
+            dialog.dismiss();
+            openIssue(issues.get(which));
+        });
+        btnNeutral.setVisibility(View.GONE);
+        btnSecondary.setText("关闭");
+        btnPrimary.setText("一键提取全部错误");
+        btnSecondary.setOnClickListener(v -> dialog.dismiss());
+        btnPrimary.setOnClickListener(v -> {
                 ClipboardManager clipboardManager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("全部错误", buildIssueExtractionText(issues)));
                 toast("全部错误已提取到剪贴板");
-            })
-            .setNegativeButton("关闭", null)
-            .show();
+                dialog.dismiss();
+            });
+        dialog.show();
+    }
+
+    private void showWrapperRepairDialog(String title, ArrayList<String> missingItems) {
+        final Dialog dialog = createAppDialog(title, "检测到目标项目缺少 Gradle Wrapper 文件。你可以直接在应用里一键补齐后继续打包。");
+        ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
+        Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
+        Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
+        Button btnNeutral = (Button) dialog.findViewById(R.id.btnDialogNeutral);
+        listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, missingItems.toArray(new String[0])));
+        listView.setOnItemClickListener((parent, view, which, id) -> {
+        });
+        btnPrimary.setText("仓库源补齐");
+        btnNeutral.setVisibility(View.VISIBLE);
+        btnNeutral.setText("官方源补齐");
+        btnSecondary.setText("稍后处理");
+        btnSecondary.setOnClickListener(v -> dialog.dismiss());
+        btnPrimary.setOnClickListener(v -> {
+            dialog.dismiss();
+            repairWrapperAndRetry(false);
+        });
+        btnNeutral.setOnClickListener(v -> {
+            dialog.dismiss();
+            repairWrapperAndRetry(true);
+        });
+        dialog.show();
+    }
+
+    private void repairWrapperAndRetry(boolean useOfficialSource) {
+        if (currentProject == null) {
+            return;
+        }
+        String sourceLabel = useOfficialSource ? "官方源" : "仓库源";
+        showProgressDialog("补齐 Gradle Wrapper", "正在通过" + sourceLabel + "补齐缺失文件...");
+        buildManager.repairGradleWrapperAsync(currentProject.getProjectDir(), useOfficialSource, new BuildManager.WrapperRepairListener() {
+            @Override
+            public void onProgress(String message, int percent, boolean indeterminate) {
+                handler.post(() -> updateProgressDialog(message, percent, indeterminate));
+            }
+
+            @Override
+            public void onSuccess() {
+                handler.post(() -> {
+                    dismissProgressDialog();
+                    toast("Gradle Wrapper 已补齐，正在重新检测");
+                    detectAndBuild();
+                });
+            }
+
+            @Override
+            public void onError(String message) {
+                handler.post(() -> {
+                    dismissProgressDialog();
+                    toast(message);
+                });
+            }
+        });
+    }
+
+    private Dialog createAppDialog(String title, String subtitle) {
+        Dialog dialog = new Dialog(this);
+        dialog.setContentView(R.layout.dialog_issue_center);
+        View content = dialog.findViewById(R.id.tvDialogTitle).getRootView();
+        if (palette != null) {
+            themeManager.applyTaggedStyles(content, palette);
+        }
+        ((TextView) dialog.findViewById(R.id.tvDialogTitle)).setText(title);
+        ((TextView) dialog.findViewById(R.id.tvDialogSubtitle)).setText(subtitle);
+        dialog.setCancelable(true);
+        return dialog;
     }
 
     private void openIssue(BuildIssue issue) {

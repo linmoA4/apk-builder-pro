@@ -66,24 +66,21 @@ public class SettingsActivity extends Activity {
         buildManager = new BuildManager(this, environmentManager);
         themeManager = new ThemeManager(this);
         environmentState = environmentManager.loadState();
-        selectedJdkIndex = EnvironmentManager.EMBEDDED_JDK_INDEX;
-        selectedNdkIndex = EnvironmentManager.EMBEDDED_NDK_INDEX;
-        environmentManager.saveSelectedJdkIndex(selectedJdkIndex);
-        environmentManager.saveSelectedNdkIndex(selectedNdkIndex);
+        selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
+        selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
 
         bindViews();
         bindEvents();
         applyThemeUi();
         refreshUi();
-        maybePrepareEmbeddedTools(false);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         environmentState = environmentManager.loadState();
-        selectedJdkIndex = EnvironmentManager.EMBEDDED_JDK_INDEX;
-        selectedNdkIndex = EnvironmentManager.EMBEDDED_NDK_INDEX;
+        selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
+        selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
         applyThemeUi();
         refreshUi();
     }
@@ -109,7 +106,7 @@ public class SettingsActivity extends Activity {
 
     private void bindEvents() {
         btnBackSettings.setOnClickListener(v -> finish());
-        btnPrepareEmbedded.setOnClickListener(v -> maybePrepareEmbeddedTools(true));
+        btnPrepareEmbedded.setOnClickListener(v -> maybePrepareExternalTools(true));
         btnAppearanceMode.setOnClickListener(v -> showAppearanceModeDialog());
         btnSurfaceStyle.setOnClickListener(v -> showSurfaceStyleDialog());
     }
@@ -129,6 +126,8 @@ public class SettingsActivity extends Activity {
 
     private void refreshUi() {
         environmentState = environmentManager.loadState();
+        selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
+        selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
         tvEnvironmentSummary.setText(buildEnvironmentSummary());
         tvSdkHint.setText(buildEmbeddedSummary());
         tvConfigHint.setText(buildConfigSummary());
@@ -138,12 +137,12 @@ public class SettingsActivity extends Activity {
         btnPrepareEmbedded.setText(buildPrepareButtonText());
     }
 
-    private void maybePrepareEmbeddedTools(boolean userTriggered) {
+    private void maybePrepareExternalTools(boolean userTriggered) {
         if (preparingEmbeddedTools) {
             return;
         }
-        final int embeddedJdkIndex = EnvironmentManager.EMBEDDED_JDK_INDEX;
-        final int embeddedNdkIndex = EnvironmentManager.EMBEDDED_NDK_INDEX;
+        final int embeddedJdkIndex = EnvironmentManager.DEFAULT_JDK_INDEX;
+        final int embeddedNdkIndex = EnvironmentManager.DEFAULT_NDK_INDEX;
         boolean needSdk = !environmentManager.isAndroidSdkRegistered(environmentState);
         boolean needJdk = embeddedJdkIndex >= 0 && !environmentManager.isSelectedJdkInstalled(embeddedJdkIndex, environmentState);
         boolean needNdk = embeddedNdkIndex >= 0 && !environmentManager.isSelectedNdkInstalled(embeddedNdkIndex, environmentState);
@@ -159,14 +158,14 @@ public class SettingsActivity extends Activity {
         selectedJdkIndex = embeddedJdkIndex;
         selectedNdkIndex = embeddedNdkIndex;
         preparingEmbeddedTools = true;
-        showProgressOverlay("自动检测环境", "正在检测 SDK / JDK 21 / NDK 27 / Gradle 8.7 ...", 0, true);
-        prepareEmbeddedSdkThenRest(embeddedJdkIndex, embeddedNdkIndex, userTriggered);
+        showProgressOverlay("自动检测环境", "正在按外置下载链路准备 SDK / JDK 21 / NDK r27 / Gradle 8.7 ...", 0, true);
+        prepareExternalSdkThenRest(embeddedJdkIndex, embeddedNdkIndex, userTriggered);
     }
 
-    private void prepareEmbeddedSdkThenRest(final int embeddedJdkIndex, final int embeddedNdkIndex, final boolean userTriggered) {
+    private void prepareExternalSdkThenRest(final int embeddedJdkIndex, final int embeddedNdkIndex, final boolean userTriggered) {
         boolean needSdk = !environmentManager.isAndroidSdkRegistered(environmentState);
         if (!needSdk) {
-            prepareEmbeddedJdkThenNdk(embeddedJdkIndex, embeddedNdkIndex, userTriggered);
+            prepareExternalJdkThenNdk(embeddedJdkIndex, embeddedNdkIndex, userTriggered);
             return;
         }
         toolchainInstaller.installEmbeddedSdk(new ToolchainInstaller.InstallListener() {
@@ -179,7 +178,7 @@ public class SettingsActivity extends Activity {
             public void onSuccess(final String installedDir) {
                 handler.post(() -> {
                     environmentState = environmentManager.saveAndroidSdkDir(installedDir);
-                    prepareEmbeddedJdkThenNdk(embeddedJdkIndex, embeddedNdkIndex, userTriggered);
+                    prepareExternalJdkThenNdk(embeddedJdkIndex, embeddedNdkIndex, userTriggered);
                 });
             }
 
@@ -190,10 +189,10 @@ public class SettingsActivity extends Activity {
         });
     }
 
-    private void prepareEmbeddedJdkThenNdk(final int embeddedJdkIndex, final int embeddedNdkIndex, final boolean userTriggered) {
+    private void prepareExternalJdkThenNdk(final int embeddedJdkIndex, final int embeddedNdkIndex, final boolean userTriggered) {
         boolean needJdk = embeddedJdkIndex >= 0 && !environmentManager.isSelectedJdkInstalled(embeddedJdkIndex, environmentState);
         if (!needJdk) {
-            prepareEmbeddedNdk(embeddedNdkIndex, userTriggered);
+            prepareExternalNdk(embeddedNdkIndex, userTriggered);
             return;
         }
         toolchainInstaller.installJdk(embeddedJdkIndex, new ToolchainInstaller.InstallListener() {
@@ -210,7 +209,7 @@ public class SettingsActivity extends Activity {
                         environmentManager.saveSelectedJdkIndex(embeddedJdkIndex);
                         selectedJdkIndex = embeddedJdkIndex;
                     }
-                    prepareEmbeddedNdk(embeddedNdkIndex, userTriggered);
+                    prepareExternalNdk(embeddedNdkIndex, userTriggered);
                 });
             }
 
@@ -221,7 +220,7 @@ public class SettingsActivity extends Activity {
         });
     }
 
-    private void prepareEmbeddedNdk(final int embeddedNdkIndex, final boolean userTriggered) {
+    private void prepareExternalNdk(final int embeddedNdkIndex, final boolean userTriggered) {
         boolean needNdk = embeddedNdkIndex >= 0 && !environmentManager.isSelectedNdkInstalled(embeddedNdkIndex, environmentState);
         if (!needNdk) {
             prepareOfflineGradle(userTriggered);
@@ -280,7 +279,7 @@ public class SettingsActivity extends Activity {
         hideProgressOverlay();
         refreshUi();
         if (userTriggered) {
-            toast("SDK / JDK 21 / NDK 27 / Gradle 8.7 已准备完成");
+            toast("外置 SDK / JDK 21 / NDK 27 / Gradle 8.7 已准备完成");
         }
     }
 
@@ -437,6 +436,7 @@ public class SettingsActivity extends Activity {
         builder.append("JDK 21：").append(environmentManager.isSelectedJdkInstalled(selectedJdkIndex, environmentState) ? "已准备" : "未准备").append('\n');
         builder.append("NDK r27：").append(environmentManager.isSelectedNdkInstalled(selectedNdkIndex, environmentState) ? "已准备" : "未准备").append('\n');
         builder.append("Gradle 8.7：").append(buildManager.isOfflineGradlePrepared() ? "已准备" : "未准备").append('\n');
+        builder.append("下载策略：").append(environmentManager.getDownloadRegionLabel()).append('\n');
         builder.append("SDK 目录：").append(safeText(environmentState.getAndroidSdkDir(), "未登记")).append('\n');
         builder.append("JDK 目录：").append(safeText(environmentManager.getSelectedJdkDir(selectedJdkIndex, environmentState), "未登记")).append('\n');
         builder.append("NDK 目录：").append(safeText(environmentManager.getSelectedNdkDir(selectedNdkIndex, environmentState), "未登记")).append('\n');
@@ -445,28 +445,26 @@ public class SettingsActivity extends Activity {
     }
 
     private String buildEmbeddedSummary() {
-        String sdkStatus = environmentManager.isAndroidSdkRegistered(environmentState) ? "已解压" : "未解压";
-        int embeddedJdk = EnvironmentManager.EMBEDDED_JDK_INDEX;
-        int embeddedNdk = EnvironmentManager.EMBEDDED_NDK_INDEX;
+        String sdkStatus = environmentManager.isAndroidSdkRegistered(environmentState) ? "已准备" : "未准备";
+        int embeddedJdk = EnvironmentManager.DEFAULT_JDK_INDEX;
+        int embeddedNdk = EnvironmentManager.DEFAULT_NDK_INDEX;
         String jdkStatus = embeddedJdk >= 0 && environmentManager.isSelectedJdkInstalled(embeddedJdk, environmentState) ? "已准备" : "未准备";
         String ndkStatus = embeddedNdk >= 0 && environmentManager.isSelectedNdkInstalled(embeddedNdk, environmentState) ? "已准备" : "未准备";
         String gradleStatus = buildManager.isOfflineGradlePrepared() ? "已准备" : "未准备";
-        return "这里只保留一个按钮。点一下后会自动检测、下载、复制、解压并登记 4 个核心环境。"
+        return "APP 不再内嵌工具链。这里只保留一个按钮，用外置下载链路准备 4 个核心环境。"
             + "\n当前状态：SDK " + sdkStatus + "；JDK 21 " + jdkStatus + "；NDK r27 " + ndkStatus + "；Gradle 8.7 " + gradleStatus + "。";
     }
 
     private String buildConfigSummary() {
-        return "当前固定优先使用 APK 内置或自动下载的 Android SDK、JDK 21、NDK r27、Gradle 8.7。"
-            + "\n准备环境时会先检测本地缓存，再自动补齐缺失资源。解压阶段显示真实百分比，不再只转圈。"
-            + "\n下载器已接入直链源：SDK " + EnvironmentManager.SDK_VERIFIED_DIRECT_URLS.length
-            + " 条、JDK " + EnvironmentManager.JDK_VERIFIED_DIRECT_URLS.length
-            + " 条、Gradle " + EnvironmentManager.GRADLE_VERIFIED_DIRECT_URLS.length + " 条。";
+        return "当前固定优先使用外置下载链路准备 Android SDK、JDK 21、NDK r27、Gradle 8.7。"
+            + "\n会先检测本地缓存，再自动下载、解压、登记目录。下载源只区分国内镜像优先和国外官方源优先。"
+            + "\n打包时会再结合项目的 `compileSdk`、`buildToolsVersion`、`ndkVersion`、Gradle Wrapper 自动推荐更合适的环境。";
     }
 
     private String buildGradleSummary() {
         return buildManager.isOfflineGradlePrepared()
-            ? "Gradle 8.7 已解压完成，打包时会优先直接使用。"
-            : "Gradle 8.7 还没准备好，点击上方按钮后会自动检测、下载或解压。";
+            ? "Gradle 8.7 已就绪，打包时会优先直接使用外置 Gradle。"
+            : "Gradle 8.7 还没准备好，点击上方按钮后会自动从外置直链下载并解压。";
     }
 
     private String buildThemeSummary() {
@@ -485,7 +483,7 @@ public class SettingsActivity extends Activity {
         StringBuilder builder = new StringBuilder();
         builder.append("工作根目录：").append(environmentManager.getBaseDir()).append('\n');
         builder.append('\n');
-        builder.append("`packages/`：保存下载或从 APK 复制出来的原始压缩包，避免重复下载。").append('\n');
+        builder.append("`packages/`：保存外置下载回来的原始压缩包，避免重复下载。").append('\n');
         builder.append("`sdk/`：Android SDK 的实际工作目录，`cmdline-tools` 会自动整理到 `latest/`。").append('\n');
         builder.append("`jdk/`：固定存放 JDK 21。").append('\n');
         builder.append("`ndk/`：固定存放 NDK r27。").append('\n');
@@ -501,7 +499,7 @@ public class SettingsActivity extends Activity {
             && environmentManager.isSelectedJdkInstalled(selectedJdkIndex, environmentState)
             && environmentManager.isSelectedNdkInstalled(selectedNdkIndex, environmentState)
             && buildManager.isOfflineGradlePrepared();
-        return allReady ? "重新检测环境" : "自动检测并准备环境";
+        return allReady ? "重新检测外置环境" : "自动检测并准备外置环境";
     }
 
     private int blendProgress(int startPercent, int weightPercent, int stagePercent) {

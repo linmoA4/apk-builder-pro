@@ -44,15 +44,16 @@ public class BuildWorkflowService {
         final int selectedNdkIndex,
         final Listener listener
     ) {
-        final int resolvedJdkIndex = EnvironmentManager.EMBEDDED_JDK_INDEX;
-        final int resolvedNdkIndex = EnvironmentManager.EMBEDDED_NDK_INDEX;
+        final File projectDir = new File(currentProject.getProjectDir());
+        final int resolvedJdkIndex = environmentManager.recommendJdkIndex(projectDir);
+        final int resolvedNdkIndex = environmentManager.recommendNdkIndex(projectDir);
         environmentManager.saveSelectedJdkIndex(resolvedJdkIndex);
         environmentManager.saveSelectedNdkIndex(resolvedNdkIndex);
         new Thread(new Runnable() {
             @Override
             public void run() {
                 final ArrayList<BuildIssue> issues = preflightChecker.collectProjectIssues(
-                    new File(currentProject.getProjectDir()),
+                    projectDir,
                     projectPrepared,
                     environmentState,
                     resolvedJdkIndex,

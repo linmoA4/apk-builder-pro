@@ -851,7 +851,6 @@ public class ProjectManager {
     private void copyWrapperAssets(Context context, File projectRoot) throws IOException {
         copyAsset(context.getAssets(), "project_template/gradlew", new File(projectRoot, "gradlew"));
         copyAsset(context.getAssets(), "project_template/gradlew.bat", new File(projectRoot, "gradlew.bat"));
-        copyAsset(context.getAssets(), "project_template/gradle/wrapper/gradle-wrapper.jar", new File(projectRoot, "gradle/wrapper/gradle-wrapper.jar"));
         copyAsset(context.getAssets(), "project_template/gradle/wrapper/gradle-wrapper.properties", new File(projectRoot, "gradle/wrapper/gradle-wrapper.properties"));
         new File(projectRoot, "gradlew").setExecutable(true);
     }

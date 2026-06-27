@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:tag="panelRaised">
+
+    <TextView
+        android:id="@+id/tvDialogTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="提示"
+        android:textSize="17sp"
+        android:textStyle="bold"
+        android:tag="primary" />
+
+    <TextView
+        android:id="@+id/tvDialogSubtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textSize="12sp"
+        android:tag="secondary" />
+
+    <ListView
+        android:id="@+id/lvDialogItems"
+        android:layout_width="match_parent"
+        android:layout_height="260dp"
+        android:layout_marginTop="12dp"
+        android:cacheColorHint="#00000000"
+        android:divider="@android:color/transparent"
+        android:dividerHeight="8dp"
+        android:listSelector="@android:color/transparent" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="end"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnDialogNeutral"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:layout_marginRight="8dp"
+            android:text="备用"
+            android:visibility="gone"
+            android:tag="ghostButton primary" />
+
+        <Button
+            android:id="@+id/btnDialogSecondary"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:layout_marginRight="8dp"
+            android:text="关闭"
+            android:tag="ghostButton primary" />
+
+        <Button
+            android:id="@+id/btnDialogPrimary"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:text="确定"
+            android:tag="primaryButton primary" />
+    </LinearLayout>
+</LinearLayout>

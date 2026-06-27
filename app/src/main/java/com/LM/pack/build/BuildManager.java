@@ -1,8 +1,6 @@
 package com.LM.pack.build;
 
 import android.content.Context;
-import android.content.res.AssetFileDescriptor;
-import android.content.res.AssetManager;
 import com.LM.pack.env.EnvironmentManager;
 import com.LM.pack.model.BuildIssue;
 import com.LM.pack.model.BuildResult;
@@ -30,9 +28,6 @@ public class BuildManager {
         void onError(String message);
     }
 
-    private static final String OFFLINE_GRADLE_ASSET_PATH = "toolchains/gradle/gradle-8.7-bin.zip";
-    private static final String[] OFFLINE_GRADLE_URLS = EnvironmentManager.GRADLE_VERIFIED_DIRECT_URLS;
-
     private final Context context;
     private final EnvironmentManager environmentManager;
 
@@ -44,6 +39,12 @@ public class BuildManager {
     public interface BuildListener {
         void onLogLine(String line);
         void onFinished(BuildResult result);
+    }
+
+    public interface WrapperRepairListener {
+        void onProgress(String message, int percent, boolean indeterminate);
+        void onSuccess();
+        void onError(String message);
     }
 
     private static class ProjectRequirements {
@@ -119,6 +120,52 @@ public class BuildManager {
         return gradleExecutable != null && gradleExecutable.exists() && gradleExecutable.isFile();
     }
 
+    public void repairGradleWrapperAsync(final String projectDir, final boolean useOfficialSource, final WrapperRepairListener listener) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    File projectRoot = new File(projectDir);
+                    String gradleVersion = environmentManager.recommendGradleVersion(projectRoot);
+                    if (listener != null) {
+                        listener.onProgress("正在检查 Gradle Wrapper 缺失项...", 0, true);
+                    }
+                    File wrapperDir = new File(projectRoot, "gradle/wrapper");
+                    ensureDir(wrapperDir);
+                    File wrapperJar = new File(wrapperDir, "gradle-wrapper.jar");
+                    File wrapperProperties = new File(wrapperDir, "gradle-wrapper.properties");
+                    if (!wrapperJar.exists() || wrapperJar.length() == 0L) {
+                        String url = useOfficialSource
+                            ? environmentManager.getOfficialWrapperJarUrl(gradleVersion)
+                            : environmentManager.getRepositoryWrapperJarUrl();
+                        if (listener != null) {
+                            listener.onProgress("正在下载 gradle-wrapper.jar ...", 18, false);
+                        }
+                        downloadToFile(url, wrapperJar, null, "正在下载 gradle-wrapper.jar");
+                    }
+                    if (!wrapperProperties.exists() || wrapperProperties.length() == 0L) {
+                        if (listener != null) {
+                            listener.onProgress("正在写入 gradle-wrapper.properties ...", 72, false);
+                        }
+                        writeText(wrapperProperties, environmentManager.buildWrapperPropertiesContent(gradleVersion));
+                    }
+                    File gradlew = new File(projectRoot, "gradlew");
+                    if (gradlew.exists()) {
+                        gradlew.setExecutable(true);
+                    }
+                    if (listener != null) {
+                        listener.onProgress("Gradle Wrapper 已补齐", 100, false);
+                        listener.onSuccess();
+                    }
+                } catch (Exception e) {
+                    if (listener != null) {
+                        listener.onError("Gradle Wrapper 补齐失败：" + e.getMessage());
+                    }
+                }
+            }
+        }).start();
+    }
+
     private void executeGradleBuild(
         String projectDir,
         String jdkDir,
@@ -135,7 +182,7 @@ public class BuildManager {
             File projectRoot = new File(projectDir);
             File gradlew = new File(projectRoot, "gradlew");
             ProjectRequirements requirements = inspectProjectRequirements(projectRoot);
-            logResolvedEnvironment(requirements, selectedJdkName, jdkDir, sdkDir, ndkDir, listener);
+            logResolvedEnvironment(projectRoot, requirements, selectedJdkName, jdkDir, sdkDir, ndkDir, listener);
             syncProjectLocalProperties(projectRoot, sdkDir, ndkDir, listener);
             prepareRequiredSdkPackages(projectRoot, jdkDir, sdkDir, listener, requirements);
             File offlineGradleExecutable = prepareOfflineGradle(null, listener);
@@ -147,7 +194,7 @@ public class BuildManager {
                 if (sdkDir != null && sdkDir.length() > 0) {
                     listener.onLogLine("Android SDK: " + sdkDir);
                 }
-                listener.onLogLine("Gradle 模式: 内置离线 Gradle 8.7");
+                listener.onLogLine("Gradle 模式: 外置下载 Gradle " + environmentManager.recommendGradleVersion(projectRoot));
                 listener.onLogLine("Gradle 任务: assembleDebug --stacktrace");
                 processBuilder = new ProcessBuilder(
                     offlineGradleExecutable.getAbsolutePath(),
@@ -248,6 +295,7 @@ public class BuildManager {
     }
 
     private void logResolvedEnvironment(
+        File projectRoot,
         ProjectRequirements requirements,
         String selectedJdkName,
         String jdkDir,
@@ -259,9 +307,10 @@ public class BuildManager {
             return;
         }
         listener.onLogLine("正在分析项目所需环境并进行智能分配。");
+        listener.onLogLine(environmentManager.buildToolchainRecommendationSummary(projectRoot));
         listener.onLogLine("JDK 环境: " + selectedJdkName + "  ->  " + jdkDir);
-        listener.onLogLine("NDK 环境: NDK r27  ->  " + ndkDir);
-        listener.onLogLine("Gradle 环境: 内置 Gradle 8.7");
+        listener.onLogLine("NDK 环境: " + environmentManager.getRecommendedNdkName(projectRoot) + "  ->  " + ndkDir);
+        listener.onLogLine("Gradle 环境: 外置 Gradle " + environmentManager.recommendGradleVersion(projectRoot));
         if (requirements.compileSdk > 0) {
             listener.onLogLine("项目 compileSdk: android-" + requirements.compileSdk);
         }
@@ -450,39 +499,35 @@ public class BuildManager {
     private File prepareOfflineGradle(ProgressCallback progressCallback, BuildListener listener) {
         try {
             ensureDir(new File(environmentManager.getPackageCacheDir()));
-            File archiveFile = new File(environmentManager.getGradlePackageArchivePath());
+            String gradleVersion = EnvironmentManager.DEFAULT_GRADLE_VERSION;
+            File archiveFile = new File(environmentManager.getGradlePackageArchivePath(gradleVersion));
             if (!archiveFile.exists() || archiveFile.length() == 0L) {
-                if (assetExists(OFFLINE_GRADLE_ASSET_PATH)) {
-                    listener.onLogLine("检测到内置 Gradle 资源，正在复制到本地缓存。");
-                    copyAssetToFile(OFFLINE_GRADLE_ASSET_PATH, archiveFile, progressCallback, "正在复制 Gradle 8.7");
-                } else {
-                    String downloadUrl = resolveAvailableGradleUrl();
-                    if (downloadUrl == null) {
-                        return null;
-                    }
-                    listener.onLogLine("未找到内置 Gradle，正在下载可用的 Gradle 8.7 安装包。");
-                    downloadToFile(downloadUrl, archiveFile, progressCallback, "正在下载 Gradle 8.7");
+                String downloadUrl = resolveAvailableGradleUrl(gradleVersion);
+                if (downloadUrl == null) {
+                    return null;
                 }
+                listener.onLogLine("正在从外置下载链路获取 Gradle " + gradleVersion + " 安装包。");
+                downloadToFile(downloadUrl, archiveFile, progressCallback, "正在下载 Gradle " + gradleVersion);
             }
             File installRoot = new File(environmentManager.getGradleInstallDir());
             File gradleBin = findGradleExecutable(installRoot);
             if (gradleBin != null) {
                 if (progressCallback != null) {
-                    progressCallback.onProgress("Gradle 8.7 已就绪", 100, false);
+                    progressCallback.onProgress("Gradle " + gradleVersion + " 已就绪", 100, false);
                 }
                 return gradleBin;
             }
             listener.onLogLine("正在准备离线 Gradle 目录。");
             clearDirectory(installRoot);
             ensureDir(installRoot);
-            extractZip(archiveFile, installRoot, progressCallback, "正在解压 Gradle 8.7");
+            extractZip(archiveFile, installRoot, progressCallback, "正在解压 Gradle " + gradleVersion);
             gradleBin = findGradleExecutable(installRoot);
             if (gradleBin == null) {
                 throw new IllegalStateException("离线 Gradle 解压后未找到 bin/gradle");
             }
             gradleBin.setExecutable(true);
             if (progressCallback != null) {
-                progressCallback.onProgress("Gradle 8.7 已准备完成", 100, false);
+                progressCallback.onProgress("Gradle " + gradleVersion + " 已准备完成", 100, false);
             }
             return gradleBin;
         } catch (Exception e) {
@@ -493,59 +538,14 @@ public class BuildManager {
         }
     }
 
-    private String resolveAvailableGradleUrl() {
-        for (int i = 0; i < OFFLINE_GRADLE_URLS.length; i++) {
-            if (isUrlReachable(OFFLINE_GRADLE_URLS[i], 0)) {
-                return OFFLINE_GRADLE_URLS[i];
+    private String resolveAvailableGradleUrl(String gradleVersion) {
+        String[] candidates = environmentManager.getGradleDownloadCandidates(gradleVersion);
+        for (int i = 0; i < candidates.length; i++) {
+            if (isUrlReachable(candidates[i], 0)) {
+                return candidates[i];
             }
         }
         return null;
-    }
-
-    private boolean assetExists(String assetPath) {
-        InputStream inputStream = null;
-        try {
-            inputStream = context.getAssets().open(assetPath);
-            return true;
-        } catch (Exception e) {
-            return false;
-        } finally {
-            try {
-                if (inputStream != null) {
-                    inputStream.close();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
-
-    private void copyAssetToFile(String assetPath, File targetFile, ProgressCallback progressCallback, String label) throws Exception {
-        ensureDir(targetFile.getParentFile());
-        AssetManager assetManager = context.getAssets();
-        AssetFileDescriptor descriptor = null;
-        InputStream inputStream = null;
-        BufferedOutputStream outputStream = null;
-        try {
-            long totalBytes = -1L;
-            try {
-                descriptor = assetManager.openFd(assetPath);
-                totalBytes = descriptor.getLength();
-            } catch (Exception ignored) {
-            }
-            inputStream = assetManager.open(assetPath);
-            outputStream = new BufferedOutputStream(new FileOutputStream(targetFile));
-            copyStreamWithProgress(inputStream, outputStream, totalBytes, progressCallback, label);
-        } finally {
-            if (descriptor != null) {
-                descriptor.close();
-            }
-            if (inputStream != null) {
-                inputStream.close();
-            }
-            if (outputStream != null) {
-                outputStream.close();
-            }
-        }
     }
 
     private void downloadToFile(String urlString, File targetFile, ProgressCallback progressCallback, String label) throws Exception {
@@ -865,7 +865,7 @@ public class BuildManager {
             return "检查 `ndk.dir`、`ndkVersion` 和当前选择的 NDK 27 是否一致。";
         }
         if (lower.indexOf("gradle") >= 0 && lower.indexOf("wrapper") >= 0) {
-            return "优先使用内置 Gradle 8.7，或补齐 `gradle/wrapper` 目录。";
+            return "优先使用外置 Gradle 下载链路，或在应用自定义弹窗中补齐 `gradle/wrapper` 目录。";
         }
         if (codeLine != null && codeLine.trim().length() > 0) {
             return "先修正当前高亮行的语法，再重新打包验证。";

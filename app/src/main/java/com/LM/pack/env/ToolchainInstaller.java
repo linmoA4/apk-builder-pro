@@ -1,8 +1,6 @@
 package com.LM.pack.env;
 
 import android.content.Context;
-import android.content.res.AssetFileDescriptor;
-import android.content.res.AssetManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -44,9 +42,7 @@ public class ToolchainInstaller {
                     ensureDir(archiveFile.getParentFile());
 
                     prepareArchive(
-                        EnvironmentManager.JDK_ASSET_ARCHIVES[index],
-                        EnvironmentManager.JDK_URLS[index],
-                        mergeUrls(EnvironmentManager.JDK_FALLBACK_URLS[index], new String[] {EnvironmentManager.JDK_VERIFIED_DIRECT_URLS[index]}),
+                        environmentManager.getJdkDownloadCandidates(index),
                         archiveFile,
                         "JDK 安装包",
                         listener
@@ -76,9 +72,7 @@ public class ToolchainInstaller {
                     ensureDir(archiveFile.getParentFile());
 
                     prepareArchive(
-                        EnvironmentManager.NDK_ASSET_ARCHIVES[index],
-                        EnvironmentManager.NDK_URLS[index],
-                        EnvironmentManager.NDK_FALLBACK_URLS[index],
+                        environmentManager.getNdkDownloadCandidates(index),
                         archiveFile,
                         "NDK 安装包",
                         listener
@@ -107,9 +101,7 @@ public class ToolchainInstaller {
                     File archiveFile = new File(archivePath);
                     ensureDir(archiveFile.getParentFile());
                     prepareArchive(
-                        EnvironmentManager.SDK_ASSET_ARCHIVE,
-                        EnvironmentManager.SDK_PRIMARY_URL,
-                        mergeUrls(EnvironmentManager.SDK_FALLBACK_URLS, EnvironmentManager.SDK_VERIFIED_DIRECT_URLS),
+                        environmentManager.getSdkDownloadCandidates(),
                         archiveFile,
                         "Android SDK 命令行工具",
                         listener
@@ -130,39 +122,23 @@ public class ToolchainInstaller {
     }
 
     private void prepareArchive(
-        String assetPath,
-        String downloadUrl,
-        String[] fallbackUrls,
+        String[] candidateUrls,
         File targetFile,
         String displayName,
         InstallListener listener
     ) throws Exception {
-        if (assetPath != null && assetPath.length() > 0 && assetExists(assetPath)) {
-            listener.onProgress("正在从应用内置资源复制" + displayName + "...", 0, false);
-            copyAssetToFile(assetPath, targetFile, listener, "正在复制" + displayName);
-            return;
-        }
         if (targetFile.exists() && targetFile.length() > 0) {
             listener.onProgress("已找到本地缓存，跳过下载。", 100, false);
             return;
         }
-        String resolvedUrl = resolveDownloadUrl(downloadUrl, fallbackUrls, displayName, listener);
+        String resolvedUrl = resolveDownloadUrl(candidateUrls, displayName, listener);
         listener.onProgress("正在下载" + displayName + "...", 0, false);
         downloadToFile(resolvedUrl, targetFile, listener, "正在下载" + displayName);
     }
 
-    private String resolveDownloadUrl(String primaryUrl, String[] fallbackUrls, String displayName, InstallListener listener) throws Exception {
+    private String resolveDownloadUrl(String[] candidateUrls, String displayName, InstallListener listener) throws Exception {
         java.util.LinkedHashSet<String> candidates = new java.util.LinkedHashSet<String>();
-        if (primaryUrl != null && primaryUrl.trim().length() > 0) {
-            candidates.add(primaryUrl.trim());
-        }
-        if (fallbackUrls != null) {
-            for (int i = 0; i < fallbackUrls.length; i++) {
-                if (fallbackUrls[i] != null && fallbackUrls[i].trim().length() > 0) {
-                    candidates.add(fallbackUrls[i].trim());
-                }
-            }
-        }
+        appendUrls(candidates, candidateUrls);
         if (candidates.isEmpty()) {
             throw new IllegalStateException(displayName + " 没有可用下载地址");
         }
@@ -175,13 +151,6 @@ public class ToolchainInstaller {
             }
         }
         throw new IllegalStateException(displayName + " 所有下载链路都不可用");
-    }
-
-    private String[] mergeUrls(String[] first, String[] second) {
-        java.util.LinkedHashSet<String> values = new java.util.LinkedHashSet<String>();
-        appendUrls(values, first);
-        appendUrls(values, second);
-        return values.toArray(new String[0]);
     }
 
     private void appendUrls(java.util.LinkedHashSet<String> values, String[] candidates) {
@@ -218,51 +187,6 @@ public class ToolchainInstaller {
         } finally {
             if (connection != null) {
                 connection.disconnect();
-            }
-        }
-    }
-
-    private boolean assetExists(String assetPath) {
-        InputStream inputStream = null;
-        try {
-            inputStream = context.getAssets().open(assetPath);
-            return true;
-        } catch (Exception e) {
-            return false;
-        } finally {
-            try {
-                if (inputStream != null) {
-                    inputStream.close();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
-
-    private void copyAssetToFile(String assetPath, File targetFile, InstallListener listener, String progressLabel) throws Exception {
-        AssetManager assetManager = context.getAssets();
-        AssetFileDescriptor descriptor = null;
-        InputStream inputStream = null;
-        BufferedOutputStream outputStream = null;
-        try {
-            long totalBytes = -1L;
-            try {
-                descriptor = assetManager.openFd(assetPath);
-                totalBytes = descriptor.getLength();
-            } catch (Exception ignored) {
-            }
-            inputStream = assetManager.open(assetPath);
-            outputStream = new BufferedOutputStream(new FileOutputStream(targetFile));
-            copyStream(inputStream, outputStream, totalBytes, progressLabel, listener);
-        } finally {
-            if (descriptor != null) {
-                descriptor.close();
-            }
-            if (inputStream != null) {
-                inputStream.close();
-            }
-            if (outputStream != null) {
-                outputStream.close();
             }
         }
     }
