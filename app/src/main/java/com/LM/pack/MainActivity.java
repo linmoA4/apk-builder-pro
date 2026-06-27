@@ -117,7 +117,7 @@ public class MainActivity extends Activity {
         SharedPreferences sharedPreferences = getSharedPreferences(EnvironmentManager.PREFS_NAME, MODE_PRIVATE);
         environmentManager = new EnvironmentManager(this, sharedPreferences);
         projectManager = new ProjectManager();
-        buildManager = new BuildManager();
+        buildManager = new BuildManager(this, environmentManager);
         preflightChecker = new ProjectPreflightChecker(projectManager, environmentManager);
         projectWorkspaceService = new ProjectWorkspaceService(projectManager, environmentManager);
         projectFileService = new ProjectFileService();

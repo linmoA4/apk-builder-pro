@@ -23,6 +23,7 @@
 - JDK / NDK 多版本环境状态记录
 - 打包前只读环境检查
 - 包名识别支持 `namespace`、`applicationId`、Manifest 多来源解析
+- 构建时优先尝试内置离线 Gradle：`assets/toolchains/gradle/gradle-8.7-bin.zip`
 - 对导入的带 `gradlew` 项目尝试执行真实 `assembleDebug`
 
 ## 注意
@@ -30,4 +31,5 @@
 - 真实打包依赖目标设备或环境里可用的 JDK、NDK、Gradle Wrapper。
 - 预检查不再自动改写项目文件，缺少 `local.properties` 时会给出修复提示。
 - 新建模板默认启用 AndroidX，并移除了过时的全盘存储权限默认值。
+- 如果仓库内提供 `app/src/main/assets/toolchains/gradle/gradle-8.7-bin.zip`，构建时会优先解压并使用本地 Gradle，再回退到项目 Wrapper。
 - 如果你要把它做成完全自动下载解压工具链的版本，还需要继续补下载器与解压器逻辑。

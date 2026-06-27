@@ -1,15 +1,34 @@
 package com.LM.pack.build;
 
+import android.content.Context;
+import android.content.res.AssetManager;
+import com.LM.pack.env.EnvironmentManager;
 import com.LM.pack.model.BuildIssue;
 import com.LM.pack.model.BuildResult;
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class BuildManager {
+
+    private static final String OFFLINE_GRADLE_ASSET_PATH = "toolchains/gradle/gradle-8.7-bin.zip";
+
+    private final Context context;
+    private final EnvironmentManager environmentManager;
+
+    public BuildManager(Context context, EnvironmentManager environmentManager) {
+        this.context = context.getApplicationContext();
+        this.environmentManager = environmentManager;
+    }
 
     public interface BuildListener {
         void onLogLine(String line);
@@ -47,21 +66,40 @@ public class BuildManager {
         try {
             File projectRoot = new File(projectDir);
             File gradlew = new File(projectRoot, "gradlew");
-            if (!gradlew.exists()) {
-                listener.onFinished(new BuildResult(false, -1, "未找到 gradlew，无法执行真实打包。", "", issues));
-                return;
+            File offlineGradleExecutable = prepareOfflineGradle(listener);
+            ProcessBuilder processBuilder;
+            if (offlineGradleExecutable != null) {
+                listener.onLogLine("开始执行真实构建命令。");
+                listener.onLogLine("构建目录: " + projectDir);
+                listener.onLogLine("JDK 环境: " + selectedJdkName);
+                if (sdkDir != null && sdkDir.length() > 0) {
+                    listener.onLogLine("Android SDK: " + sdkDir);
+                }
+                listener.onLogLine("Gradle 模式: 内置离线 Gradle 8.7");
+                listener.onLogLine("Gradle 任务: assembleDebug --stacktrace");
+                processBuilder = new ProcessBuilder(
+                    offlineGradleExecutable.getAbsolutePath(),
+                    "-p",
+                    projectDir,
+                    "assembleDebug",
+                    "--stacktrace"
+                );
+            } else {
+                if (!gradlew.exists()) {
+                    listener.onFinished(new BuildResult(false, -1, "未找到 gradlew，且当前也没有可用的离线 Gradle。", "", issues));
+                    return;
+                }
+                gradlew.setExecutable(true);
+                listener.onLogLine("开始执行真实构建命令。");
+                listener.onLogLine("构建目录: " + projectDir);
+                listener.onLogLine("JDK 环境: " + selectedJdkName);
+                if (sdkDir != null && sdkDir.length() > 0) {
+                    listener.onLogLine("Android SDK: " + sdkDir);
+                }
+                listener.onLogLine("Gradle 模式: 项目 Gradle Wrapper");
+                listener.onLogLine("Gradle 任务: assembleDebug --stacktrace");
+                processBuilder = new ProcessBuilder("./gradlew", "assembleDebug", "--stacktrace");
             }
-
-            gradlew.setExecutable(true);
-            listener.onLogLine("开始执行真实构建命令。");
-            listener.onLogLine("构建目录: " + projectDir);
-            listener.onLogLine("JDK 环境: " + selectedJdkName);
-            if (sdkDir != null && sdkDir.length() > 0) {
-                listener.onLogLine("Android SDK: " + sdkDir);
-            }
-            listener.onLogLine("Gradle 任务: assembleDebug --stacktrace");
-
-            ProcessBuilder processBuilder = new ProcessBuilder("./gradlew", "assembleDebug", "--stacktrace");
             processBuilder.directory(projectRoot);
             processBuilder.redirectErrorStream(true);
             processBuilder.environment().put("JAVA_HOME", jdkDir);
@@ -71,7 +109,12 @@ public class BuildManager {
             }
             processBuilder.environment().put("ANDROID_NDK_HOME", ndkDir);
             processBuilder.environment().put("ANDROID_NDK_ROOT", ndkDir);
-            processBuilder.environment().put("PATH", jdkDir + "/bin:" + processBuilder.environment().get("PATH"));
+            processBuilder.environment().put("GRADLE_USER_HOME", environmentManager.getGradleUserHomeDir());
+            String currentPath = processBuilder.environment().get("PATH");
+            if (currentPath == null) {
+                currentPath = "";
+            }
+            processBuilder.environment().put("PATH", jdkDir + "/bin:" + currentPath);
 
             process = processBuilder.start();
             reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
@@ -107,6 +150,169 @@ public class BuildManager {
                 process.destroy();
             }
         }
+    }
+
+    private File prepareOfflineGradle(BuildListener listener) {
+        try {
+            ensureDir(new File(environmentManager.getPackageCacheDir()));
+            File archiveFile = new File(environmentManager.getGradlePackageArchivePath());
+            if (!archiveFile.exists() || archiveFile.length() == 0L) {
+                if (!assetExists(OFFLINE_GRADLE_ASSET_PATH)) {
+                    return null;
+                }
+                listener.onLogLine("检测到内置 Gradle 资源，正在复制到本地缓存。");
+                copyAssetToFile(OFFLINE_GRADLE_ASSET_PATH, archiveFile);
+            }
+            File installRoot = new File(environmentManager.getGradleInstallDir());
+            File gradleBin = findGradleExecutable(installRoot);
+            if (gradleBin != null) {
+                return gradleBin;
+            }
+            listener.onLogLine("正在准备离线 Gradle 目录。");
+            clearDirectory(installRoot);
+            ensureDir(installRoot);
+            extractZip(archiveFile, installRoot);
+            gradleBin = findGradleExecutable(installRoot);
+            if (gradleBin == null) {
+                throw new IllegalStateException("离线 Gradle 解压后未找到 bin/gradle");
+            }
+            gradleBin.setExecutable(true);
+            return gradleBin;
+        } catch (Exception e) {
+            if (listener != null) {
+                listener.onLogLine("离线 Gradle 准备失败，回退到项目 Wrapper：" + e.getMessage());
+            }
+            return null;
+        }
+    }
+
+    private boolean assetExists(String assetPath) {
+        InputStream inputStream = null;
+        try {
+            inputStream = context.getAssets().open(assetPath);
+            return true;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            try {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void copyAssetToFile(String assetPath, File targetFile) throws Exception {
+        ensureDir(targetFile.getParentFile());
+        AssetManager assetManager = context.getAssets();
+        InputStream inputStream = null;
+        BufferedOutputStream outputStream = null;
+        try {
+            inputStream = assetManager.open(assetPath);
+            outputStream = new BufferedOutputStream(new FileOutputStream(targetFile));
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, len);
+            }
+            outputStream.flush();
+        } finally {
+            if (inputStream != null) {
+                inputStream.close();
+            }
+            if (outputStream != null) {
+                outputStream.close();
+            }
+        }
+    }
+
+    private void extractZip(File archiveFile, File targetDir) throws Exception {
+        ZipInputStream zipInputStream = null;
+        try {
+            zipInputStream = new ZipInputStream(new BufferedInputStream(new java.io.FileInputStream(archiveFile)));
+            ZipEntry entry;
+            while ((entry = zipInputStream.getNextEntry()) != null) {
+                File outputFile = new File(targetDir, entry.getName());
+                String targetPath = targetDir.getCanonicalPath();
+                String outputPath = outputFile.getCanonicalPath();
+                if (!outputPath.startsWith(targetPath + File.separator) && !outputPath.equals(targetPath)) {
+                    throw new IllegalStateException("检测到非法路径：" + entry.getName());
+                }
+                if (entry.isDirectory()) {
+                    ensureDir(outputFile);
+                } else {
+                    ensureDir(outputFile.getParentFile());
+                    BufferedOutputStream outputStream = null;
+                    try {
+                        outputStream = new BufferedOutputStream(new FileOutputStream(outputFile));
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = zipInputStream.read(buffer)) != -1) {
+                            outputStream.write(buffer, 0, len);
+                        }
+                        outputStream.flush();
+                    } finally {
+                        if (outputStream != null) {
+                            outputStream.close();
+                        }
+                    }
+                }
+                zipInputStream.closeEntry();
+            }
+        } finally {
+            if (zipInputStream != null) {
+                zipInputStream.close();
+            }
+        }
+    }
+
+    private File findGradleExecutable(File dir) {
+        if (dir == null || !dir.exists()) {
+            return null;
+        }
+        File direct = new File(dir, "bin/gradle");
+        if (direct.exists() && direct.isFile()) {
+            direct.setExecutable(true);
+            return direct;
+        }
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return null;
+        }
+        for (int i = 0; i < files.length; i++) {
+            File file = files[i];
+            if (!file.isDirectory()) {
+                continue;
+            }
+            File found = findGradleExecutable(file);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private void clearDirectory(File file) {
+        if (file == null || !file.exists()) {
+            return;
+        }
+        if (file.isDirectory()) {
+            File[] files = file.listFiles();
+            if (files != null) {
+                for (int i = 0; i < files.length; i++) {
+                    clearDirectory(files[i]);
+                }
+            }
+        }
+        file.delete();
+    }
+
+    private void ensureDir(File dir) {
+        if (dir == null || dir.exists()) {
+            return;
+        }
+        dir.mkdirs();
     }
 
     private void collectIssue(String line, ArrayList<BuildIssue> issues) {

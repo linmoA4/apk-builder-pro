@@ -263,6 +263,18 @@ public class EnvironmentManager {
         return new File(baseDir, "packages").getAbsolutePath();
     }
 
+    public String getGradlePackageArchivePath() {
+        return getPackageCacheDir() + "/gradle/gradle-8.7-bin.zip";
+    }
+
+    public String getGradleInstallDir() {
+        return new File(baseDir, "gradle").getAbsolutePath();
+    }
+
+    public String getGradleUserHomeDir() {
+        return new File(baseDir, "gradle-user-home").getAbsolutePath();
+    }
+
     public String getBaseDir() {
         return baseDir.getAbsolutePath();
     }
