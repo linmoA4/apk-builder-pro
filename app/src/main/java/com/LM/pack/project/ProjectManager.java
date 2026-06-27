@@ -232,7 +232,7 @@ public class ProjectManager {
         String packageName = firstNonEmpty(meta.getProperty("packageName"), readPackageName(projectRoot), "");
         String versionName = firstNonEmpty(meta.getProperty("versionName"), readVersionName(projectRoot), "1.0");
         String iconPath = firstNonEmpty(meta.getProperty("iconPath"), findProjectIcon(projectRoot), "");
-        String mode = firstNonEmpty(meta.getProperty("mode"), "项目");
+        String mode = firstNonEmpty(meta.getProperty("mode"), "项目", "");
         return new ProjectEntry(projectName, packageName, projectRoot.getAbsolutePath(), iconPath, mode, versionName);
     }
 

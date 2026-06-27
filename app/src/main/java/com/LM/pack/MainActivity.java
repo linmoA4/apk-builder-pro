@@ -455,7 +455,7 @@ public class MainActivity extends Activity {
                             etIconPath.getText().toString().trim(),
                             etSplashPath.getText().toString().trim()
                         );
-                        File rootDir = projectManager.createShellProject(this, config, environmentManager.getProjectRootDir(appName));
+                        File rootDir = projectManager.createShellProject(MainActivity.this, config, environmentManager.getProjectRootDir(appName));
                         logManager.appendLogLine("INFO", "项目已创建，可直接进入编辑页继续修改。");
                         logManager.appendKeyValue("INFO", "创建目录", rootDir.getAbsolutePath());
                         refreshProjectList();
