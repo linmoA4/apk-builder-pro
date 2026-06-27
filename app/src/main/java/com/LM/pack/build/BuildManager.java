@@ -23,6 +23,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class BuildManager {
+    public static final int EXIT_CODE_CANCELLED = -2;
 
     public interface OfflineGradleListener {
         void onProgress(String message, int percent, boolean indeterminate);
@@ -32,6 +33,9 @@ public class BuildManager {
 
     private final Context context;
     private final EnvironmentManager environmentManager;
+    private final Object processLock = new Object();
+    private volatile Process activeProcess;
+    private volatile boolean cancelRequested = false;
 
     public BuildManager(Context context, EnvironmentManager environmentManager) {
         this.context = context.getApplicationContext();
@@ -69,12 +73,22 @@ public class BuildManager {
         final String selectedJdkName,
         final BuildListener listener
     ) {
+        cancelRequested = false;
         new Thread(new Runnable() {
             @Override
             public void run() {
                 executeGradleBuild(projectDir, jdkDir, sdkDir, ndkDir, selectedJdkName, listener);
             }
         }).start();
+    }
+
+    public void cancelCurrentBuild() {
+        cancelRequested = true;
+        Process process;
+        synchronized (processLock) {
+            process = activeProcess;
+        }
+        destroyProcessQuietly(process);
     }
 
     public void prepareOfflineGradleAsync(final OfflineGradleListener listener) {
@@ -187,8 +201,20 @@ public class BuildManager {
             ProjectRequirements requirements = inspectProjectRequirements(projectRoot);
             logResolvedEnvironment(projectRoot, requirements, selectedJdkName, jdkDir, sdkDir, ndkDir, listener);
             syncProjectLocalProperties(projectRoot, sdkDir, ndkDir, listener);
+            if (cancelRequested) {
+                listener.onFinished(createCancelledResult(apkPath, issues));
+                return;
+            }
             prepareRequiredSdkPackages(projectRoot, jdkDir, sdkDir, listener, requirements);
+            if (cancelRequested) {
+                listener.onFinished(createCancelledResult(apkPath, issues));
+                return;
+            }
             File offlineGradleExecutable = prepareOfflineGradle(null, listener);
+            if (cancelRequested) {
+                listener.onFinished(createCancelledResult(apkPath, issues));
+                return;
+            }
             ProcessBuilder processBuilder;
             if (offlineGradleExecutable != null) {
                 listener.onLogLine("开始执行真实构建命令。");
@@ -245,9 +271,13 @@ public class BuildManager {
             }
 
             process = processBuilder.start();
+            setActiveProcess(process);
             reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
             String line;
             while ((line = reader.readLine()) != null) {
+                if (cancelRequested) {
+                    break;
+                }
                 listener.onLogLine(line);
                 collectIssue(line, issues);
                 String detectedApkPath = detectApkPath(line);
@@ -257,6 +287,10 @@ public class BuildManager {
             }
 
             int exitCode = process.waitFor();
+            if (cancelRequested) {
+                listener.onFinished(createCancelledResult(apkPath, issues));
+                return;
+            }
             if (exitCode == 0) {
                 if (apkPath.length() == 0) {
                     apkPath = guessApkPath(projectRoot);
@@ -266,7 +300,11 @@ public class BuildManager {
                 listener.onFinished(new BuildResult(false, exitCode, "真实打包失败，Gradle 退出码：" + exitCode, apkPath, issues));
             }
         } catch (Exception e) {
-            listener.onFinished(new BuildResult(false, -1, "真实打包异常：" + e.getMessage(), apkPath, issues));
+            if (cancelRequested) {
+                listener.onFinished(createCancelledResult(apkPath, issues));
+            } else {
+                listener.onFinished(new BuildResult(false, -1, "真实打包异常：" + e.getMessage(), apkPath, issues));
+            }
         } finally {
             try {
                 if (reader != null) {
@@ -274,7 +312,9 @@ public class BuildManager {
                 }
             } catch (Exception e) {
             }
+            clearActiveProcess(process);
             destroyProcessQuietly(process);
+            cancelRequested = false;
         }
     }
 
@@ -479,14 +519,21 @@ public class BuildManager {
                 listener.onLogLine(title + " 开始执行。");
             }
             process = processBuilder.start();
+            setActiveProcess(process);
             reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
             String line;
             while ((line = reader.readLine()) != null) {
+                if (cancelRequested) {
+                    break;
+                }
                 if (listener != null) {
                     listener.onLogLine(line);
                 }
             }
             int exitCode = process.waitFor();
+            if (cancelRequested) {
+                throw new InterruptedException(title + " 已取消");
+            }
             if (exitCode != 0) {
                 throw new IllegalStateException(title + " 失败，退出码：" + exitCode);
             }
@@ -497,6 +544,7 @@ public class BuildManager {
             if (reader != null) {
                 reader.close();
             }
+            clearActiveProcess(process);
             destroyProcessQuietly(process);
         }
     }
@@ -517,6 +565,24 @@ public class BuildManager {
             } catch (Exception innerIgnored) {
             }
         }
+    }
+
+    private void setActiveProcess(Process process) {
+        synchronized (processLock) {
+            activeProcess = process;
+        }
+    }
+
+    private void clearActiveProcess(Process process) {
+        synchronized (processLock) {
+            if (activeProcess == process) {
+                activeProcess = null;
+            }
+        }
+    }
+
+    private BuildResult createCancelledResult(String apkPath, ArrayList<BuildIssue> issues) {
+        return new BuildResult(false, EXIT_CODE_CANCELLED, "构建已取消", apkPath, issues);
     }
 
     private File prepareOfflineGradle(ProgressCallback progressCallback, BuildListener listener) {

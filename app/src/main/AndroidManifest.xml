@@ -17,6 +17,7 @@
 
         <activity
             android:name=".StartupActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -26,14 +27,18 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="false" />
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:launchMode="singleTask" />
 
         <activity
             android:name=".SettingsActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false" />
 
         <activity
             android:name=".FileBrowserActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false" />
 
     </application>

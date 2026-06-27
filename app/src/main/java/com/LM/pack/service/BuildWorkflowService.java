@@ -19,12 +19,15 @@ public class BuildWorkflowService {
         void onBuildStarted();
         void onBuildLog(String line);
         void onBuildFinished(BuildResult result);
+        void onWorkflowCancelled(String message);
     }
 
     private final BuildManager buildManager;
     private final ProjectPreflightChecker preflightChecker;
     private final EnvironmentManager environmentManager;
     private final Handler mainHandler;
+    private volatile boolean cancelRequested = false;
+    private volatile Thread preflightThread;
 
     public BuildWorkflowService(
         BuildManager buildManager,
@@ -51,7 +54,8 @@ public class BuildWorkflowService {
         final int resolvedNdkIndex = environmentManager.recommendNdkIndex(projectDir);
         environmentManager.saveSelectedJdkIndex(resolvedJdkIndex);
         environmentManager.saveSelectedNdkIndex(resolvedNdkIndex);
-        new Thread(new Runnable() {
+        cancelRequested = false;
+        preflightThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
@@ -65,6 +69,10 @@ public class BuildWorkflowService {
                     mainHandler.post(new Runnable() {
                         @Override
                         public void run() {
+                            if (cancelRequested) {
+                                listener.onWorkflowCancelled("构建已取消");
+                                return;
+                            }
                             if (!issues.isEmpty()) {
                                 listener.onPreflightFailed(issues);
                                 return;
@@ -86,12 +94,28 @@ public class BuildWorkflowService {
                     mainHandler.post(new Runnable() {
                         @Override
                         public void run() {
-                            listener.onPreflightFailed(issues);
+                            if (cancelRequested) {
+                                listener.onWorkflowCancelled("构建已取消");
+                            } else {
+                                listener.onPreflightFailed(issues);
+                            }
                         }
                     });
+                } finally {
+                    preflightThread = null;
                 }
             }
-        }).start();
+        });
+        preflightThread.start();
+    }
+
+    public void cancelCurrentWork() {
+        cancelRequested = true;
+        Thread thread = preflightThread;
+        if (thread != null) {
+            thread.interrupt();
+        }
+        buildManager.cancelCurrentBuild();
     }
 
     private String buildErrorMessage(Exception e) {
@@ -132,7 +156,11 @@ public class BuildWorkflowService {
                     mainHandler.post(new Runnable() {
                         @Override
                         public void run() {
-                            listener.onBuildFinished(result);
+                            if (cancelRequested || result.getExitCode() == BuildManager.EXIT_CODE_CANCELLED) {
+                                listener.onWorkflowCancelled(result.getMessage());
+                            } else {
+                                listener.onBuildFinished(result);
+                            }
                         }
                     });
                 }

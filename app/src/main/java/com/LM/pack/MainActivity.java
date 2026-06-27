@@ -9,6 +9,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -80,6 +81,12 @@ public class MainActivity extends Activity {
     private static final int REQUEST_IMPORT_ZIP = 4102;
     private static final int REQUEST_IMPORT_FOLDER = 4103;
     private static final int REQUEST_PICK_IMAGE = 4104;
+    private static final String STATE_VIEW_PAGE = "state_view_page";
+    private static final String STATE_CURRENT_PROJECT_DIR = "state_current_project_dir";
+    private static final String STATE_CURRENT_FILE_PATH = "state_current_file_path";
+    private static final String STATE_PROJECT_PREPARED = "state_project_prepared";
+    private static final String STATE_BUILD_RUNNING = "state_build_running";
+    private static final String STATE_EXPANDED_DIRS = "state_expanded_dirs";
 
     private Handler handler;
 
@@ -130,6 +137,7 @@ public class MainActivity extends Activity {
     private TextView tvProgressMessage;
     private TextView tvProgressPercent;
     private GlassProgressBarView progressBarFancy;
+    private Button btnProgressCancel;
 
     private final ArrayList<ProjectEntry> projectEntries = new ArrayList<ProjectEntry>();
     private final ArrayList<FileTreeItem> fileTreeItems = new ArrayList<FileTreeItem>();
@@ -161,6 +169,7 @@ public class MainActivity extends Activity {
     private Runnable validationRunnable;
     private AppThemePalette palette;
     private ImagePickerTarget pendingImagePickerTarget;
+    private Runnable progressCancelAction;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -189,6 +198,7 @@ public class MainActivity extends Activity {
         appendStartupLogs();
         refreshProjectList();
         showHome();
+        restoreUiState(savedInstanceState);
     }
 
     @Override
@@ -197,6 +207,62 @@ public class MainActivity extends Activity {
         environmentState = environmentManager.loadState();
         selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
         selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
+        applyThemeUi();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (handler != null && validationRunnable != null) {
+            handler.removeCallbacks(validationRunnable);
+        }
+        flushPendingAutoSave();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (outState == null) {
+            return;
+        }
+        outState.putInt(STATE_VIEW_PAGE, viewPager == null ? 0 : viewPager.getCurrentItem());
+        outState.putString(STATE_CURRENT_PROJECT_DIR, currentProject == null ? "" : currentProject.getProjectDir());
+        outState.putString(STATE_CURRENT_FILE_PATH, currentOpenFile == null ? "" : currentOpenFile.getAbsolutePath());
+        outState.putBoolean(STATE_PROJECT_PREPARED, projectPrepared);
+        outState.putBoolean(STATE_BUILD_RUNNING, isBuildRunning);
+        outState.putStringArrayList(STATE_EXPANDED_DIRS, new ArrayList<String>(expandedDirs));
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (handler != null) {
+            if (autoSaveRunnable != null) {
+                handler.removeCallbacks(autoSaveRunnable);
+            }
+            if (validationRunnable != null) {
+                handler.removeCallbacks(validationRunnable);
+            }
+        }
+        if (isFinishing() && buildWorkflowService != null) {
+            buildWorkflowService.cancelCurrentWork();
+        }
+        super.onDestroy();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        refreshProjectList();
+        environmentState = environmentManager.loadState();
+        selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
+        selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        updateFileDrawerWidth();
         applyThemeUi();
     }
 
@@ -253,14 +319,14 @@ public class MainActivity extends Activity {
         tvProgressMessage = (TextView) findViewById(R.id.tvProgressMessage);
         tvProgressPercent = (TextView) findViewById(R.id.tvProgressPercent);
         progressBarFancy = (GlassProgressBarView) findViewById(R.id.progressBarFancy);
+        btnProgressCancel = (Button) findViewById(R.id.btnProgressCancel);
 
         TextView tvLogs = (TextView) findViewById(R.id.tvLogs);
         ScrollView logScrollView = (ScrollView) findViewById(R.id.logScrollView);
         logManager = new LogManager(tvLogs, logScrollView);
 
         ViewGroup.LayoutParams layoutParams = fileDrawer.getLayoutParams();
-        layoutParams.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.88f);
-        fileDrawer.setLayoutParams(layoutParams);
+        updateFileDrawerWidth();
     }
 
     private void initAdapters() {
@@ -342,6 +408,17 @@ public class MainActivity extends Activity {
                 detectAndBuild();
             }
         });
+
+        if (btnProgressCancel != null) {
+            btnProgressCancel.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (progressCancelAction != null) {
+                        progressCancelAction.run();
+                    }
+                }
+            });
+        }
 
         btnBug.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1507,6 +1584,15 @@ public class MainActivity extends Activity {
         fileTreeAdapter.notifyDataSetChanged();
     }
 
+    private void updateFileDrawerWidth() {
+        if (fileDrawer == null) {
+            return;
+        }
+        ViewGroup.LayoutParams layoutParams = fileDrawer.getLayoutParams();
+        layoutParams.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.88f);
+        fileDrawer.setLayoutParams(layoutParams);
+    }
+
     private void handleFileTreeClick(int position) {
         if (position < 0 || position >= fileTreeItems.size()) {
             return;
@@ -1995,6 +2081,12 @@ public class MainActivity extends Activity {
     private void executeDetectAndBuild() {
         flushPendingAutoSave();
         showProgressDialog("检查错误代码", "正在进行打包前检查...");
+        setProgressCancelAction("取消构建", new Runnable() {
+            @Override
+            public void run() {
+                requestBuildCancellation();
+            }
+        });
         buildWorkflowService.checkAndBuild(
             currentProject,
             projectPrepared,
@@ -2025,6 +2117,14 @@ public class MainActivity extends Activity {
                 @Override
                 public void onBuildLog(String line) {
                     appendBuildOutput(line);
+                }
+
+                @Override
+                public void onWorkflowCancelled(String message) {
+                    dismissProgressDialog();
+                    isBuildRunning = false;
+                    logManager.appendLogLine("WARN", safeText(message, "构建已取消"));
+                    toast("已取消构建");
                 }
 
                 @Override
@@ -2463,6 +2563,7 @@ public class MainActivity extends Activity {
             progressBarFancy.setIndeterminate(false);
             progressBarFancy.setProgress(0);
         }
+        clearProgressCancelAction();
     }
 
     private void updateEditorActionButtons() {
@@ -2588,6 +2689,7 @@ public class MainActivity extends Activity {
         }
         tvProgressTitle.setText(title);
         animateOverlayIn(progressOverlay, progressCard);
+        updateProgressCancelButton();
         updateProgressDialog(message, percent, indeterminate);
     }
 
@@ -2657,6 +2759,97 @@ public class MainActivity extends Activity {
 
     private boolean sameFile(File first, File second) {
         return first != null && second != null && first.getAbsolutePath().equals(second.getAbsolutePath());
+    }
+
+    private void setProgressCancelAction(String buttonText, Runnable action) {
+        progressCancelAction = action;
+        if (btnProgressCancel != null) {
+            btnProgressCancel.setText(safeText(buttonText, "取消"));
+            btnProgressCancel.setEnabled(action != null);
+            btnProgressCancel.setAlpha(action != null ? 1f : 0.45f);
+        }
+        updateProgressCancelButton();
+    }
+
+    private void clearProgressCancelAction() {
+        progressCancelAction = null;
+        if (btnProgressCancel != null) {
+            btnProgressCancel.setText("取消构建");
+            btnProgressCancel.setEnabled(false);
+            btnProgressCancel.setAlpha(0.45f);
+            btnProgressCancel.setVisibility(View.GONE);
+        }
+    }
+
+    private void updateProgressCancelButton() {
+        if (btnProgressCancel == null) {
+            return;
+        }
+        btnProgressCancel.setVisibility(progressCancelAction == null ? View.GONE : View.VISIBLE);
+    }
+
+    private void requestBuildCancellation() {
+        if (!isBuildRunning || buildWorkflowService == null) {
+            dismissProgressDialog();
+            return;
+        }
+        setProgressCancelAction("正在取消...", null);
+        updateProgressDialog("正在取消构建，请稍候...");
+        logManager.appendLogLine("WARN", "用户请求取消当前构建流程。");
+        buildWorkflowService.cancelCurrentWork();
+    }
+
+    private void restoreUiState(Bundle savedInstanceState) {
+        if (savedInstanceState == null) {
+            return;
+        }
+        dismissProgressDialog();
+        int savedPage = savedInstanceState.getInt(STATE_VIEW_PAGE, 0);
+        if (savedPage != 1) {
+            return;
+        }
+        String projectDir = safeText(savedInstanceState.getString(STATE_CURRENT_PROJECT_DIR), "");
+        if (projectDir.length() == 0) {
+            return;
+        }
+        ProjectEntry restoredProject = findProjectEntryByDir(projectDir);
+        if (restoredProject == null) {
+            logManager.appendLogLine("WARN", "上次打开的项目已不存在或未被登记，未恢复编辑界面。");
+            return;
+        }
+        projectPrepared = savedInstanceState.getBoolean(STATE_PROJECT_PREPARED, true);
+        openProject(restoredProject);
+        ArrayList<String> savedExpandedDirs = savedInstanceState.getStringArrayList(STATE_EXPANDED_DIRS);
+        if (savedExpandedDirs != null && !savedExpandedDirs.isEmpty()) {
+            expandedDirs.clear();
+            expandedDirs.addAll(savedExpandedDirs);
+        }
+        loadProjectFiles();
+        String filePath = safeText(savedInstanceState.getString(STATE_CURRENT_FILE_PATH), "");
+        if (filePath.length() > 0) {
+            File restoredFile = new File(filePath);
+            if (restoredFile.exists() && restoredFile.isFile()) {
+                loadFileIntoEditor(restoredFile, true);
+            }
+        }
+        viewPager.setCurrentItem(1, false);
+        if (savedInstanceState.getBoolean(STATE_BUILD_RUNNING, false)) {
+            isBuildRunning = false;
+            logManager.appendLogLine("WARN", "检测到上次界面销毁前仍有构建任务，本次已停止，请重新发起打包。");
+        }
+    }
+
+    private ProjectEntry findProjectEntryByDir(String projectDir) {
+        if (projectDir == null || projectDir.length() == 0) {
+            return null;
+        }
+        for (int i = 0; i < projectEntries.size(); i++) {
+            ProjectEntry entry = projectEntries.get(i);
+            if (entry != null && projectDir.equals(entry.getProjectDir())) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     private String buildFileSecondaryText(FileTreeItem item) {
