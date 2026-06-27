@@ -68,6 +68,9 @@ public class ProjectFileService {
     }
 
     public boolean isTextEditableFile(File file) {
+        if (file == null) {
+            return false;
+        }
         String name = file.getName().toLowerCase();
         return name.endsWith(".java")
             || name.endsWith(".kt")
@@ -172,6 +175,9 @@ public class ProjectFileService {
     }
 
     private boolean shouldIgnore(File file) {
+        if (file == null) {
+            return false;
+        }
         String name = file.getName();
         return ".git".equals(name) || ".gradle".equals(name) || "build".equals(name) || ".lmproject".equals(name);
     }

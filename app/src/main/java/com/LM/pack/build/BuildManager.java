@@ -16,6 +16,7 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipEntry;
 import java.util.regex.Matcher;
@@ -223,19 +224,25 @@ public class BuildManager {
             }
             processBuilder.directory(projectRoot);
             processBuilder.redirectErrorStream(true);
-            processBuilder.environment().put("JAVA_HOME", jdkDir);
+            if (jdkDir != null && jdkDir.length() > 0) {
+                processBuilder.environment().put("JAVA_HOME", jdkDir);
+            }
             if (sdkDir != null && sdkDir.length() > 0) {
                 processBuilder.environment().put("ANDROID_HOME", sdkDir);
                 processBuilder.environment().put("ANDROID_SDK_ROOT", sdkDir);
             }
-            processBuilder.environment().put("ANDROID_NDK_HOME", ndkDir);
-            processBuilder.environment().put("ANDROID_NDK_ROOT", ndkDir);
+            if (ndkDir != null && ndkDir.length() > 0) {
+                processBuilder.environment().put("ANDROID_NDK_HOME", ndkDir);
+                processBuilder.environment().put("ANDROID_NDK_ROOT", ndkDir);
+            }
             processBuilder.environment().put("GRADLE_USER_HOME", environmentManager.getGradleUserHomeDir());
             String currentPath = processBuilder.environment().get("PATH");
             if (currentPath == null) {
                 currentPath = "";
             }
-            processBuilder.environment().put("PATH", jdkDir + "/bin:" + currentPath);
+            if (jdkDir != null && jdkDir.length() > 0) {
+                processBuilder.environment().put("PATH", jdkDir + "/bin:" + currentPath);
+            }
 
             process = processBuilder.start();
             reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
@@ -267,9 +274,7 @@ public class BuildManager {
                 }
             } catch (Exception e) {
             }
-            if (process != null) {
-                process.destroy();
-            }
+            destroyProcessQuietly(process);
         }
     }
 
@@ -492,8 +497,24 @@ public class BuildManager {
             if (reader != null) {
                 reader.close();
             }
-            if (process != null) {
-                process.destroy();
+            destroyProcessQuietly(process);
+        }
+    }
+
+    private void destroyProcessQuietly(Process process) {
+        if (process == null) {
+            return;
+        }
+        process.destroy();
+        try {
+            if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                process.waitFor(5, TimeUnit.SECONDS);
+            }
+        } catch (Exception ignored) {
+            try {
+                process.destroyForcibly();
+            } catch (Exception innerIgnored) {
             }
         }
     }

@@ -54,26 +54,51 @@ public class BuildWorkflowService {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final ArrayList<BuildIssue> issues = preflightChecker.collectProjectIssues(
-                    projectDir,
-                    projectPrepared,
-                    environmentState,
-                    resolvedJdkIndex,
-                    resolvedNdkIndex
-                );
-                mainHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (!issues.isEmpty()) {
-                            listener.onPreflightFailed(issues);
-                            return;
+                try {
+                    final ArrayList<BuildIssue> issues = preflightChecker.collectProjectIssues(
+                        projectDir,
+                        projectPrepared,
+                        environmentState,
+                        resolvedJdkIndex,
+                        resolvedNdkIndex
+                    );
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (!issues.isEmpty()) {
+                                listener.onPreflightFailed(issues);
+                                return;
+                            }
+                            listener.onBuildStarted();
+                            startRealBuild(currentProject, environmentState, resolvedJdkIndex, resolvedNdkIndex, listener);
                         }
-                        listener.onBuildStarted();
-                        startRealBuild(currentProject, environmentState, resolvedJdkIndex, resolvedNdkIndex, listener);
-                    }
-                });
+                    });
+                } catch (Exception e) {
+                    final ArrayList<BuildIssue> issues = new ArrayList<BuildIssue>();
+                    issues.add(
+                        new BuildIssue(
+                            projectDir.getAbsolutePath(),
+                            -1,
+                            "打包前检查异常：" + buildErrorMessage(e),
+                            "请检查最近修改的项目结构、构建脚本和环境配置，然后重新尝试。"
+                        )
+                    );
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            listener.onPreflightFailed(issues);
+                        }
+                    });
+                }
             }
         }).start();
+    }
+
+    private String buildErrorMessage(Exception e) {
+        if (e == null || e.getMessage() == null || e.getMessage().trim().length() == 0) {
+            return "未知错误";
+        }
+        return e.getMessage().trim();
     }
 
     private void startRealBuild(

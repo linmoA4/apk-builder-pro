@@ -1912,11 +1912,20 @@ public class MainActivity extends Activity {
         environmentState = environmentManager.loadState();
         final boolean jdkInstalled = environmentManager.isSelectedJdkInstalled(jdkIndex, environmentState);
         final boolean ndkInstalled = environmentManager.isSelectedNdkInstalled(ndkIndex, environmentState);
+        isBuildRunning = true;
         if (jdkInstalled && ndkInstalled) {
             executeDetectAndBuild();
             return;
         }
         final ToolchainInstaller installer = new ToolchainInstaller(this, environmentManager);
+        final int[] pendingInstallCount = new int[] {0};
+        if (!jdkInstalled) {
+            pendingInstallCount[0]++;
+        }
+        if (!ndkInstalled) {
+            pendingInstallCount[0]++;
+        }
+        final boolean[] installFailed = new boolean[] {false};
         final ToolchainInstaller.InstallListener jdkListener = new ToolchainInstaller.InstallListener() {
             @Override
             public void onProgress(String message, int percent, boolean indeterminate) {
@@ -1925,13 +1934,19 @@ public class MainActivity extends Activity {
             @Override
             public void onSuccess(String installedDir) {
                 environmentState = environmentManager.loadState();
-                if (ndkInstalled) {
+                if (installFailed[0]) {
+                    return;
+                }
+                pendingInstallCount[0]--;
+                if (pendingInstallCount[0] <= 0) {
                     dismissProgressDialog();
                     executeDetectAndBuild();
                 }
             }
             @Override
             public void onError(String message) {
+                installFailed[0] = true;
+                isBuildRunning = false;
                 dismissProgressDialog();
                 logManager.appendLogLine("ERROR", message);
                 toast("JDK 自动下载失败，请前往设置手动安装");
@@ -1945,13 +1960,19 @@ public class MainActivity extends Activity {
             @Override
             public void onSuccess(String installedDir) {
                 environmentState = environmentManager.loadState();
-                if (jdkInstalled) {
+                if (installFailed[0]) {
+                    return;
+                }
+                pendingInstallCount[0]--;
+                if (pendingInstallCount[0] <= 0) {
                     dismissProgressDialog();
                     executeDetectAndBuild();
                 }
             }
             @Override
             public void onError(String message) {
+                installFailed[0] = true;
+                isBuildRunning = false;
                 dismissProgressDialog();
                 logManager.appendLogLine("ERROR", message);
                 toast("NDK 自动下载失败，请前往设置手动安装");
@@ -1984,6 +2005,7 @@ public class MainActivity extends Activity {
                 @Override
                 public void onPreflightFailed(ArrayList<BuildIssue> issues) {
                     dismissProgressDialog();
+                    isBuildRunning = false;
                     lastBuildIssues.clear();
                     lastBuildIssues.addAll(issues);
                     updateBugButtonState();
