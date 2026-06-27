@@ -12,6 +12,10 @@ import java.util.Collections;
 import java.util.Comparator;
 
 public class ProjectWorkspaceService {
+    public interface ImportProgressListener {
+        void onProgress(String message, int percent);
+    }
+
     public static class ImportResult {
         private final File detectedRoot;
         private final File importedRoot;
@@ -57,8 +61,22 @@ public class ProjectWorkspaceService {
     }
 
     public ImportResult importZipProject(File zipFile) throws IOException {
+        return importZipProject(zipFile, null);
+    }
+
+    public ImportResult importZipProject(File zipFile, ImportProgressListener listener) throws IOException {
         File tempRoot = new File(environmentManager.getImportTempDir(), sanitizeName(zipFile.getName()));
-        projectManager.extractZipToTemp(zipFile, tempRoot);
+        projectManager.extractZipToTemp(zipFile, tempRoot, new ProjectManager.ExtractProgressListener() {
+            @Override
+            public void onProgress(String message, int percent) {
+                if (listener != null) {
+                    listener.onProgress(message, percent);
+                }
+            }
+        });
+        if (listener != null) {
+            listener.onProgress("正在识别 Android 工程根目录...", 96);
+        }
         File detectedRoot = projectManager.deepFindAndroidProject(tempRoot);
         if (detectedRoot == null) {
             throw new IOException("没有从压缩包中识别到有效的 Android 工程根目录。");
@@ -68,6 +86,9 @@ public class ProjectWorkspaceService {
             stripExtension(zipFile.getName()),
             environmentManager.getImportedProjectRootDir()
         );
+        if (listener != null) {
+            listener.onProgress("导入完成，正在打开项目...", 100);
+        }
         return new ImportResult(detectedRoot, importedRoot);
     }
 

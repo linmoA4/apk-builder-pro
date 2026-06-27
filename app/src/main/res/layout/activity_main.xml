@@ -407,4 +407,61 @@
         android:textSize="26sp"
         android:tag="primaryButton primary" />
 
+    <FrameLayout
+        android:id="@+id/progressOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#8A091019"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginLeft="24dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginRight="24dp"
+            android:layout_marginBottom="24dp"
+            android:orientation="vertical"
+            android:padding="18dp"
+            android:tag="panelRaised">
+
+            <TextView
+                android:id="@+id/tvProgressTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="处理中"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:tag="primary" />
+
+            <TextView
+                android:id="@+id/tvProgressMessage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="请稍候..."
+                android:textSize="13sp"
+                android:tag="secondary" />
+
+            <com.LM.pack.theme.GlassProgressBarView
+                android:id="@+id/progressBarFancy"
+                android:layout_width="match_parent"
+                android:layout_height="14dp"
+                android:layout_marginTop="16dp" />
+
+            <TextView
+                android:id="@+id/tvProgressPercent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="0%"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:tag="primary" />
+        </LinearLayout>
+    </FrameLayout>
+
 </FrameLayout>

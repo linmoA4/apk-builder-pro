@@ -13,15 +13,20 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 public class ProjectManager {
 
     private static final String META_DIR = ".lmproject";
     private static final String META_FILE = "meta.properties";
+
+    public interface ExtractProgressListener {
+        void onProgress(String message, int percent);
+    }
 
     public File createShellProject(Context context, ProjectConfig config, String projectRootPath) throws IOException {
         File projectRoot = new File(projectRootPath);
@@ -134,13 +139,25 @@ public class ProjectManager {
     }
 
     public File extractZipToTemp(File zipFile, File tempDir) throws IOException {
+        return extractZipToTemp(zipFile, tempDir, null);
+    }
+
+    public File extractZipToTemp(File zipFile, File tempDir, ExtractProgressListener listener) throws IOException {
         clearDirectory(tempDir);
         ensureDir(tempDir);
-        ZipInputStream zipInputStream = null;
+        ZipFile zip = null;
         try {
-            zipInputStream = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
-            ZipEntry entry;
-            while ((entry = zipInputStream.getNextEntry()) != null) {
+            zip = new ZipFile(zipFile);
+            long totalBytes = calculateZipTotalBytes(zip);
+            long copiedBytes = 0L;
+            int processedEntries = 0;
+            int totalEntries = Math.max(1, zip.size());
+            if (listener != null) {
+                listener.onProgress("正在分析压缩包结构...", 2);
+            }
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
                 File outputFile = new File(tempDir, entry.getName());
                 String targetPath = tempDir.getCanonicalPath();
                 String outputPath = outputFile.getCanonicalPath();
@@ -151,19 +168,34 @@ public class ProjectManager {
                     ensureDir(outputFile);
                 } else {
                     ensureDir(outputFile.getParentFile());
-                    FileOutputStream outputStream = new FileOutputStream(outputFile);
+                    FileOutputStream outputStream = null;
+                    InputStream entryInputStream = null;
                     try {
-                        copyStream(zipInputStream, outputStream);
+                        outputStream = new FileOutputStream(outputFile);
+                        entryInputStream = new BufferedInputStream(zip.getInputStream(entry));
+                        copiedBytes += copyStreamWithCount(entryInputStream, outputStream);
                     } finally {
-                        outputStream.close();
+                        if (entryInputStream != null) {
+                            entryInputStream.close();
+                        }
+                        if (outputStream != null) {
+                            outputStream.close();
+                        }
                     }
                 }
-                zipInputStream.closeEntry();
+                processedEntries++;
+                if (listener != null) {
+                    int percent = computeZipProgress(totalBytes, copiedBytes, processedEntries, totalEntries);
+                    listener.onProgress("正在解压：" + simplifyZipEntryName(entry.getName()), percent);
+                }
+            }
+            if (listener != null) {
+                listener.onProgress("压缩包解压完成", 100);
             }
             return tempDir;
         } finally {
-            if (zipInputStream != null) {
-                zipInputStream.close();
+            if (zip != null) {
+                zip.close();
             }
         }
     }
@@ -812,6 +844,50 @@ public class ProjectManager {
             outputStream.write(buffer, 0, len);
         }
         outputStream.flush();
+    }
+
+    private long copyStreamWithCount(InputStream inputStream, FileOutputStream outputStream) throws IOException {
+        byte[] buffer = new byte[8192];
+        int len;
+        long copied = 0L;
+        while ((len = inputStream.read(buffer)) != -1) {
+            outputStream.write(buffer, 0, len);
+            copied += len;
+        }
+        outputStream.flush();
+        return copied;
+    }
+
+    private long calculateZipTotalBytes(ZipFile zipFile) {
+        long total = 0L;
+        Enumeration<? extends ZipEntry> entries = zipFile.entries();
+        while (entries.hasMoreElements()) {
+            ZipEntry entry = entries.nextElement();
+            long size = entry.getSize();
+            if (!entry.isDirectory() && size > 0L) {
+                total += size;
+            }
+        }
+        return total;
+    }
+
+    private int computeZipProgress(long totalBytes, long copiedBytes, int processedEntries, int totalEntries) {
+        if (totalBytes > 0L) {
+            return Math.max(2, Math.min(100, (int) ((copiedBytes * 100L) / totalBytes)));
+        }
+        return Math.max(2, Math.min(100, (processedEntries * 100) / Math.max(1, totalEntries)));
+    }
+
+    private String simplifyZipEntryName(String entryName) {
+        if (entryName == null || entryName.length() == 0) {
+            return "文件";
+        }
+        String normalized = entryName.replace('\\', '/');
+        int lastSlash = normalized.lastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash < normalized.length() - 1) {
+            return normalized.substring(lastSlash + 1);
+        }
+        return normalized;
     }
 
     private File findFileByName(File dir, String fileName) {

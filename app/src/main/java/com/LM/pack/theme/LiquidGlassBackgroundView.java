@@ -1,7 +1,6 @@
 package com.LM.pack.theme;
 
 import android.content.Context;
-import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
@@ -14,7 +13,8 @@ import android.view.View;
 
 public class LiquidGlassBackgroundView extends View {
 
-    private static final int NOISE_POINT_COUNT = 180;
+    private static final int NOISE_POINT_COUNT = 72;
+    private static final long FRAME_DELAY_MS = 48L;
 
     private final Paint basePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint orbPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -23,6 +23,10 @@ public class LiquidGlassBackgroundView extends View {
     private final float[] noiseSeeds = new float[NOISE_POINT_COUNT * 2];
 
     private AppThemePalette palette;
+    private Shader cachedBaseShader;
+    private int lastWidth;
+    private int lastHeight;
+    private long lastFrameTime;
 
     public LiquidGlassBackgroundView(Context context) {
         super(context);
@@ -40,7 +44,6 @@ public class LiquidGlassBackgroundView extends View {
     }
 
     private void init() {
-        setLayerType(LAYER_TYPE_SOFTWARE, null);
         orbPaint.setStyle(Paint.Style.FILL);
         noisePaint.setStyle(Paint.Style.FILL);
         for (int i = 0; i < noiseSeeds.length; i++) {
@@ -50,7 +53,14 @@ public class LiquidGlassBackgroundView extends View {
 
     public void setPalette(AppThemePalette palette) {
         this.palette = palette;
+        rebuildBaseShader(getWidth(), getHeight());
         invalidate();
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        rebuildBaseShader(w, h);
     }
 
     @Override
@@ -61,16 +71,11 @@ public class LiquidGlassBackgroundView extends View {
         }
         float width = getWidth();
         float height = getHeight();
+        if (cachedBaseShader == null || width != lastWidth || height != lastHeight) {
+            rebuildBaseShader((int) width, (int) height);
+        }
         tempRect.set(0f, 0f, width, height);
-        basePaint.setShader(new LinearGradient(
-            0f,
-            0f,
-            width,
-            height,
-            new int[] {palette.backgroundStart, palette.backgroundMid, palette.backgroundEnd},
-            new float[] {0f, 0.45f, 1f},
-            Shader.TileMode.CLAMP
-        ));
+        basePaint.setShader(cachedBaseShader);
         canvas.drawRect(tempRect, basePaint);
 
         long now = SystemClock.uptimeMillis();
@@ -82,14 +87,21 @@ public class LiquidGlassBackgroundView extends View {
         if (palette.liquid) {
             drawOrb(canvas, width * 0.52f, height * 0.42f, width * 0.26f, palette.orbSecondary);
             drawNoise(canvas, width, height, 1.4f);
-            postInvalidateOnAnimation();
+            if (getWindowVisibility() == VISIBLE) {
+                long delta = now - lastFrameTime;
+                if (delta >= FRAME_DELAY_MS) {
+                    lastFrameTime = now;
+                    postInvalidateDelayed(FRAME_DELAY_MS);
+                } else {
+                    postInvalidateDelayed(FRAME_DELAY_MS - delta);
+                }
+            }
         } else {
             drawNoise(canvas, width, height, 0.8f);
         }
     }
 
     private void drawOrb(Canvas canvas, float cx, float cy, float radius, int color) {
-        orbPaint.setMaskFilter(new BlurMaskFilter(radius * 0.18f, BlurMaskFilter.Blur.NORMAL));
         orbPaint.setShader(new RadialGradient(
             cx,
             cy,
@@ -103,7 +115,6 @@ public class LiquidGlassBackgroundView extends View {
             Shader.TileMode.CLAMP
         ));
         canvas.drawCircle(cx, cy, radius, orbPaint);
-        orbPaint.setMaskFilter(null);
     }
 
     private void drawNoise(Canvas canvas, float width, float height, float radiusDp) {
@@ -119,5 +130,23 @@ public class LiquidGlassBackgroundView extends View {
 
     private int withAlpha(int color, int alpha) {
         return (alpha << 24) | (color & 0x00FFFFFF);
+    }
+
+    private void rebuildBaseShader(int width, int height) {
+        lastWidth = width;
+        lastHeight = height;
+        if (palette == null || width <= 0 || height <= 0) {
+            cachedBaseShader = null;
+            return;
+        }
+        cachedBaseShader = new LinearGradient(
+            0f,
+            0f,
+            width,
+            height,
+            new int[] {palette.backgroundStart, palette.backgroundMid, palette.backgroundEnd},
+            new float[] {0f, 0.45f, 1f},
+            Shader.TileMode.CLAMP
+        );
     }
 }

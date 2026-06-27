@@ -2,7 +2,6 @@ package com.LM.pack;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.ProgressDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -53,6 +52,7 @@ import com.LM.pack.service.BuildWorkflowService;
 import com.LM.pack.service.ProjectFileService;
 import com.LM.pack.service.ProjectWorkspaceService;
 import com.LM.pack.theme.AppThemePalette;
+import com.LM.pack.theme.GlassProgressBarView;
 import com.LM.pack.theme.LiquidGlassBackgroundView;
 import com.LM.pack.theme.ThemeManager;
 import java.io.File;
@@ -63,7 +63,6 @@ import java.util.Comparator;
 public class MainActivity extends Activity {
 
     private Handler handler;
-    private ProgressDialog progressDialog;
 
     private LogManager logManager;
     private EnvironmentManager environmentManager;
@@ -99,6 +98,11 @@ public class MainActivity extends Activity {
     private ListView lvProjects;
     private ListView lvFiles;
     private CodeEditorView etEditor;
+    private View progressOverlay;
+    private TextView tvProgressTitle;
+    private TextView tvProgressMessage;
+    private TextView tvProgressPercent;
+    private GlassProgressBarView progressBarFancy;
 
     private final ArrayList<ProjectEntry> projectEntries = new ArrayList<ProjectEntry>();
     private final ArrayList<FileTreeItem> fileTreeItems = new ArrayList<FileTreeItem>();
@@ -185,6 +189,11 @@ public class MainActivity extends Activity {
         lvProjects = (ListView) findViewById(R.id.lvProjects);
         lvFiles = (ListView) findViewById(R.id.lvFiles);
         etEditor = (CodeEditorView) findViewById(R.id.etEditor);
+        progressOverlay = findViewById(R.id.progressOverlay);
+        tvProgressTitle = (TextView) findViewById(R.id.tvProgressTitle);
+        tvProgressMessage = (TextView) findViewById(R.id.tvProgressMessage);
+        tvProgressPercent = (TextView) findViewById(R.id.tvProgressPercent);
+        progressBarFancy = (GlassProgressBarView) findViewById(R.id.progressBarFancy);
 
         TextView tvLogs = (TextView) findViewById(R.id.tvLogs);
         ScrollView logScrollView = (ScrollView) findViewById(R.id.logScrollView);
@@ -742,12 +751,25 @@ public class MainActivity extends Activity {
     }
 
     private void importZipProject(final File zipFile) {
-        showProgressDialog("导入项目", "正在解压压缩包...");
+        showProgressDialog("导入项目", "正在分析压缩包...", 2, false);
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    final ProjectWorkspaceService.ImportResult importResult = projectWorkspaceService.importZipProject(zipFile);
+                    final ProjectWorkspaceService.ImportResult importResult = projectWorkspaceService.importZipProject(
+                        zipFile,
+                        new ProjectWorkspaceService.ImportProgressListener() {
+                            @Override
+                            public void onProgress(final String message, final int percent) {
+                                handler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        updateProgressDialog(message, percent, false);
+                                    }
+                                });
+                            }
+                        }
+                    );
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
@@ -1105,23 +1127,44 @@ public class MainActivity extends Activity {
     }
 
     private void showProgressDialog(String title, String message) {
-        dismissProgressDialog();
-        progressDialog = new ProgressDialog(this);
-        progressDialog.setTitle(title);
-        progressDialog.setMessage(message);
-        progressDialog.setCancelable(false);
-        progressDialog.show();
+        showProgressDialog(title, message, -1, true);
     }
 
     private void updateProgressDialog(String message) {
-        if (progressDialog != null && progressDialog.isShowing()) {
-            progressDialog.setMessage(message);
-        }
+        updateProgressDialog(message, -1, true);
     }
 
     private void dismissProgressDialog() {
-        if (progressDialog != null && progressDialog.isShowing()) {
-            progressDialog.dismiss();
+        if (progressOverlay != null) {
+            progressOverlay.setVisibility(View.GONE);
+        }
+        if (progressBarFancy != null) {
+            progressBarFancy.setIndeterminate(false);
+            progressBarFancy.setProgress(0);
+        }
+    }
+
+    private void showProgressDialog(String title, String message, int percent, boolean indeterminate) {
+        if (progressOverlay == null) {
+            return;
+        }
+        progressOverlay.setVisibility(View.VISIBLE);
+        tvProgressTitle.setText(title);
+        updateProgressDialog(message, percent, indeterminate);
+    }
+
+    private void updateProgressDialog(String message, int percent, boolean indeterminate) {
+        if (progressOverlay == null || progressBarFancy == null) {
+            return;
+        }
+        tvProgressMessage.setText(message);
+        progressBarFancy.setIndeterminate(indeterminate);
+        if (indeterminate) {
+            tvProgressPercent.setText("处理中");
+        } else {
+            int safePercent = Math.max(0, Math.min(100, percent));
+            progressBarFancy.setProgress(safePercent);
+            tvProgressPercent.setText(safePercent + "%");
         }
     }
 
