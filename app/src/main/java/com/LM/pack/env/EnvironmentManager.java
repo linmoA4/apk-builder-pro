@@ -29,11 +29,16 @@ public class EnvironmentManager {
     private static final String KEY_NDK_DIR = "installed_ndk_dir";
     private static final String KEY_SELECTED_JDK_INDEX = "selected_jdk_index";
     private static final String KEY_SELECTED_NDK_INDEX = "selected_ndk_index";
+    private static final String KEY_DOWNLOAD_ROUTE = "download_route";
+
+    public static final String DOWNLOAD_ROUTE_CHINA = "china";
+    public static final String DOWNLOAD_ROUTE_GLOBAL = "global";
 
     public static final int DEFAULT_JDK_INDEX = 3;
     public static final int DEFAULT_NDK_INDEX = 0;
     public static final int EMBEDDED_JDK_INDEX = DEFAULT_JDK_INDEX;
     public static final int EMBEDDED_NDK_INDEX = DEFAULT_NDK_INDEX;
+    public static final String DEFAULT_DOWNLOAD_ROUTE = DOWNLOAD_ROUTE_CHINA;
 
     public static final String SDK_DISPLAY_NAME = "Android SDK Command-line Tools";
     public static final String DEFAULT_GRADLE_VERSION = "8.7";
@@ -59,21 +64,21 @@ public class EnvironmentManager {
     };
 
     public static final String[] JDK_URLS = {
-        "https://aka.ms/download-jdk/microsoft-jdk-8-linux-x64.tar.gz",
-        "https://aka.ms/download-jdk/microsoft-jdk-11-linux-x64.tar.gz",
-        "https://aka.ms/download-jdk/microsoft-jdk-17-linux-x64.tar.gz",
-        "https://aka.ms/download-jdk/microsoft-jdk-21-linux-x64.tar.gz",
-        "https://aka.ms/download-jdk/microsoft-jdk-25-linux-x64.tar.gz",
-        "https://aka.ms/download-jdk/microsoft-jdk-26-linux-x64.tar.gz"
+        "https://api.adoptium.net/v3/binary/latest/8/ga/linux/x64/jdk/hotspot/normal/eclipse",
+        "https://api.adoptium.net/v3/binary/latest/11/ga/linux/x64/jdk/hotspot/normal/eclipse",
+        "https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jdk/hotspot/normal/eclipse",
+        "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse",
+        "https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jdk/hotspot/normal/eclipse",
+        "https://api.adoptium.net/v3/binary/latest/26/ga/linux/x64/jdk/hotspot/normal/eclipse"
     };
 
     public static final String[][] JDK_FALLBACK_URLS = {
-        {"https://aka.ms/download-jdk/microsoft-jdk-8-linux-x64.tar.gz"},
-        {"https://aka.ms/download-jdk/microsoft-jdk-11-linux-x64.tar.gz"},
-        {"https://aka.ms/download-jdk/microsoft-jdk-17-linux-x64.tar.gz"},
-        {"https://aka.ms/download-jdk/microsoft-jdk-21-linux-x64.tar.gz"},
-        {"https://aka.ms/download-jdk/microsoft-jdk-25-linux-x64.tar.gz"},
-        {"https://aka.ms/download-jdk/microsoft-jdk-26-linux-x64.tar.gz"}
+        {"https://api.adoptium.net/v3/binary/latest/8/ga/linux/x64/jdk/hotspot/normal/eclipse"},
+        {"https://api.adoptium.net/v3/binary/latest/11/ga/linux/x64/jdk/hotspot/normal/eclipse"},
+        {"https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jdk/hotspot/normal/eclipse"},
+        {"https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse"},
+        {"https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jdk/hotspot/normal/eclipse"},
+        {"https://api.adoptium.net/v3/binary/latest/26/ga/linux/x64/jdk/hotspot/normal/eclipse"}
     };
 
     public static final String[] NDK_NAMES = {
@@ -103,10 +108,8 @@ public class EnvironmentManager {
         }
     };
 
-    public static final String[] SDK_PRIMARY_URLS = {
-        "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip",
-        "https://googledownloads.cn/android/repository/commandlinetools-linux-13114758_latest.zip"
-    };
+    public static final String SDK_OFFICIAL_URL = "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip";
+    public static final String SDK_CHINA_URL = "https://googledownloads.cn/android/repository/commandlinetools-linux-13114758_latest.zip";
 
     public static final String[] SDK_FALLBACK_URLS = {
         "https://dl.google.com/android/repository/commandlinetools-linux-latest.zip",
@@ -242,6 +245,19 @@ public class EnvironmentManager {
             return;
         }
         sharedPreferences.edit().putInt(KEY_SELECTED_NDK_INDEX, index).apply();
+    }
+
+    public String loadDownloadRoute() {
+        String route = safeText(sharedPreferences.getString(KEY_DOWNLOAD_ROUTE, DEFAULT_DOWNLOAD_ROUTE));
+        if (DOWNLOAD_ROUTE_CHINA.equals(route) || DOWNLOAD_ROUTE_GLOBAL.equals(route)) {
+            return route;
+        }
+        return DEFAULT_DOWNLOAD_ROUTE;
+    }
+
+    public void saveDownloadRoute(String route) {
+        String normalized = normalizeDownloadRoute(route);
+        sharedPreferences.edit().putString(KEY_DOWNLOAD_ROUTE, normalized).apply();
     }
 
     public boolean isSelectedJdkInstalled(int selectedJdkIndex, EnvironmentState state) {
@@ -439,12 +455,12 @@ public class EnvironmentManager {
 
     public String[] getSdkDownloadCandidates() {
         LinkedHashSet<String> values = new LinkedHashSet<String>();
-        if (preferChinaMirror()) {
-            values.add(SDK_PRIMARY_URLS[1]);
-            values.add(SDK_PRIMARY_URLS[0]);
+        if (isChinaDownloadRoute()) {
+            values.add(SDK_CHINA_URL);
+            values.add(SDK_OFFICIAL_URL);
         } else {
-            values.add(SDK_PRIMARY_URLS[0]);
-            values.add(SDK_PRIMARY_URLS[1]);
+            values.add(SDK_OFFICIAL_URL);
+            values.add(SDK_CHINA_URL);
         }
         appendUrls(values, SDK_FALLBACK_URLS);
         return values.toArray(new String[0]);
@@ -461,7 +477,7 @@ public class EnvironmentManager {
     public String[] getNdkDownloadCandidates(int index) {
         LinkedHashSet<String> values = new LinkedHashSet<String>();
         int safeIndex = normalizeNdkIndex(index);
-        if (preferChinaMirror()) {
+        if (isChinaDownloadRoute()) {
             appendUrls(values, NDK_FALLBACK_URLS[safeIndex]);
             values.add(NDK_URLS[safeIndex]);
         } else {
@@ -480,7 +496,7 @@ public class EnvironmentManager {
         String mirror = "https://mirrors.cloud.tencent.com/gradle/gradle-" + version + "-bin.zip";
         String backup = "https://downloads.gradle.org/distributions/gradle-" + version + "-bin.zip";
         LinkedHashSet<String> values = new LinkedHashSet<String>();
-        if (preferChinaMirror()) {
+        if (isChinaDownloadRoute()) {
             values.add(mirror);
             values.add(official);
             values.add(backup);
@@ -492,15 +508,16 @@ public class EnvironmentManager {
         return values.toArray(new String[0]);
     }
 
-    public boolean preferChinaMirror() {
-        Locale locale = Locale.getDefault();
-        String country = safeText(locale.getCountry()).toUpperCase(Locale.US);
-        String language = safeText(locale.getLanguage()).toLowerCase(Locale.US);
-        return "CN".equals(country) || "zh".equals(language);
+    public boolean isChinaDownloadRoute() {
+        return DOWNLOAD_ROUTE_CHINA.equals(loadDownloadRoute());
+    }
+
+    public String getDownloadRouteDisplayName() {
+        return isChinaDownloadRoute() ? "国内路线（镜像优先）" : "国外路线（官方优先）";
     }
 
     public String getDownloadRegionLabel() {
-        return preferChinaMirror() ? "国内镜像优先" : "国外官方源优先";
+        return getDownloadRouteDisplayName();
     }
 
     public String buildToolchainRecommendationSummary(File projectDir) {
@@ -557,14 +574,26 @@ public class EnvironmentManager {
             version = DEFAULT_GRADLE_VERSION;
         }
         String distributionSha256 = getGradleDistributionSha256(version);
+        String distributionUrl = getPreferredGradleDistributionUrl(version);
         return "distributionBase=GRADLE_USER_HOME\n"
             + "distributionPath=wrapper/dists\n"
-            + "distributionUrl=https\\://services.gradle.org/distributions/gradle-" + version + "-bin.zip\n"
+            + "distributionUrl=" + escapePropertiesUrl(distributionUrl) + "\n"
             + (distributionSha256.length() == 0 ? "" : "distributionSha256Sum=" + distributionSha256 + "\n")
             + "networkTimeout=10000\n"
             + "validateDistributionUrl=true\n"
             + "zipStoreBase=GRADLE_USER_HOME\n"
             + "zipStorePath=wrapper/dists\n";
+    }
+
+    public String getPreferredGradleDistributionUrl(String gradleVersion) {
+        String version = safeText(gradleVersion);
+        if (version.length() == 0) {
+            version = DEFAULT_GRADLE_VERSION;
+        }
+        if (isChinaDownloadRoute()) {
+            return "https://mirrors.cloud.tencent.com/gradle/gradle-" + version + "-bin.zip";
+        }
+        return "https://services.gradle.org/distributions/gradle-" + version + "-bin.zip";
     }
 
     private String sanitizeDirName(String name) {
@@ -573,6 +602,18 @@ public class EnvironmentManager {
             .replace(")", "")
             .replace("，", "_")
             .replace("/", "_");
+    }
+
+    private String normalizeDownloadRoute(String route) {
+        String value = safeText(route).toLowerCase(Locale.US);
+        if (DOWNLOAD_ROUTE_GLOBAL.equals(value)) {
+            return DOWNLOAD_ROUTE_GLOBAL;
+        }
+        return DOWNLOAD_ROUTE_CHINA;
+    }
+
+    private String escapePropertiesUrl(String url) {
+        return safeText(url).replace(":", "\\:");
     }
 
     private int normalizeJdkIndex(int index) {

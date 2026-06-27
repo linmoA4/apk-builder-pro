@@ -40,6 +40,7 @@ public class SettingsActivity extends Activity {
     private LiquidGlassBackgroundView bgSceneView;
     private Button btnBackSettings;
     private Button btnPrepareEmbedded;
+    private Button btnDownloadRoute;
     private Button btnAppearanceMode;
     private Button btnSurfaceStyle;
     private TextView tvEnvironmentSummary;
@@ -89,6 +90,7 @@ public class SettingsActivity extends Activity {
         bgSceneView = (LiquidGlassBackgroundView) findViewById(R.id.bgSceneView);
         btnBackSettings = (Button) findViewById(R.id.btnBackSettings);
         btnPrepareEmbedded = (Button) findViewById(R.id.btnPrepareEmbedded);
+        btnDownloadRoute = (Button) findViewById(R.id.btnDownloadRoute);
         btnAppearanceMode = (Button) findViewById(R.id.btnAppearanceMode);
         btnSurfaceStyle = (Button) findViewById(R.id.btnSurfaceStyle);
         tvEnvironmentSummary = (TextView) findViewById(R.id.tvEnvironmentSummary);
@@ -107,6 +109,7 @@ public class SettingsActivity extends Activity {
     private void bindEvents() {
         btnBackSettings.setOnClickListener(v -> finish());
         btnPrepareEmbedded.setOnClickListener(v -> maybePrepareExternalTools(true));
+        btnDownloadRoute.setOnClickListener(v -> showDownloadRouteDialog());
         btnAppearanceMode.setOnClickListener(v -> showAppearanceModeDialog());
         btnSurfaceStyle.setOnClickListener(v -> showSurfaceStyleDialog());
     }
@@ -135,6 +138,7 @@ public class SettingsActivity extends Activity {
         tvThemeSummary.setText(buildThemeSummary());
         tvDirectoryPlan.setText(buildDirectoryPlan());
         btnPrepareEmbedded.setText(buildPrepareButtonText());
+        btnDownloadRoute.setText("下载路线：" + environmentManager.getDownloadRouteDisplayName());
     }
 
     private void maybePrepareExternalTools(boolean userTriggered) {
@@ -158,7 +162,12 @@ public class SettingsActivity extends Activity {
         selectedJdkIndex = embeddedJdkIndex;
         selectedNdkIndex = embeddedNdkIndex;
         preparingEmbeddedTools = true;
-        showProgressOverlay("自动检测环境", "正在按外置下载链路准备 SDK / JDK 21 / NDK r27 / Gradle 8.7 ...", 0, true);
+        showProgressOverlay(
+            "自动检测环境",
+            "正在按" + environmentManager.getDownloadRouteDisplayName() + "准备 SDK / JDK 21 / NDK r27 / Gradle 8.7 ...",
+            0,
+            true
+        );
         prepareExternalSdkThenRest(embeddedJdkIndex, embeddedNdkIndex, userTriggered);
     }
 
@@ -312,6 +321,23 @@ public class SettingsActivity extends Activity {
             .show();
     }
 
+    private void showDownloadRouteDialog() {
+        final String[] labels = {"国内路线（镜像优先）", "国外路线（官方优先）"};
+        final String[] values = {EnvironmentManager.DOWNLOAD_ROUTE_CHINA, EnvironmentManager.DOWNLOAD_ROUTE_GLOBAL};
+        String currentRoute = environmentManager.loadDownloadRoute();
+        int checked = EnvironmentManager.DOWNLOAD_ROUTE_GLOBAL.equals(currentRoute) ? 1 : 0;
+        new AlertDialog.Builder(this)
+            .setTitle("选择下载路线")
+            .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                environmentManager.saveDownloadRoute(values[which]);
+                refreshUi();
+                toast("已切换为" + labels[which]);
+                dialog.dismiss();
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+
     private void showSurfaceStyleDialog() {
         final String[] labels = {"正常主题", "液态玻璃主题"};
         final String[] values = {ThemeManager.STYLE_NORMAL, ThemeManager.STYLE_LIQUID};
@@ -452,12 +478,14 @@ public class SettingsActivity extends Activity {
         String ndkStatus = embeddedNdk >= 0 && environmentManager.isSelectedNdkInstalled(embeddedNdk, environmentState) ? "已准备" : "未准备";
         String gradleStatus = buildManager.isOfflineGradlePrepared() ? "已准备" : "未准备";
         return "APP 不再内嵌工具链。这里只保留一个按钮，用外置下载链路准备 4 个核心环境。"
+            + "\n当前路线：" + environmentManager.getDownloadRouteDisplayName()
             + "\n当前状态：SDK " + sdkStatus + "；JDK 21 " + jdkStatus + "；NDK r27 " + ndkStatus + "；Gradle 8.7 " + gradleStatus + "。";
     }
 
     private String buildConfigSummary() {
-        return "当前固定优先使用外置下载链路准备 Android SDK、JDK 21、NDK r27、Gradle 8.7。"
-            + "\n会先检测本地缓存，再自动下载、解压、登记目录。下载源只区分国内镜像优先和国外官方源优先。"
+        return "当前按你手动选择的下载路线准备 Android SDK、JDK 21、NDK r27、Gradle 8.7。"
+            + "\n国内路线会优先走 `googledownloads.cn`、腾讯云等镜像；国外路线会优先走 `dl.google.com`、Adoptium、Gradle 官方源。"
+            + "\nJDK 按验真文档统一改为 Adoptium 稳定直链；国内路线下 JDK 仍会回落到这条稳定源。"
             + "\n打包时会再结合项目的 `compileSdk`、`buildToolsVersion`、`ndkVersion`、Gradle Wrapper 自动推荐更合适的环境。";
     }
 
@@ -488,6 +516,7 @@ public class SettingsActivity extends Activity {
         builder.append("`jdk/`：固定存放 JDK 21。").append('\n');
         builder.append("`ndk/`：固定存放 NDK r27。").append('\n');
         builder.append("`gradle/`：固定存放 Gradle 8.7 的离线运行目录。").append('\n');
+        builder.append("下载路线：").append(environmentManager.getDownloadRouteDisplayName()).append("。切换路线后会影响后续下载、缓存命中顺序和 Wrapper 默认地址。").append('\n');
         builder.append("`projects/`：你在首页新建出来的项目。").append('\n');
         builder.append("`android/data/`：导入进来的现有 Android 项目。").append('\n');
         builder.append("`import_temp/`：导入压缩包时的临时解压区，识别完工程根目录后再正式导入。");
