@@ -29,6 +29,44 @@ public class ProjectFileService {
         expandedDirs.add(new File(currentProject.getProjectDir(), "app/src/main").getAbsolutePath());
     }
 
+    public ArrayList<FileTreeItem> listDirectory(ProjectEntry currentProject, File directory) {
+        ArrayList<FileTreeItem> items = new ArrayList<FileTreeItem>();
+        if (currentProject == null) {
+            return items;
+        }
+        File root = new File(currentProject.getProjectDir());
+        File currentDir = directory == null ? root : directory;
+        if (!currentDir.exists() || !currentDir.isDirectory()) {
+            return items;
+        }
+        File[] files = currentDir.listFiles();
+        if (files == null) {
+            return items;
+        }
+        ArrayList<File> directories = new ArrayList<File>();
+        ArrayList<File> normalFiles = new ArrayList<File>();
+        for (int i = 0; i < files.length; i++) {
+            File file = files[i];
+            if (shouldIgnore(file)) {
+                continue;
+            }
+            if (file.isDirectory()) {
+                directories.add(file);
+            } else if (isTextEditableFile(file)) {
+                normalFiles.add(file);
+            }
+        }
+        Collections.sort(directories, new FileNameComparator());
+        Collections.sort(normalFiles, new FileNameComparator());
+        for (int i = 0; i < directories.size(); i++) {
+            items.add(new FileTreeItem(directories.get(i), 0, true));
+        }
+        for (int i = 0; i < normalFiles.size(); i++) {
+            items.add(new FileTreeItem(normalFiles.get(i), 0, false));
+        }
+        return items;
+    }
+
     public boolean isTextEditableFile(File file) {
         String name = file.getName().toLowerCase();
         return name.endsWith(".java")

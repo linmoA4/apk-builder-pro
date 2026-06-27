@@ -25,9 +25,10 @@ import java.io.File;
 
 public class StartupActivity extends Activity {
 
-    private static final int STAGE_JDK = 0;
-    private static final int STAGE_NDK = 1;
-    private static final int STAGE_GRADLE = 2;
+    private static final int STAGE_SDK = 0;
+    private static final int STAGE_JDK = 1;
+    private static final int STAGE_NDK = 2;
+    private static final int STAGE_GRADLE = 3;
 
     private Handler handler;
     private EnvironmentManager environmentManager;
@@ -141,15 +142,57 @@ public class StartupActivity extends Activity {
     }
 
     private boolean needsPreparation() {
+        boolean needEmbeddedSdk = !environmentManager.isAndroidSdkRegistered(environmentState);
         boolean needEmbeddedJdk = embeddedJdkIndex >= 0 && !environmentManager.isSelectedJdkInstalled(embeddedJdkIndex, environmentState);
         boolean needEmbeddedNdk = embeddedNdkIndex >= 0 && !environmentManager.isSelectedNdkInstalled(embeddedNdkIndex, environmentState);
         boolean needGradle = !buildManager.isOfflineGradlePrepared();
-        return needEmbeddedJdk || needEmbeddedNdk || needGradle;
+        return needEmbeddedSdk || needEmbeddedJdk || needEmbeddedNdk || needGradle;
     }
 
     private void runFirstPrepare() {
-        updateStatus("首次启动，正在准备运行环境", "开始解压内置 JDK / NDK / Gradle", 10);
-        prepareEmbeddedJdk();
+        updateStatus("首次启动，正在准备运行环境", "开始解压内置 SDK / JDK / NDK / Gradle", 6);
+        prepareEmbeddedSdk();
+    }
+
+    private void prepareEmbeddedSdk() {
+        boolean needEmbeddedSdk = !environmentManager.isAndroidSdkRegistered(environmentState);
+        if (!needEmbeddedSdk) {
+            prepareEmbeddedJdk();
+            return;
+        }
+        toolchainInstaller.installEmbeddedSdk(new ToolchainInstaller.InstallListener() {
+            @Override
+            public void onProgress(final String message, final int percent, final boolean indeterminate) {
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        updateStageProgress(STAGE_SDK, percent, indeterminate, "正在解压内置 SDK", message);
+                    }
+                });
+            }
+
+            @Override
+            public void onSuccess(final String installedDir) {
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        environmentState = environmentManager.saveAndroidSdkDir(installedDir);
+                        updateStatus("Android SDK 已准备完成", installedDir, 28);
+                        prepareEmbeddedJdk();
+                    }
+                });
+            }
+
+            @Override
+            public void onError(final String message) {
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        showBootError(message);
+                    }
+                });
+            }
+        });
     }
 
     private void prepareEmbeddedJdk() {
@@ -176,7 +219,7 @@ public class StartupActivity extends Activity {
                     public void run() {
                         environmentState = environmentManager.saveInstalledJdk(EnvironmentManager.JDK_NAMES[embeddedJdkIndex], installedDir);
                         environmentManager.saveSelectedJdkIndex(embeddedJdkIndex);
-                        updateStatus("JDK 21 已准备完成", installedDir, 36);
+                        updateStatus("JDK 21 已准备完成", installedDir, 52);
                         prepareEmbeddedNdk();
                     }
                 });
@@ -218,7 +261,7 @@ public class StartupActivity extends Activity {
                     public void run() {
                         environmentState = environmentManager.saveInstalledNdk(EnvironmentManager.NDK_NAMES[embeddedNdkIndex], installedDir);
                         environmentManager.saveSelectedNdkIndex(embeddedNdkIndex);
-                        updateStatus("NDK 已准备完成", installedDir, 72);
+                        updateStatus("NDK 已准备完成", installedDir, 78);
                         prepareOfflineGradle();
                     }
                 });
@@ -244,12 +287,11 @@ public class StartupActivity extends Activity {
         updateStatus("正在解压内置 Gradle 8.7", "为后续构建准备运行环境", Math.max(currentProgress, 78));
         buildManager.prepareOfflineGradleAsync(new BuildManager.OfflineGradleListener() {
             @Override
-            public void onProgress(final String message) {
+            public void onProgress(final String message, final int percent, final boolean indeterminate) {
                 handler.post(new Runnable() {
                     @Override
                     public void run() {
-                        int nextProgress = Math.min(96, Math.max(currentProgress + 2, 82));
-                        updateStatus("正在解压内置 Gradle 8.7", safeText(message, "正在准备 Gradle 运行环境"), nextProgress);
+                        updateStageProgress(STAGE_GRADLE, percent, indeterminate, "正在解压内置 Gradle 8.7", message);
                     }
                 });
             }
@@ -284,10 +326,11 @@ public class StartupActivity extends Activity {
         handler.postDelayed(new Runnable() {
             @Override
             public void run() {
+                boolean sdkReady = environmentManager.isAndroidSdkRegistered(environmentState);
                 boolean jdkReady = environmentManager.isSelectedJdkInstalled(environmentManager.loadSelectedJdkIndex(), environmentState);
                 boolean ndkReady = environmentManager.isSelectedNdkInstalled(environmentManager.loadSelectedNdkIndex(), environmentState);
                 boolean gradleReady = buildManager.isOfflineGradlePrepared();
-                if (jdkReady && ndkReady && gradleReady) {
+                if (sdkReady && jdkReady && ndkReady && gradleReady) {
                     updateStatus("环境检查通过", "正在进入 APK Builder Pro", 100);
                     launchMain();
                 } else {
@@ -296,7 +339,7 @@ public class StartupActivity extends Activity {
                         return;
                     }
                     updateStatus("检测到环境不完整", "缺少必要组件，正在重新准备", Math.max(currentProgress, 88));
-                    prepareEmbeddedJdk();
+                    prepareEmbeddedSdk();
                 }
             }
         }, 520L);
@@ -320,8 +363,21 @@ public class StartupActivity extends Activity {
     }
 
     private void updateStageProgress(int stage, int percent, boolean indeterminate, String title, String message) {
-        int stageStart = stage == STAGE_JDK ? 10 : (stage == STAGE_NDK ? 38 : 76);
-        int stageEnd = stage == STAGE_JDK ? 38 : (stage == STAGE_NDK ? 76 : 100);
+        int stageStart;
+        int stageEnd;
+        if (stage == STAGE_SDK) {
+            stageStart = 6;
+            stageEnd = 30;
+        } else if (stage == STAGE_JDK) {
+            stageStart = 30;
+            stageEnd = 56;
+        } else if (stage == STAGE_NDK) {
+            stageStart = 56;
+            stageEnd = 82;
+        } else {
+            stageStart = 82;
+            stageEnd = 100;
+        }
         int nextProgress;
         if (indeterminate) {
             nextProgress = Math.min(stageEnd - 2, Math.max(currentProgress + 1, stageStart + 4));
@@ -349,9 +405,10 @@ public class StartupActivity extends Activity {
     }
 
     private boolean canRepairEnvironment() {
+        boolean canRepairSdk = true;
         boolean canRepairJdk = embeddedJdkIndex >= 0 || environmentManager.isSelectedJdkInstalled(environmentManager.loadSelectedJdkIndex(), environmentState);
         boolean canRepairNdk = embeddedNdkIndex >= 0 || environmentManager.isSelectedNdkInstalled(environmentManager.loadSelectedNdkIndex(), environmentState);
-        return canRepairJdk && canRepairNdk;
+        return canRepairSdk && canRepairJdk && canRepairNdk;
     }
 
     private void launchMain() {

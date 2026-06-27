@@ -29,6 +29,18 @@ public class EnvironmentManager {
 
     public static final String SDK_DISPLAY_NAME = "Android SDK Command-line Tools";
     public static final String SDK_ASSET_ARCHIVE = "toolchains/sdk/commandlinetools-linux-latest.zip";
+    public static final String SDK_PRIMARY_URL = "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip";
+    public static final String[] SDK_FALLBACK_URLS = {
+        "https://dl.google.com/android/repository/commandlinetools-linux-latest.zip",
+        "https://redirector.gvt1.com/edgedl/android/repository/commandlinetools-linux-13114758_latest.zip"
+    };
+    public static final String[] SDK_VERIFIED_DIRECT_URLS = {
+        "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip",
+        "https://dl.google.com/android/repository/commandlinetools-win-14742923_latest.zip",
+        "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+    };
+    public static final int EMBEDDED_JDK_INDEX = 3;
+    public static final int EMBEDDED_NDK_INDEX = 0;
 
     public static final String[] JDK_NAMES = {
         "JDK 8 (长期支持版)",
@@ -56,6 +68,14 @@ public class EnvironmentManager {
         {"https://aka.ms/download-jdk/microsoft-jdk-25-linux-x64.tar.gz"},
         {"https://aka.ms/download-jdk/microsoft-jdk-26-linux-x64.tar.gz"}
     };
+    public static final String[] JDK_VERIFIED_DIRECT_URLS = {
+        "https://aka.ms/download-jdk/microsoft-jdk-8-linux-x64.tar.gz",
+        "https://aka.ms/download-jdk/microsoft-jdk-11-linux-x64.tar.gz",
+        "https://aka.ms/download-jdk/microsoft-jdk-17-linux-x64.tar.gz",
+        "https://aka.ms/download-jdk/microsoft-jdk-21-linux-x64.tar.gz",
+        "https://aka.ms/download-jdk/microsoft-jdk-25-linux-x64.tar.gz",
+        "https://aka.ms/download-jdk/microsoft-jdk-26-linux-x64.tar.gz"
+    };
 
     public static final String[] NDK_NAMES = {
         "NDK r27c (稳定版，推荐)",
@@ -67,6 +87,18 @@ public class EnvironmentManager {
         "https://dl.google.com/android/repository/android-ndk-r27c-linux.zip",
         "https://dl.google.com/android/repository/android-ndk-r28c-linux.zip",
         "https://dl.google.com/android/repository/android-ndk-r29-beta3-linux.zip"
+    };
+
+    public static final String[] GRADLE_87_DOWNLOAD_URLS = {
+        "https://services.gradle.org/distributions/gradle-8.7-bin.zip",
+        "https://downloads.gradle.org/distributions/gradle-8.7-bin.zip"
+    };
+
+    public static final String[] GRADLE_VERIFIED_DIRECT_URLS = {
+        "https://mirrors.cloud.tencent.com/gradle/gradle-9.4.1-bin.zip",
+        "https://mirrors.cloud.tencent.com/gradle/gradle-9.1.0-bin.zip",
+        "https://mirrors.cloud.tencent.com/gradle/gradle-8.13-bin.zip",
+        "https://mirrors.cloud.tencent.com/gradle/gradle-8.11.1-bin.zip"
     };
 
     public static final String[][] NDK_FALLBACK_URLS = {
@@ -191,17 +223,17 @@ public class EnvironmentManager {
     }
 
     public int loadSelectedJdkIndex() {
-        int index = sharedPreferences.getInt(KEY_SELECTED_JDK_INDEX, 3);
+        int index = sharedPreferences.getInt(KEY_SELECTED_JDK_INDEX, EMBEDDED_JDK_INDEX);
         if (index < 0 || index >= JDK_NAMES.length) {
-            return 3;
+            return EMBEDDED_JDK_INDEX;
         }
         return index;
     }
 
     public int loadSelectedNdkIndex() {
-        int index = sharedPreferences.getInt(KEY_SELECTED_NDK_INDEX, 0);
+        int index = sharedPreferences.getInt(KEY_SELECTED_NDK_INDEX, EMBEDDED_NDK_INDEX);
         if (index < 0 || index >= NDK_NAMES.length) {
-            return 0;
+            return EMBEDDED_NDK_INDEX;
         }
         return index;
     }
@@ -374,14 +406,14 @@ public class EnvironmentManager {
 
     private int normalizeJdkIndex(int index) {
         if (index < 0 || index >= JDK_NAMES.length) {
-            return 3;
+            return EMBEDDED_JDK_INDEX;
         }
         return index;
     }
 
     private int normalizeNdkIndex(int index) {
         if (index < 0 || index >= NDK_NAMES.length) {
-            return 0;
+            return EMBEDDED_NDK_INDEX;
         }
         return index;
     }

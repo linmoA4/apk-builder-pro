@@ -28,6 +28,10 @@ public class ProjectManager {
         void onProgress(String message, int percent);
     }
 
+    public interface CopyProgressListener {
+        void onProgress(String message, int percent);
+    }
+
     public File createShellProject(Context context, ProjectConfig config, String projectRootPath) throws IOException {
         File projectRoot = new File(projectRootPath);
         File appDir = new File(projectRoot, "app");
@@ -234,11 +238,20 @@ public class ProjectManager {
     }
 
     public File importProject(File detectedProjectDir, String projectName, String destinationRootDir) throws IOException {
+        return importProject(detectedProjectDir, projectName, destinationRootDir, null);
+    }
+
+    public File importProject(
+        File detectedProjectDir,
+        String projectName,
+        String destinationRootDir,
+        CopyProgressListener listener
+    ) throws IOException {
         if (!looksLikeAndroidProject(detectedProjectDir)) {
             throw new IOException("目录结构不是有效的 Android 工程。");
         }
         File targetDir = resolveImportTargetDir(new File(destinationRootDir), projectName);
-        copyDirectory(detectedProjectDir, targetDir);
+        copyDirectory(detectedProjectDir, targetDir, listener);
         ProjectEntry entry = readProjectEntry(targetDir);
         saveProjectMeta(
             targetDir,
@@ -408,6 +421,25 @@ public class ProjectManager {
     }
 
     public void copyDirectory(File source, File target) throws IOException {
+        copyDirectory(source, target, null);
+    }
+
+    public void copyDirectory(File source, File target, CopyProgressListener listener) throws IOException {
+        long totalBytes = listener == null ? 0L : Math.max(1L, calculateDirectoryTotalBytes(source));
+        long[] copiedBytes = {0L};
+        copyDirectoryInternal(source, target, listener, totalBytes, copiedBytes);
+        if (listener != null) {
+            listener.onProgress("项目文件复制完成", 100);
+        }
+    }
+
+    private void copyDirectoryInternal(
+        File source,
+        File target,
+        CopyProgressListener listener,
+        long totalBytes,
+        long[] copiedBytes
+    ) throws IOException {
         if (source.isDirectory()) {
             ensureDir(target);
             File[] children = source.listFiles();
@@ -416,7 +448,7 @@ public class ProjectManager {
             }
             for (int i = 0; i < children.length; i++) {
                 File child = children[i];
-                copyDirectory(child, new File(target, child.getName()));
+                copyDirectoryInternal(child, new File(target, child.getName()), listener, totalBytes, copiedBytes);
             }
         } else {
             ensureDir(target.getParentFile());
@@ -433,6 +465,11 @@ public class ProjectManager {
                 if (outputStream != null) {
                     outputStream.close();
                 }
+            }
+            if (listener != null) {
+                copiedBytes[0] += Math.max(0L, source.length());
+                int percent = (int) Math.min(100L, (copiedBytes[0] * 100L) / totalBytes);
+                listener.onProgress("正在导入：" + source.getName(), Math.max(4, percent));
             }
         }
     }
@@ -876,6 +913,24 @@ public class ProjectManager {
             return Math.max(2, Math.min(100, (int) ((copiedBytes * 100L) / totalBytes)));
         }
         return Math.max(2, Math.min(100, (processedEntries * 100) / Math.max(1, totalEntries)));
+    }
+
+    private long calculateDirectoryTotalBytes(File file) {
+        if (file == null || !file.exists()) {
+            return 0L;
+        }
+        if (file.isFile()) {
+            return Math.max(0L, file.length());
+        }
+        long total = 0L;
+        File[] children = file.listFiles();
+        if (children == null) {
+            return 0L;
+        }
+        for (int i = 0; i < children.length; i++) {
+            total += calculateDirectoryTotalBytes(children[i]);
+        }
+        return total;
     }
 
     private String simplifyZipEntryName(String entryName) {

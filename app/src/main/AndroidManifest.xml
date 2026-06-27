@@ -33,6 +33,10 @@
             android:name=".SettingsActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".FileBrowserActivity"
+            android:exported="false" />
+
     </application>
 
 </manifest>

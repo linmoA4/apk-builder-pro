@@ -1,6 +1,7 @@
 package com.LM.pack.build;
 
 import android.content.Context;
+import android.content.res.AssetFileDescriptor;
 import android.content.res.AssetManager;
 import com.LM.pack.env.EnvironmentManager;
 import com.LM.pack.model.BuildIssue;
@@ -9,28 +10,29 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.LinkedHashSet;
+import java.util.Properties;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class BuildManager {
 
     public interface OfflineGradleListener {
-        void onProgress(String message);
+        void onProgress(String message, int percent, boolean indeterminate);
         void onSuccess(File gradleExecutable);
         void onError(String message);
     }
 
     private static final String OFFLINE_GRADLE_ASSET_PATH = "toolchains/gradle/gradle-8.7-bin.zip";
-    private static final String[] OFFLINE_GRADLE_URLS = {
-        "https://services.gradle.org/distributions/gradle-8.7-bin.zip",
-        "https://downloads.gradle.org/distributions/gradle-8.7-bin.zip"
-    };
+    private static final String[] OFFLINE_GRADLE_URLS = EnvironmentManager.GRADLE_87_DOWNLOAD_URLS;
 
     private final Context context;
     private final EnvironmentManager environmentManager;
@@ -67,14 +69,18 @@ public class BuildManager {
             public void run() {
                 try {
                     if (listener != null) {
-                        listener.onProgress("正在检查 Gradle 运行环境...");
+                        listener.onProgress("正在检查 Gradle 运行环境...", 0, true);
                     }
-                    File gradleExecutable = prepareOfflineGradle(new BuildListener() {
+                    File gradleExecutable = prepareOfflineGradle(new ProgressCallback() {
+                        @Override
+                        public void onProgress(String message, int percent, boolean indeterminate) {
+                            if (listener != null) {
+                                listener.onProgress(message, percent, indeterminate);
+                            }
+                        }
+                    }, new BuildListener() {
                         @Override
                         public void onLogLine(String line) {
-                            if (listener != null && line != null && line.length() > 0) {
-                                listener.onProgress(line);
-                            }
                         }
 
                         @Override
@@ -117,7 +123,8 @@ public class BuildManager {
         try {
             File projectRoot = new File(projectDir);
             File gradlew = new File(projectRoot, "gradlew");
-            File offlineGradleExecutable = prepareOfflineGradle(listener);
+            syncProjectLocalProperties(projectRoot, sdkDir, ndkDir, listener);
+            File offlineGradleExecutable = prepareOfflineGradle(null, listener);
             ProcessBuilder processBuilder;
             if (offlineGradleExecutable != null) {
                 listener.onLogLine("开始执行真实构建命令。");
@@ -203,37 +210,47 @@ public class BuildManager {
         }
     }
 
-    private File prepareOfflineGradle(BuildListener listener) {
+    private interface ProgressCallback {
+        void onProgress(String message, int percent, boolean indeterminate);
+    }
+
+    private File prepareOfflineGradle(ProgressCallback progressCallback, BuildListener listener) {
         try {
             ensureDir(new File(environmentManager.getPackageCacheDir()));
             File archiveFile = new File(environmentManager.getGradlePackageArchivePath());
             if (!archiveFile.exists() || archiveFile.length() == 0L) {
                 if (assetExists(OFFLINE_GRADLE_ASSET_PATH)) {
                     listener.onLogLine("检测到内置 Gradle 资源，正在复制到本地缓存。");
-                    copyAssetToFile(OFFLINE_GRADLE_ASSET_PATH, archiveFile);
+                    copyAssetToFile(OFFLINE_GRADLE_ASSET_PATH, archiveFile, progressCallback, "正在复制 Gradle 8.7");
                 } else {
                     String downloadUrl = resolveAvailableGradleUrl();
                     if (downloadUrl == null) {
                         return null;
                     }
                     listener.onLogLine("未找到内置 Gradle，正在下载可用的 Gradle 8.7 安装包。");
-                    downloadToFile(downloadUrl, archiveFile);
+                    downloadToFile(downloadUrl, archiveFile, progressCallback, "正在下载 Gradle 8.7");
                 }
             }
             File installRoot = new File(environmentManager.getGradleInstallDir());
             File gradleBin = findGradleExecutable(installRoot);
             if (gradleBin != null) {
+                if (progressCallback != null) {
+                    progressCallback.onProgress("Gradle 8.7 已就绪", 100, false);
+                }
                 return gradleBin;
             }
             listener.onLogLine("正在准备离线 Gradle 目录。");
             clearDirectory(installRoot);
             ensureDir(installRoot);
-            extractZip(archiveFile, installRoot);
+            extractZip(archiveFile, installRoot, progressCallback, "正在解压 Gradle 8.7");
             gradleBin = findGradleExecutable(installRoot);
             if (gradleBin == null) {
                 throw new IllegalStateException("离线 Gradle 解压后未找到 bin/gradle");
             }
             gradleBin.setExecutable(true);
+            if (progressCallback != null) {
+                progressCallback.onProgress("Gradle 8.7 已准备完成", 100, false);
+            }
             return gradleBin;
         } catch (Exception e) {
             if (listener != null) {
@@ -269,21 +286,26 @@ public class BuildManager {
         }
     }
 
-    private void copyAssetToFile(String assetPath, File targetFile) throws Exception {
+    private void copyAssetToFile(String assetPath, File targetFile, ProgressCallback progressCallback, String label) throws Exception {
         ensureDir(targetFile.getParentFile());
         AssetManager assetManager = context.getAssets();
+        AssetFileDescriptor descriptor = null;
         InputStream inputStream = null;
         BufferedOutputStream outputStream = null;
         try {
+            long totalBytes = -1L;
+            try {
+                descriptor = assetManager.openFd(assetPath);
+                totalBytes = descriptor.getLength();
+            } catch (Exception ignored) {
+            }
             inputStream = assetManager.open(assetPath);
             outputStream = new BufferedOutputStream(new FileOutputStream(targetFile));
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, len);
-            }
-            outputStream.flush();
+            copyStreamWithProgress(inputStream, outputStream, totalBytes, progressCallback, label);
         } finally {
+            if (descriptor != null) {
+                descriptor.close();
+            }
             if (inputStream != null) {
                 inputStream.close();
             }
@@ -293,7 +315,7 @@ public class BuildManager {
         }
     }
 
-    private void downloadToFile(String urlString, File targetFile) throws Exception {
+    private void downloadToFile(String urlString, File targetFile, ProgressCallback progressCallback, String label) throws Exception {
         java.net.HttpURLConnection connection = null;
         InputStream inputStream = null;
         BufferedOutputStream outputStream = null;
@@ -307,14 +329,10 @@ public class BuildManager {
             if (connection.getResponseCode() >= 400) {
                 throw new IllegalStateException("Gradle 下载失败，HTTP " + connection.getResponseCode());
             }
+            long totalBytes = connection.getContentLengthLong();
             inputStream = new BufferedInputStream(connection.getInputStream());
             outputStream = new BufferedOutputStream(new FileOutputStream(targetFile));
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, len);
-            }
-            outputStream.flush();
+            copyStreamWithProgress(inputStream, outputStream, totalBytes, progressCallback, label);
         } finally {
             if (inputStream != null) {
                 inputStream.close();
@@ -355,12 +373,15 @@ public class BuildManager {
         }
     }
 
-    private void extractZip(File archiveFile, File targetDir) throws Exception {
-        ZipInputStream zipInputStream = null;
+    private void extractZip(File archiveFile, File targetDir, ProgressCallback progressCallback, String label) throws Exception {
+        ZipFile zipFile = null;
         try {
-            zipInputStream = new ZipInputStream(new BufferedInputStream(new java.io.FileInputStream(archiveFile)));
-            ZipEntry entry;
-            while ((entry = zipInputStream.getNextEntry()) != null) {
+            zipFile = new ZipFile(archiveFile);
+            long totalBytes = calculateZipTotalBytes(zipFile);
+            long[] extractedBytes = {0L};
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
                 File outputFile = new File(targetDir, entry.getName());
                 String targetPath = targetDir.getCanonicalPath();
                 String outputPath = outputFile.getCanonicalPath();
@@ -369,28 +390,34 @@ public class BuildManager {
                 }
                 if (entry.isDirectory()) {
                     ensureDir(outputFile);
-                } else {
-                    ensureDir(outputFile.getParentFile());
-                    BufferedOutputStream outputStream = null;
-                    try {
-                        outputStream = new BufferedOutputStream(new FileOutputStream(outputFile));
-                        byte[] buffer = new byte[8192];
-                        int len;
-                        while ((len = zipInputStream.read(buffer)) != -1) {
-                            outputStream.write(buffer, 0, len);
-                        }
-                        outputStream.flush();
-                    } finally {
-                        if (outputStream != null) {
-                            outputStream.close();
-                        }
+                    continue;
+                }
+                ensureDir(outputFile.getParentFile());
+                InputStream entryInputStream = null;
+                BufferedOutputStream outputStream = null;
+                try {
+                    entryInputStream = new BufferedInputStream(zipFile.getInputStream(entry));
+                    outputStream = new BufferedOutputStream(new FileOutputStream(outputFile));
+                    copyArchiveEntryStream(
+                        entryInputStream,
+                        outputStream,
+                        totalBytes,
+                        extractedBytes,
+                        progressCallback,
+                        label + "  " + simplifyEntryName(entry.getName())
+                    );
+                } finally {
+                    if (entryInputStream != null) {
+                        entryInputStream.close();
+                    }
+                    if (outputStream != null) {
+                        outputStream.close();
                     }
                 }
-                zipInputStream.closeEntry();
             }
         } finally {
-            if (zipInputStream != null) {
-                zipInputStream.close();
+            if (zipFile != null) {
+                zipFile.close();
             }
         }
     }
@@ -443,6 +470,65 @@ public class BuildManager {
         dir.mkdirs();
     }
 
+    private void syncProjectLocalProperties(File projectRoot, String sdkDir, String ndkDir, BuildListener listener) {
+        if (projectRoot == null || !projectRoot.exists()) {
+            return;
+        }
+        try {
+            File localProperties = new File(projectRoot, "local.properties");
+            Properties properties = new Properties();
+            if (localProperties.exists()) {
+                FileInputStream inputStream = null;
+                try {
+                    inputStream = new FileInputStream(localProperties);
+                    properties.load(inputStream);
+                } finally {
+                    if (inputStream != null) {
+                        inputStream.close();
+                    }
+                }
+            }
+            boolean changed = false;
+            if (sdkDir != null && sdkDir.length() > 0) {
+                String escapedSdk = escapeLocalPropertiesPath(sdkDir);
+                if (!escapedSdk.equals(properties.getProperty("sdk.dir"))) {
+                    properties.setProperty("sdk.dir", escapedSdk);
+                    changed = true;
+                }
+            }
+            if (ndkDir != null && ndkDir.length() > 0) {
+                String escapedNdk = escapeLocalPropertiesPath(ndkDir);
+                if (!escapedNdk.equals(properties.getProperty("ndk.dir"))) {
+                    properties.setProperty("ndk.dir", escapedNdk);
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                return;
+            }
+            FileOutputStream outputStream = null;
+            try {
+                outputStream = new FileOutputStream(localProperties);
+                properties.store(outputStream, "Generated by APK Builder Pro");
+            } finally {
+                if (outputStream != null) {
+                    outputStream.close();
+                }
+            }
+            if (listener != null) {
+                listener.onLogLine("已自动同步项目 local.properties 中的 SDK / NDK 路径。");
+            }
+        } catch (Exception e) {
+            if (listener != null) {
+                listener.onLogLine("自动同步 local.properties 失败：" + e.getMessage());
+            }
+        }
+    }
+
+    private String escapeLocalPropertiesPath(String path) {
+        return path.replace("\\", "\\\\").replace(":", "\\:");
+    }
+
     private void collectIssue(String line, ArrayList<BuildIssue> issues) {
         if (line == null) {
             return;
@@ -458,7 +544,13 @@ public class BuildManager {
 
         Matcher javaStyleMatcher = Pattern.compile("^(.*\\.(?:java|kt|xml|gradle)):\\s*(.+)$").matcher(line.trim());
         if (javaStyleMatcher.find() && line.toLowerCase().indexOf("error") >= 0) {
-            issues.add(new BuildIssue(javaStyleMatcher.group(1).trim(), -1, javaStyleMatcher.group(2).trim(), suggestFix(line, "")));
+            addIssueIfAbsent(issues, new BuildIssue(javaStyleMatcher.group(1).trim(), -1, javaStyleMatcher.group(2).trim(), suggestFix(line, "")));
+            return;
+        }
+        String trimmed = line.trim();
+        if (trimmed.startsWith("* What went wrong:") || trimmed.startsWith("Execution failed for task")
+            || trimmed.startsWith("A problem occurred") || trimmed.startsWith("FAILURE: Build failed")) {
+            addIssueIfAbsent(issues, new BuildIssue("Gradle", -1, trimmed, suggestFix(trimmed, "")));
         }
     }
 
@@ -503,9 +595,142 @@ public class BuildManager {
         if (lower.indexOf("parseerror") >= 0 || lower.indexOf("xml") >= 0) {
             return "XML 可能有标签未闭合、属性引号不完整，或特殊字符未转义。";
         }
+        if (lower.indexOf("sdk location not found") >= 0 || lower.indexOf("sdk.dir") >= 0) {
+            return "检查项目 `local.properties` 是否已写入正确的 `sdk.dir`，并确认 Android SDK 已准备完成。";
+        }
+        if (lower.indexOf("ndk") >= 0 && lower.indexOf("not configured") >= 0) {
+            return "检查 `ndk.dir`、`ndkVersion` 和当前选择的 NDK 27 是否一致。";
+        }
+        if (lower.indexOf("gradle") >= 0 && lower.indexOf("wrapper") >= 0) {
+            return "优先使用内置 Gradle 8.7，或补齐 `gradle/wrapper` 目录。";
+        }
         if (codeLine != null && codeLine.trim().length() > 0) {
             return "先修正当前高亮行的语法，再重新打包验证。";
         }
         return "先根据错误行号检查代码，再重新执行打包。";
+    }
+
+    private void copyStreamWithProgress(
+        InputStream inputStream,
+        BufferedOutputStream outputStream,
+        long totalBytes,
+        ProgressCallback progressCallback,
+        String label
+    ) throws Exception {
+        byte[] buffer = new byte[8192];
+        int len;
+        long copiedBytes = 0L;
+        int lastPercent = -1;
+        while ((len = inputStream.read(buffer)) != -1) {
+            outputStream.write(buffer, 0, len);
+            copiedBytes += len;
+            if (progressCallback != null) {
+                if (totalBytes > 0L) {
+                    int percent = (int) Math.min(100L, (copiedBytes * 100L) / totalBytes);
+                    if (percent != lastPercent) {
+                        progressCallback.onProgress(
+                            label + "  " + formatSize(copiedBytes) + " / " + formatSize(totalBytes),
+                            percent,
+                            false
+                        );
+                        lastPercent = percent;
+                    }
+                } else {
+                    progressCallback.onProgress(label + "  已完成 " + formatSize(copiedBytes), 0, true);
+                }
+            }
+        }
+        outputStream.flush();
+    }
+
+    private void copyArchiveEntryStream(
+        InputStream inputStream,
+        BufferedOutputStream outputStream,
+        long totalBytes,
+        long[] extractedBytes,
+        ProgressCallback progressCallback,
+        String label
+    ) throws Exception {
+        byte[] buffer = new byte[8192];
+        int len;
+        int lastPercent = -1;
+        while ((len = inputStream.read(buffer)) != -1) {
+            outputStream.write(buffer, 0, len);
+            extractedBytes[0] += len;
+            if (progressCallback != null) {
+                if (totalBytes > 0L) {
+                    int percent = (int) Math.min(100L, (extractedBytes[0] * 100L) / totalBytes);
+                    if (percent != lastPercent) {
+                        progressCallback.onProgress(
+                            label + "  " + formatSize(extractedBytes[0]) + " / " + formatSize(totalBytes),
+                            percent,
+                            false
+                        );
+                        lastPercent = percent;
+                    }
+                } else {
+                    progressCallback.onProgress(label + "  已完成 " + formatSize(extractedBytes[0]), 0, true);
+                }
+            }
+        }
+        outputStream.flush();
+    }
+
+    private long calculateZipTotalBytes(ZipFile zipFile) {
+        long totalBytes = 0L;
+        Enumeration<? extends ZipEntry> entries = zipFile.entries();
+        while (entries.hasMoreElements()) {
+            ZipEntry entry = entries.nextElement();
+            if (!entry.isDirectory() && entry.getSize() > 0L) {
+                totalBytes += entry.getSize();
+            }
+        }
+        return totalBytes;
+    }
+
+    private void addIssueIfAbsent(ArrayList<BuildIssue> issues, BuildIssue newIssue) {
+        if (newIssue == null) {
+            return;
+        }
+        for (int i = 0; i < issues.size(); i++) {
+            BuildIssue existing = issues.get(i);
+            if (sameText(existing.getFilePath(), newIssue.getFilePath())
+                && existing.getLineNumber() == newIssue.getLineNumber()
+                && sameText(existing.getMessage(), newIssue.getMessage())) {
+                return;
+            }
+        }
+        issues.add(newIssue);
+    }
+
+    private boolean sameText(String first, String second) {
+        String a = first == null ? "" : first.trim();
+        String b = second == null ? "" : second.trim();
+        return a.equals(b);
+    }
+
+    private String simplifyEntryName(String entryName) {
+        if (entryName == null || entryName.length() == 0) {
+            return "当前文件";
+        }
+        String normalized = entryName.replace('\\', '/');
+        if (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        int slash = normalized.lastIndexOf('/');
+        return slash >= 0 ? normalized.substring(slash + 1) : normalized;
+    }
+
+    private String formatSize(long bytes) {
+        if (bytes < 1024L) {
+            return bytes + " B";
+        }
+        if (bytes < 1024L * 1024L) {
+            return String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0);
+        }
+        if (bytes < 1024L * 1024L * 1024L) {
+            return String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024.0);
+        }
+        return String.format(java.util.Locale.US, "%.2f GB", bytes / 1024.0 / 1024.0 / 1024.0);
     }
 }

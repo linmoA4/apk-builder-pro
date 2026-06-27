@@ -52,7 +52,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:gravity="center"
-            android:text="首次启动会先解压内置 JDK、NDK 和 Gradle"
+            android:text="首次启动会先解压内置 SDK、JDK 21、NDK 27 和 Gradle 8.7"
             android:textSize="13sp"
             android:tag="secondary" />
 

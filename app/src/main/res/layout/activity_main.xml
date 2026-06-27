@@ -174,7 +174,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="8dp"
                                 android:gravity="center"
-                                android:text="右下角可以创建、导入 ZIP，或者导入已有工程。"
+                                android:text="右下角展开后可以创建项目，或者用一个导入入口导入文件夹 / 压缩包。"
                                 android:textSize="13sp"
                                 android:tag="secondary" />
                         </LinearLayout>
@@ -309,7 +309,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
                             android:layout_marginBottom="8dp"
-                            android:text="左滑收起，右滑展开。点击文件打开，点击文件夹折叠或展开。"
+                            android:text="左滑收起，右滑展开。根目录直接展开；点文件夹进入新页面，点文件直接打开。"
                             android:textSize="12sp"
                             android:tag="muted" />
 
@@ -397,12 +397,44 @@
         </ScrollView>
     </LinearLayout>
 
+    <LinearLayout
+        android:id="@+id/addActionOverlay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginRight="18dp"
+        android:layout_marginBottom="154dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/btnCreateAction"
+            android:layout_width="96dp"
+            android:layout_height="42dp"
+            android:text="创建"
+            android:textStyle="bold"
+            android:tag="ghostButton primary" />
+
+        <Space
+            android:layout_width="1dp"
+            android:layout_height="16dp" />
+
+        <Button
+            android:id="@+id/btnImportAction"
+            android:layout_width="96dp"
+            android:layout_height="42dp"
+            android:text="导入"
+            android:textStyle="bold"
+            android:tag="ghostButton primary" />
+    </LinearLayout>
+
     <Button
         android:id="@+id/btnFabAdd"
         android:layout_width="56dp"
         android:layout_height="56dp"
         android:layout_gravity="bottom|end"
-        android:layout_margin="18dp"
+        android:layout_marginRight="18dp"
+        android:layout_marginBottom="84dp"
         android:text="+"
         android:textSize="26sp"
         android:tag="primaryButton primary" />

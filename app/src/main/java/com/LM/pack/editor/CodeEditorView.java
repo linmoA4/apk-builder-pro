@@ -10,9 +10,11 @@ import android.text.Spannable;
 import android.text.Spanned;
 import android.text.TextWatcher;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.BackgroundColorSpan;
 import android.util.AttributeSet;
 import android.widget.EditText;
 import com.LM.pack.theme.AppThemePalette;
+import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -54,6 +56,7 @@ public class CodeEditorView extends EditText {
     private int classColor = Color.parseColor("#4EC9B0");
     private int xmlTagColor = Color.parseColor("#4EC9B0");
     private int xmlAttrColor = Color.parseColor("#9CDCFE");
+    private int errorLineColor = Color.parseColor("#33FF6B6B");
 
     public CodeEditorView(Context context) {
         super(context);
@@ -109,6 +112,7 @@ public class CodeEditorView extends EditText {
         classColor = palette.editorClass;
         xmlTagColor = palette.editorXmlTag;
         xmlAttrColor = palette.editorXmlAttr;
+        errorLineColor = adjustErrorColor(palette.accentStrong);
         setTextColor(palette.textPrimary);
         setHintTextColor(palette.textMuted);
         invalidate();
@@ -181,6 +185,47 @@ public class CodeEditorView extends EditText {
         }
     }
 
+    public void clearDiagnosticLines() {
+        Editable editable = getText();
+        if (editable == null) {
+            return;
+        }
+        BackgroundColorSpan[] spans = editable.getSpans(0, editable.length(), BackgroundColorSpan.class);
+        for (int i = 0; i < spans.length; i++) {
+            editable.removeSpan(spans[i]);
+        }
+    }
+
+    public void setDiagnosticLine(int lineNumber) {
+        ArrayList<Integer> lines = new ArrayList<Integer>();
+        if (lineNumber > 0) {
+            lines.add(lineNumber);
+        }
+        setDiagnosticLines(lines);
+    }
+
+    public void setDiagnosticLines(ArrayList<Integer> lineNumbers) {
+        Editable editable = getText();
+        if (editable == null) {
+            return;
+        }
+        clearDiagnosticLines();
+        if (lineNumbers == null || lineNumbers.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < lineNumbers.size(); i++) {
+            int lineNumber = lineNumbers.get(i);
+            if (lineNumber <= 0) {
+                continue;
+            }
+            int start = findLineStart(editable, lineNumber);
+            int end = findLineEnd(editable, start);
+            if (start >= 0 && end >= start && end <= editable.length()) {
+                editable.setSpan(new BackgroundColorSpan(errorLineColor), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
+    }
+
     private void applyKeywords(Editable editable, String[] keywords, int color) {
         StringBuilder builder = new StringBuilder();
         builder.append("\\b(");
@@ -229,5 +274,33 @@ public class CodeEditorView extends EditText {
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density);
+    }
+
+    private int findLineStart(CharSequence text, int lineNumber) {
+        int line = 1;
+        int index = 0;
+        while (index < text.length() && line < lineNumber) {
+            if (text.charAt(index) == '\n') {
+                line++;
+            }
+            index++;
+        }
+        return line == lineNumber ? index : -1;
+    }
+
+    private int findLineEnd(CharSequence text, int start) {
+        if (start < 0) {
+            return -1;
+        }
+        int end = start;
+        while (end < text.length() && text.charAt(end) != '\n') {
+            end++;
+        }
+        return end;
+    }
+
+    private int adjustErrorColor(int baseColor) {
+        int alpha = 0x44;
+        return Color.argb(alpha, Color.red(baseColor), Color.green(baseColor), Color.blue(baseColor));
     }
 }

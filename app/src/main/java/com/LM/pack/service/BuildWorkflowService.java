@@ -44,6 +44,10 @@ public class BuildWorkflowService {
         final int selectedNdkIndex,
         final Listener listener
     ) {
+        final int resolvedJdkIndex = EnvironmentManager.EMBEDDED_JDK_INDEX;
+        final int resolvedNdkIndex = EnvironmentManager.EMBEDDED_NDK_INDEX;
+        environmentManager.saveSelectedJdkIndex(resolvedJdkIndex);
+        environmentManager.saveSelectedNdkIndex(resolvedNdkIndex);
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -51,8 +55,8 @@ public class BuildWorkflowService {
                     new File(currentProject.getProjectDir()),
                     projectPrepared,
                     environmentState,
-                    selectedJdkIndex,
-                    selectedNdkIndex
+                    resolvedJdkIndex,
+                    resolvedNdkIndex
                 );
                 mainHandler.post(new Runnable() {
                     @Override
@@ -62,7 +66,7 @@ public class BuildWorkflowService {
                             return;
                         }
                         listener.onBuildStarted();
-                        startRealBuild(currentProject, environmentState, selectedJdkIndex, selectedNdkIndex, listener);
+                        startRealBuild(currentProject, environmentState, resolvedJdkIndex, resolvedNdkIndex, listener);
                     }
                 });
             }

@@ -93,11 +93,28 @@ public class ProjectWorkspaceService {
     }
 
     public ImportResult importFolderProject(File folder) throws IOException {
+        return importFolderProject(folder, null);
+    }
+
+    public ImportResult importFolderProject(File folder, ImportProgressListener listener) throws IOException {
         File detectedRoot = projectManager.deepFindAndroidProject(folder);
         if (detectedRoot == null) {
             throw new IOException("没有找到完整的 Android 工程目录。");
         }
-        File importedRoot = projectManager.importProject(detectedRoot, detectedRoot.getName(), environmentManager.getImportedProjectRootDir());
+        File importedRoot = projectManager.importProject(
+            detectedRoot,
+            detectedRoot.getName(),
+            environmentManager.getImportedProjectRootDir(),
+            listener == null ? null : new ProjectManager.CopyProgressListener() {
+                @Override
+                public void onProgress(String message, int percent) {
+                    listener.onProgress(message, percent);
+                }
+            }
+        );
+        if (listener != null) {
+            listener.onProgress("导入完成，正在打开项目...", 100);
+        }
         return new ImportResult(detectedRoot, importedRoot);
     }
 

@@ -56,11 +56,17 @@ import com.LM.pack.theme.GlassProgressBarView;
 import com.LM.pack.theme.LiquidGlassBackgroundView;
 import com.LM.pack.theme.ThemeManager;
 import java.io.File;
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXParseException;
 
 public class MainActivity extends Activity {
+
+    private static final int REQUEST_FILE_BROWSER = 4101;
 
     private Handler handler;
 
@@ -81,6 +87,7 @@ public class MainActivity extends Activity {
     private LinearLayout fileDrawer;
     private LinearLayout suggestionCard;
     private LinearLayout editorTabContainer;
+    private LinearLayout addActionOverlay;
     private LiquidGlassBackgroundView bgSceneView;
     private TextView tvToolbarTitle;
     private TextView tvEditorProject;
@@ -90,6 +97,8 @@ public class MainActivity extends Activity {
     private Button btnBackHome;
     private Button btnSettings;
     private Button btnFabAdd;
+    private Button btnCreateAction;
+    private Button btnImportAction;
     private Button btnToggleFiles;
     private Button btnBug;
     private Button btnSaveFile;
@@ -125,6 +134,7 @@ public class MainActivity extends Activity {
     private float gestureStartX = 0f;
     private float gestureStartY = 0f;
     private Runnable autoSaveRunnable;
+    private Runnable validationRunnable;
     private AppThemePalette palette;
 
     @Override
@@ -172,6 +182,7 @@ public class MainActivity extends Activity {
         fileDrawer = (LinearLayout) findViewById(R.id.fileDrawer);
         suggestionCard = (LinearLayout) findViewById(R.id.suggestionCard);
         editorTabContainer = (LinearLayout) findViewById(R.id.editorTabContainer);
+        addActionOverlay = (LinearLayout) findViewById(R.id.addActionOverlay);
         bgSceneView = (LiquidGlassBackgroundView) findViewById(R.id.bgSceneView);
         tvToolbarTitle = (TextView) findViewById(R.id.tvToolbarTitle);
         tvEditorProject = (TextView) findViewById(R.id.tvEditorProject);
@@ -181,6 +192,8 @@ public class MainActivity extends Activity {
         btnBackHome = (Button) findViewById(R.id.btnBackHome);
         btnSettings = (Button) findViewById(R.id.btnSettings);
         btnFabAdd = (Button) findViewById(R.id.btnFabAdd);
+        btnCreateAction = (Button) findViewById(R.id.btnCreateAction);
+        btnImportAction = (Button) findViewById(R.id.btnImportAction);
         btnToggleFiles = (Button) findViewById(R.id.btnToggleFiles);
         btnBug = (Button) findViewById(R.id.btnBug);
         btnSaveFile = (Button) findViewById(R.id.btnSaveFile);
@@ -200,7 +213,7 @@ public class MainActivity extends Activity {
         logManager = new LogManager(tvLogs, logScrollView);
 
         ViewGroup.LayoutParams layoutParams = fileDrawer.getLayoutParams();
-        layoutParams.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.38f);
+        layoutParams.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.72f);
         fileDrawer.setLayoutParams(layoutParams);
     }
 
@@ -251,8 +264,18 @@ public class MainActivity extends Activity {
         btnFabAdd.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                showAddActionDialog();
+                toggleAddActionOverlay();
             }
+        });
+
+        btnCreateAction.setOnClickListener(v -> {
+            hideAddActionOverlay();
+            showCreateProjectDialog();
+        });
+
+        btnImportAction.setOnClickListener(v -> {
+            hideAddActionOverlay();
+            showImportPicker();
         });
 
         btnToggleFiles.setOnClickListener(new View.OnClickListener() {
@@ -307,6 +330,7 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 hideFileDrawer();
+                hideAddActionOverlay();
             }
         });
     }
@@ -316,6 +340,12 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 saveCurrentFile();
+            }
+        };
+        validationRunnable = new Runnable() {
+            @Override
+            public void run() {
+                validateCurrentEditorContent();
             }
         };
         etEditor.addTextChangedListener(new TextWatcher() {
@@ -333,6 +363,7 @@ public class MainActivity extends Activity {
                     return;
                 }
                 scheduleAutoSave();
+                scheduleValidation();
             }
         });
     }
@@ -401,6 +432,7 @@ public class MainActivity extends Activity {
         tvToolbarTitle.setText("APK Builder Pro");
         suggestionCard.setVisibility(View.GONE);
         hideFileDrawer();
+        hideAddActionOverlay();
         currentProject = null;
         projectPrepared = false;
         editorTabManager.clear();
@@ -414,6 +446,7 @@ public class MainActivity extends Activity {
         editorPane.setVisibility(View.VISIBLE);
         btnBackHome.setVisibility(View.VISIBLE);
         btnFabAdd.setVisibility(View.GONE);
+        hideAddActionOverlay();
         tvToolbarTitle.setText("编辑器");
         tvEditorProject.setText(entry.getProjectName() + "  ·  " + safeText(entry.getPackageName(), "未识别包名"));
         tvCurrentFilePath.setText(entry.getProjectDir());
@@ -438,31 +471,36 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void showAddActionDialog() {
-        final String[] items = {"创建项目", "导入压缩包", "导入文件夹"};
-        new AlertDialog.Builder(this)
-            .setTitle("新建或导入")
-            .setItems(items, (dialog, which) -> {
-                if (which == 0) {
-                    showCreateProjectDialog();
-                } else if (which == 1) {
-                    showStoragePicker("选择压缩包", false, true, new PathPickListener() {
-                        @Override
-                        public void onPicked(File path) {
-                            importZipProject(path);
-                        }
-                    });
-                } else {
-                    toast("点击文件夹进入，长按文件夹才会选择导入。");
-                    showStoragePicker("选择项目文件夹", true, false, new PathPickListener() {
-                        @Override
-                        public void onPicked(File path) {
-                            importFolderProject(path);
-                        }
-                    });
+    private void toggleAddActionOverlay() {
+        if (addActionOverlay.getVisibility() == View.VISIBLE) {
+            hideAddActionOverlay();
+        } else {
+            addActionOverlay.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void hideAddActionOverlay() {
+        if (addActionOverlay != null) {
+            addActionOverlay.setVisibility(View.GONE);
+        }
+    }
+
+    private void showImportPicker() {
+        toast("点 zip 文件立即导入；点文件夹继续进入，长按文件夹可直接导入。");
+        showStoragePicker("导入项目", true, false, new PathPickListener() {
+            @Override
+            public void onPicked(File path) {
+                if (path.isDirectory()) {
+                    importFolderProject(path);
+                    return;
                 }
-            })
-            .show();
+                if (projectWorkspaceService.isZipFile(path)) {
+                    importZipProject(path);
+                    return;
+                }
+                toast("这里只支持导入项目文件夹或 zip 压缩包");
+            }
+        });
     }
 
     private void showCreateProjectDialog() {
@@ -667,7 +705,8 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 populateFileBrowser(currentDir[0], visibleFiles, labels);
-                tvPath.setText("当前位置：" + currentDir[0].getAbsolutePath() + (folderSelect ? "  · 长按文件夹可导入" : ""));
+                String suffix = folderSelect ? "  · 点文件夹继续进入，长按文件夹可直接导入" : "";
+                tvPath.setText("当前位置：" + currentDir[0].getAbsolutePath() + suffix);
                 adapter.notifyDataSetChanged();
             }
         };
@@ -798,12 +837,25 @@ public class MainActivity extends Activity {
     }
 
     private void importFolderProject(final File folder) {
-        showProgressDialog("导入项目", "正在深度检查目录结构...");
+        showProgressDialog("导入项目", "正在深度检查目录结构...", 2, false);
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    final ProjectWorkspaceService.ImportResult importResult = projectWorkspaceService.importFolderProject(folder);
+                    final ProjectWorkspaceService.ImportResult importResult = projectWorkspaceService.importFolderProject(
+                        folder,
+                        new ProjectWorkspaceService.ImportProgressListener() {
+                            @Override
+                            public void onProgress(final String message, final int percent) {
+                                handler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        updateProgressDialog(message, percent, false);
+                                    }
+                                });
+                            }
+                        }
+                    );
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
@@ -837,9 +889,8 @@ public class MainActivity extends Activity {
             fileTreeAdapter.notifyDataSetChanged();
             return;
         }
-        projectFileService.ensureDefaultExpandedDirs(currentProject, expandedDirs);
         fileTreeItems.clear();
-        fileTreeItems.addAll(projectFileService.buildFileTree(currentProject, expandedDirs));
+        fileTreeItems.addAll(projectFileService.listDirectory(currentProject, new File(currentProject.getProjectDir())));
         fileTreeAdapter.notifyDataSetChanged();
     }
 
@@ -849,19 +900,23 @@ public class MainActivity extends Activity {
         }
         FileTreeItem item = fileTreeItems.get(position);
         if (item.isDirectory()) {
-            String path = item.getFile().getAbsolutePath();
-            if (expandedDirs.contains(path)) {
-                expandedDirs.remove(path);
-            } else {
-                expandedDirs.add(path);
-            }
-            fileTreeItems.clear();
-            fileTreeItems.addAll(projectFileService.buildFileTree(currentProject, expandedDirs));
-            fileTreeAdapter.notifyDataSetChanged();
+            openDirectoryBrowser(item.getFile());
             return;
         }
         openTextFile(item.getFile());
         hideFileDrawer();
+    }
+
+    private void openDirectoryBrowser(File directory) {
+        if (currentProject == null || directory == null || !directory.isDirectory()) {
+            return;
+        }
+        Intent intent = new Intent(this, FileBrowserActivity.class);
+        intent.putExtra(FileBrowserActivity.EXTRA_PROJECT_NAME, currentProject.getProjectName());
+        intent.putExtra(FileBrowserActivity.EXTRA_PROJECT_DIR, currentProject.getProjectDir());
+        intent.putExtra(FileBrowserActivity.EXTRA_PROJECT_PACKAGE, currentProject.getPackageName());
+        intent.putExtra(FileBrowserActivity.EXTRA_CURRENT_DIR, directory.getAbsolutePath());
+        startActivityForResult(intent, REQUEST_FILE_BROWSER);
     }
 
     private void openTextFile(File file) {
@@ -885,11 +940,13 @@ public class MainActivity extends Activity {
             suppressEditorWriteback = false;
             tvCurrentFilePath.setText(projectFileService.buildDisplayPath(currentProject, file));
             suggestionCard.setVisibility(View.GONE);
+            etEditor.clearDiagnosticLines();
             if (trackTab) {
                 editorTabManager.openTab(file);
             } else {
                 editorTabManager.activate(file);
             }
+            validateCurrentEditorContent();
         } catch (Exception e) {
             logManager.appendLogLine("ERROR", "打开文件失败：" + e.getMessage());
             toast("打开文件失败");
@@ -904,6 +961,7 @@ public class MainActivity extends Activity {
         suppressEditorWriteback = true;
         etEditor.setText("");
         suppressEditorWriteback = false;
+        etEditor.clearDiagnosticLines();
         tvCurrentFilePath.setText("请选择一个文件");
         suggestionCard.setVisibility(View.GONE);
     }
@@ -928,6 +986,11 @@ public class MainActivity extends Activity {
     private void scheduleAutoSave() {
         handler.removeCallbacks(autoSaveRunnable);
         handler.postDelayed(autoSaveRunnable, 220L);
+    }
+
+    private void scheduleValidation() {
+        handler.removeCallbacks(validationRunnable);
+        handler.postDelayed(validationRunnable, 360L);
     }
 
     private void flushPendingAutoSave() {
@@ -1041,13 +1104,21 @@ public class MainActivity extends Activity {
     }
 
     private void showIssueDialog(String title, final ArrayList<BuildIssue> issues) {
-        String[] items = new String[issues.size()];
+        final String[] items = new String[issues.size()];
         for (int i = 0; i < issues.size(); i++) {
             items[i] = issues.get(i).getDisplayText();
         }
+        ListView listView = new ListView(this);
+        listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, items));
+        listView.setOnItemClickListener((parent, view, which, id) -> openIssue(issues.get(which)));
         new AlertDialog.Builder(this)
             .setTitle(title)
-            .setItems(items, (dialog, which) -> openIssue(issues.get(which)))
+            .setView(listView)
+            .setPositiveButton("一键提取全部错误", (dialog, which) -> {
+                ClipboardManager clipboardManager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                clipboardManager.setPrimaryClip(ClipData.newPlainText("全部错误", buildIssueExtractionText(issues)));
+                toast("全部错误已提取到剪贴板");
+            })
             .setNegativeButton("关闭", null)
             .show();
     }
@@ -1057,7 +1128,10 @@ public class MainActivity extends Activity {
         if (issueFile != null && issueFile.exists() && issueFile.isFile() && projectFileService.isTextEditableFile(issueFile)) {
             openTextFile(issueFile);
             if (issue.getLineNumber() > 0) {
+                etEditor.setDiagnosticLine(issue.getLineNumber());
                 moveCursorToLine(issue.getLineNumber());
+            } else {
+                etEditor.clearDiagnosticLines();
             }
         }
         suggestionCard.setVisibility(View.VISIBLE);
@@ -1123,6 +1197,126 @@ public class MainActivity extends Activity {
             logManager.appendLogLine("WARN", line);
         } else {
             logManager.appendLogLine("INFO", line);
+        }
+    }
+
+    private String buildIssueExtractionText(ArrayList<BuildIssue> issues) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < issues.size(); i++) {
+            BuildIssue issue = issues.get(i);
+            if (i > 0) {
+                builder.append("\n\n");
+            }
+            builder.append(i + 1).append(". ").append(issue.getDisplayText());
+            if (issue.getSuggestion() != null && issue.getSuggestion().length() > 0) {
+                builder.append("\n建议：").append(issue.getSuggestion());
+            }
+        }
+        return builder.toString();
+    }
+
+    private void validateCurrentEditorContent() {
+        if (currentOpenFile == null) {
+            etEditor.clearDiagnosticLines();
+            return;
+        }
+        ArrayList<BuildIssue> issues = collectEditorIssues(currentOpenFile.getName(), etEditor.getText().toString());
+        if (issues.isEmpty()) {
+            etEditor.clearDiagnosticLines();
+            if (suggestionCard.getVisibility() == View.VISIBLE && currentCopiedFix.startsWith("[编辑器检测]")) {
+                suggestionCard.setVisibility(View.GONE);
+                currentCopiedFix = "";
+            }
+            return;
+        }
+        ArrayList<Integer> lines = new ArrayList<Integer>();
+        for (int i = 0; i < issues.size(); i++) {
+            if (issues.get(i).getLineNumber() > 0) {
+                lines.add(issues.get(i).getLineNumber());
+            }
+        }
+        etEditor.setDiagnosticLines(lines);
+        BuildIssue firstIssue = issues.get(0);
+        suggestionCard.setVisibility(View.VISIBLE);
+        tvIssueTitle.setText(firstIssue.getMessage());
+        tvIssueFix.setText(firstIssue.getSuggestion());
+        currentCopiedFix = "[编辑器检测] " + firstIssue.getSuggestion();
+    }
+
+    private ArrayList<BuildIssue> collectEditorIssues(String fileName, String content) {
+        ArrayList<BuildIssue> issues = new ArrayList<BuildIssue>();
+        if (content == null) {
+            return issues;
+        }
+        if (content.contains("<<<<<<<") || content.contains("=======") || content.contains(">>>>>>>")) {
+            issues.add(new BuildIssue(fileName, -1, "检测到未处理的合并冲突标记。", "先删除冲突标记并保留正确代码，再继续编辑或打包。"));
+        }
+        String lowerName = fileName == null ? "" : fileName.toLowerCase();
+        if (lowerName.endsWith(".xml")) {
+            collectXmlEditorIssues(fileName, content, issues);
+        } else if (lowerName.endsWith(".java") || lowerName.endsWith(".kt") || lowerName.endsWith(".gradle") || lowerName.endsWith(".kts")) {
+            collectBraceIssues(fileName, content, issues);
+        }
+        return issues;
+    }
+
+    private void collectXmlEditorIssues(String fileName, String content, ArrayList<BuildIssue> issues) {
+        try {
+            DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new InputSource(new StringReader(content)));
+        } catch (SAXParseException e) {
+            issues.add(new BuildIssue(fileName, e.getLineNumber(), e.getMessage(), "检查 XML 标签闭合、属性引号和资源引用格式。"));
+        } catch (Exception e) {
+            issues.add(new BuildIssue(fileName, -1, e.getMessage(), "检查 XML 结构是否完整。"));
+        }
+    }
+
+    private void collectBraceIssues(String fileName, String content, ArrayList<BuildIssue> issues) {
+        int roundBalance = 0;
+        int curlyBalance = 0;
+        int squareBalance = 0;
+        int lineNumber = 1;
+        boolean inString = false;
+        char stringQuote = 0;
+        for (int i = 0; i < content.length(); i++) {
+            char c = content.charAt(i);
+            if (c == '\n') {
+                lineNumber++;
+            }
+            if (inString) {
+                if (c == stringQuote && (i == 0 || content.charAt(i - 1) != '\\')) {
+                    inString = false;
+                }
+                continue;
+            }
+            if (c == '"' || c == '\'') {
+                inString = true;
+                stringQuote = c;
+                continue;
+            }
+            if (c == '(') {
+                roundBalance++;
+            } else if (c == ')') {
+                roundBalance--;
+            } else if (c == '{') {
+                curlyBalance++;
+            } else if (c == '}') {
+                curlyBalance--;
+            } else if (c == '[') {
+                squareBalance++;
+            } else if (c == ']') {
+                squareBalance--;
+            }
+            if (roundBalance < 0 || curlyBalance < 0 || squareBalance < 0) {
+                issues.add(new BuildIssue(fileName, lineNumber, "括号提前闭合，结构不平衡。", "检查这一行附近是否多写了 `)`、`}` 或 `]`。"));
+                return;
+            }
+        }
+        if (inString) {
+            issues.add(new BuildIssue(fileName, lineNumber, "字符串没有正常闭合。", "检查最后一个字符串的引号是否缺失。"));
+            return;
+        }
+        if (roundBalance != 0 || curlyBalance != 0 || squareBalance != 0) {
+            issues.add(new BuildIssue(fileName, lineNumber, "括号数量不平衡。", "检查最近修改的位置，确认 `() { } [ ]` 是否成对出现。"));
         }
     }
 
@@ -1236,9 +1430,21 @@ public class MainActivity extends Activity {
             if (relative.length() == 0) {
                 relative = "/";
             }
-            return (item.isDirectory() ? "目录 · " : "文件 · ") + relative;
+            return (item.isDirectory() ? "目录 · 点击进入" : "文件 · ") + relative;
         }
         return item.isDirectory() ? "目录" : "文件";
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_FILE_BROWSER && resultCode == RESULT_OK && data != null) {
+            String filePath = data.getStringExtra(FileBrowserActivity.EXTRA_SELECTED_FILE);
+            if (filePath != null && filePath.length() > 0) {
+                openTextFile(new File(filePath));
+                hideFileDrawer();
+            }
+        }
     }
 
     @Override
@@ -1404,8 +1610,8 @@ public class MainActivity extends Activity {
                 holder = (FileTreeRowHolder) convertView.getTag();
             }
             FileTreeItem item = fileTreeItems.get(position);
-            String prefix = item.isDirectory() ? (expandedDirs.contains(item.getFile().getAbsolutePath()) ? "⌄  " : "›  ") : "·  ";
-            convertView.setPadding(dp(14) + item.getDepth() * dp(18), dp(10), dp(12), dp(10));
+            String prefix = item.isDirectory() ? "›  " : "·  ";
+            convertView.setPadding(dp(16), dp(10), dp(12), dp(10));
             convertView.setBackground(palette == null ? roundedDrawable("#151B24", "", 8) : themeManager.createPanelDrawable(palette, false));
             holder.title.setText(prefix + item.getFile().getName());
             holder.title.setTextColor(item.isDirectory()
@@ -1413,7 +1619,7 @@ public class MainActivity extends Activity {
                 : (palette == null ? Color.parseColor("#B8C9E0") : palette.textSecondary));
             holder.sub.setText(buildFileSecondaryText(item));
             holder.sub.setTextColor(palette == null ? Color.parseColor("#7D8DA4") : palette.textMuted);
-            holder.sub.setVisibility(item.getDepth() > 0 || !item.isDirectory() ? View.VISIBLE : View.GONE);
+            holder.sub.setVisibility(View.VISIBLE);
             return convertView;
         }
     }

@@ -6,13 +6,15 @@ import android.content.res.AssetManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Enumeration;
 import java.util.zip.GZIPInputStream;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 
@@ -53,8 +55,8 @@ public class ToolchainInstaller {
                     File installRoot = new File(environmentManager.getJdkInstallDir(EnvironmentManager.JDK_NAMES[index]));
                     clearDirectory(installRoot);
                     ensureDir(installRoot);
-                    listener.onProgress("正在解压 JDK 到本地目录...", 100, true);
-                    extractTarGz(archiveFile, installRoot);
+                    listener.onProgress("正在解压 JDK 到本地目录...", 0, false);
+                    extractTarGz(archiveFile, installRoot, listener, "正在解压 JDK");
                     File actualDir = resolveInstalledHome(installRoot);
                     listener.onSuccess(actualDir.getAbsolutePath());
                 } catch (Exception e) {
@@ -85,8 +87,8 @@ public class ToolchainInstaller {
                     File installRoot = new File(environmentManager.getNdkInstallDir(EnvironmentManager.NDK_NAMES[index]));
                     clearDirectory(installRoot);
                     ensureDir(installRoot);
-                    listener.onProgress("正在解压 NDK 到本地目录...", 100, true);
-                    extractZip(archiveFile, installRoot);
+                    listener.onProgress("正在解压 NDK 到本地目录...", 0, false);
+                    extractZip(archiveFile, installRoot, listener, "正在解压 NDK");
                     File actualDir = resolveInstalledHome(installRoot);
                     listener.onSuccess(actualDir.getAbsolutePath());
                 } catch (Exception e) {
@@ -106,8 +108,8 @@ public class ToolchainInstaller {
                     ensureDir(archiveFile.getParentFile());
                     prepareArchive(
                         EnvironmentManager.SDK_ASSET_ARCHIVE,
-                        "",
-                        new String[0],
+                        EnvironmentManager.SDK_PRIMARY_URL,
+                        EnvironmentManager.SDK_FALLBACK_URLS,
                         archiveFile,
                         "Android SDK 命令行工具",
                         listener
@@ -116,8 +118,8 @@ public class ToolchainInstaller {
                     File installRoot = new File(environmentManager.getEmbeddedSdkInstallDir());
                     clearDirectory(installRoot);
                     ensureDir(installRoot);
-                    listener.onProgress("正在解压 Android SDK 命令行工具...", 100, true);
-                    extractZip(archiveFile, installRoot);
+                    listener.onProgress("正在解压 Android SDK 命令行工具...", 0, false);
+                    extractZip(archiveFile, installRoot, listener, "正在解压 Android SDK");
                     normalizeEmbeddedSdkLayout(installRoot);
                     listener.onSuccess(installRoot.getAbsolutePath());
                 } catch (Exception e) {
@@ -295,12 +297,12 @@ public class ToolchainInstaller {
         }
     }
 
-    private void extractTarGz(File archiveFile, File targetDir) throws Exception {
+    private void extractTarGz(File archiveFile, File targetDir, InstallListener listener, String progressLabel) throws Exception {
+        long totalBytes = calculateTarTotalBytes(archiveFile);
+        long[] extractedBytes = {0L};
         TarArchiveInputStream tarInputStream = null;
         try {
-            tarInputStream = new TarArchiveInputStream(
-                new GZIPInputStream(new BufferedInputStream(new java.io.FileInputStream(archiveFile)))
-            );
+            tarInputStream = openTarInputStream(archiveFile);
             TarArchiveEntry entry;
             while ((entry = tarInputStream.getNextTarEntry()) != null) {
                 File outputFile = new File(targetDir, entry.getName());
@@ -311,19 +313,29 @@ public class ToolchainInstaller {
                 }
                 if (entry.isDirectory()) {
                     ensureDir(outputFile);
-                } else {
-                    ensureDir(outputFile.getParentFile());
-                    BufferedOutputStream outputStream = null;
-                    try {
-                        outputStream = new BufferedOutputStream(new FileOutputStream(outputFile));
-                        copyStream(tarInputStream, outputStream);
-                    } finally {
-                        if (outputStream != null) {
-                            outputStream.close();
-                        }
-                    }
-                    outputFile.setExecutable((entry.getMode() & 0100) != 0);
+                    continue;
                 }
+                ensureDir(outputFile.getParentFile());
+                BufferedOutputStream outputStream = null;
+                try {
+                    outputStream = new BufferedOutputStream(new FileOutputStream(outputFile));
+                    copyArchiveEntryStream(
+                        tarInputStream,
+                        outputStream,
+                        totalBytes,
+                        extractedBytes,
+                        progressLabel + "  " + simplifyEntryName(entry.getName()),
+                        listener
+                    );
+                } finally {
+                    if (outputStream != null) {
+                        outputStream.close();
+                    }
+                }
+                outputFile.setExecutable((entry.getMode() & 0100) != 0);
+            }
+            if (listener != null) {
+                listener.onProgress(progressLabel + " 完成", 100, false);
             }
         } finally {
             if (tarInputStream != null) {
@@ -332,12 +344,15 @@ public class ToolchainInstaller {
         }
     }
 
-    private void extractZip(File archiveFile, File targetDir) throws Exception {
-        ZipInputStream zipInputStream = null;
+    private void extractZip(File archiveFile, File targetDir, InstallListener listener, String progressLabel) throws Exception {
+        ZipFile zipFile = null;
         try {
-            zipInputStream = new ZipInputStream(new BufferedInputStream(new java.io.FileInputStream(archiveFile)));
-            ZipEntry entry;
-            while ((entry = zipInputStream.getNextEntry()) != null) {
+            zipFile = new ZipFile(archiveFile);
+            long totalBytes = calculateZipTotalBytes(zipFile);
+            long[] extractedBytes = {0L};
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
                 File outputFile = new File(targetDir, entry.getName());
                 String targetPath = targetDir.getCanonicalPath();
                 String outputPath = outputFile.getCanonicalPath();
@@ -346,25 +361,76 @@ public class ToolchainInstaller {
                 }
                 if (entry.isDirectory()) {
                     ensureDir(outputFile);
-                } else {
-                    ensureDir(outputFile.getParentFile());
-                    BufferedOutputStream outputStream = null;
-                    try {
-                        outputStream = new BufferedOutputStream(new FileOutputStream(outputFile));
-                        copyStream(zipInputStream, outputStream);
-                    } finally {
-                        if (outputStream != null) {
-                            outputStream.close();
-                        }
+                    continue;
+                }
+                ensureDir(outputFile.getParentFile());
+                InputStream entryInputStream = null;
+                BufferedOutputStream outputStream = null;
+                try {
+                    entryInputStream = new BufferedInputStream(zipFile.getInputStream(entry));
+                    outputStream = new BufferedOutputStream(new FileOutputStream(outputFile));
+                    copyArchiveEntryStream(
+                        entryInputStream,
+                        outputStream,
+                        totalBytes,
+                        extractedBytes,
+                        progressLabel + "  " + simplifyEntryName(entry.getName()),
+                        listener
+                    );
+                } finally {
+                    if (entryInputStream != null) {
+                        entryInputStream.close();
+                    }
+                    if (outputStream != null) {
+                        outputStream.close();
                     }
                 }
-                zipInputStream.closeEntry();
+            }
+            if (listener != null) {
+                listener.onProgress(progressLabel + " 完成", 100, false);
             }
         } finally {
-            if (zipInputStream != null) {
-                zipInputStream.close();
+            if (zipFile != null) {
+                zipFile.close();
             }
         }
+    }
+
+    private TarArchiveInputStream openTarInputStream(File archiveFile) throws Exception {
+        return new TarArchiveInputStream(
+            new GZIPInputStream(new BufferedInputStream(new FileInputStream(archiveFile)))
+        );
+    }
+
+    private long calculateTarTotalBytes(File archiveFile) throws Exception {
+        long totalBytes = 0L;
+        TarArchiveInputStream tarInputStream = null;
+        try {
+            tarInputStream = openTarInputStream(archiveFile);
+            TarArchiveEntry entry;
+            while ((entry = tarInputStream.getNextTarEntry()) != null) {
+                if (!entry.isDirectory() && entry.getSize() > 0) {
+                    totalBytes += entry.getSize();
+                }
+            }
+        } finally {
+            if (tarInputStream != null) {
+                tarInputStream.close();
+            }
+        }
+        return totalBytes;
+    }
+
+    private long calculateZipTotalBytes(ZipFile zipFile) {
+        long totalBytes = 0L;
+        Enumeration<? extends ZipEntry> entries = zipFile.entries();
+        while (entries.hasMoreElements()) {
+            ZipEntry entry = entries.nextElement();
+            if (!entry.isDirectory() && entry.getSize() > 0L) {
+                totalBytes += entry.getSize();
+            }
+        }
+        return totalBytes;
     }
 
     private void normalizeEmbeddedSdkLayout(File installRoot) throws Exception {
@@ -452,6 +518,39 @@ public class ToolchainInstaller {
         }
     }
 
+    private void copyArchiveEntryStream(
+        InputStream inputStream,
+        BufferedOutputStream outputStream,
+        long totalBytes,
+        long[] extractedBytes,
+        String progressLabel,
+        InstallListener listener
+    ) throws Exception {
+        byte[] buffer = new byte[8192];
+        int len;
+        int lastPercent = -1;
+        while ((len = inputStream.read(buffer)) != -1) {
+            outputStream.write(buffer, 0, len);
+            extractedBytes[0] += len;
+            if (listener != null) {
+                if (totalBytes > 0L) {
+                    int percent = (int) Math.min(100L, (extractedBytes[0] * 100L) / totalBytes);
+                    if (percent != lastPercent) {
+                        listener.onProgress(
+                            progressLabel + "  " + formatSize(extractedBytes[0]) + " / " + formatSize(totalBytes),
+                            percent,
+                            false
+                        );
+                        lastPercent = percent;
+                    }
+                } else {
+                    listener.onProgress(progressLabel + "  已完成 " + formatSize(extractedBytes[0]), 0, true);
+                }
+            }
+        }
+        outputStream.flush();
+    }
+
     private void copyStream(
         InputStream inputStream,
         BufferedOutputStream outputStream,
@@ -479,6 +578,18 @@ public class ToolchainInstaller {
             }
         }
         outputStream.flush();
+    }
+
+    private String simplifyEntryName(String entryName) {
+        if (entryName == null || entryName.length() == 0) {
+            return "当前文件";
+        }
+        String normalized = entryName.replace('\\', '/');
+        if (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        int slash = normalized.lastIndexOf('/');
+        return slash >= 0 ? normalized.substring(slash + 1) : normalized;
     }
 
     private String formatSize(long bytes) {
