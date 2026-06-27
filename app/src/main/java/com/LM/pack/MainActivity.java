@@ -42,9 +42,13 @@ import com.LM.pack.log.LogManager;
 import com.LM.pack.model.BuildIssue;
 import com.LM.pack.model.BuildResult;
 import com.LM.pack.model.EnvironmentState;
+import com.LM.pack.model.FileTreeItem;
 import com.LM.pack.model.ProjectConfig;
 import com.LM.pack.model.ProjectEntry;
 import com.LM.pack.project.ProjectManager;
+import com.LM.pack.service.BuildWorkflowService;
+import com.LM.pack.service.ProjectFileService;
+import com.LM.pack.service.ProjectWorkspaceService;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -60,6 +64,9 @@ public class MainActivity extends Activity {
     private ProjectManager projectManager;
     private BuildManager buildManager;
     private ProjectPreflightChecker preflightChecker;
+    private ProjectWorkspaceService projectWorkspaceService;
+    private ProjectFileService projectFileService;
+    private BuildWorkflowService buildWorkflowService;
     private EnvironmentState environmentState;
 
     private LinearLayout homePane;
@@ -112,6 +119,9 @@ public class MainActivity extends Activity {
         projectManager = new ProjectManager();
         buildManager = new BuildManager();
         preflightChecker = new ProjectPreflightChecker(projectManager, environmentManager);
+        projectWorkspaceService = new ProjectWorkspaceService(projectManager, environmentManager);
+        projectFileService = new ProjectFileService();
+        buildWorkflowService = new BuildWorkflowService(buildManager, preflightChecker, handler);
         environmentState = environmentManager.loadState();
         selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
         selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
@@ -298,18 +308,7 @@ public class MainActivity extends Activity {
 
     private void refreshProjectList() {
         projectEntries.clear();
-        projectEntries.addAll(
-            projectManager.scanProjects(
-                environmentManager.getManagedProjectRootDir(),
-                environmentManager.getImportedProjectRootDir()
-            )
-        );
-        Collections.sort(projectEntries, new Comparator<ProjectEntry>() {
-            @Override
-            public int compare(ProjectEntry a, ProjectEntry b) {
-                return a.getProjectName().compareToIgnoreCase(b.getProjectName());
-            }
-        });
+        projectEntries.addAll(projectWorkspaceService.loadProjects());
         projectAdapter.notifyDataSetChanged();
         if (projectEntries.isEmpty()) {
             emptyState.setVisibility(View.VISIBLE);
@@ -358,33 +357,12 @@ public class MainActivity extends Activity {
     }
 
     private void openDefaultEditorFile(ProjectEntry entry) {
-        File manifestFile = new File(entry.getProjectDir(), "app/src/main/AndroidManifest.xml");
-        File buildGradle = new File(entry.getProjectDir(), "app/build.gradle");
-        File buildGradleKts = new File(entry.getProjectDir(), "app/build.gradle.kts");
-        String packageName = safeText(entry.getPackageName(), "");
-        File mainJava = new File(entry.getProjectDir(), "app/src/main/java/" + packageName.replace('.', '/') + "/MainActivity.java");
-        File mainKt = new File(entry.getProjectDir(), "app/src/main/kotlin/" + packageName.replace('.', '/') + "/MainActivity.kt");
-        if (mainJava.exists()) {
-            loadFileIntoEditor(mainJava, true);
-        } else if (mainKt.exists()) {
-            loadFileIntoEditor(mainKt, true);
-        } else if (manifestFile.exists()) {
-            loadFileIntoEditor(manifestFile, true);
-        } else if (buildGradle.exists()) {
-            loadFileIntoEditor(buildGradle, true);
-        } else if (buildGradleKts.exists()) {
-            loadFileIntoEditor(buildGradleKts, true);
+        File defaultFile = projectWorkspaceService.resolveDefaultEditorFile(entry);
+        if (defaultFile != null) {
+            loadFileIntoEditor(defaultFile, true);
         } else {
-            File fallbackMainActivity = findFileBySuffix(new File(entry.getProjectDir()), "MainActivity.java");
-            if (fallbackMainActivity == null) {
-                fallbackMainActivity = findFileBySuffix(new File(entry.getProjectDir()), "MainActivity.kt");
-            }
-            if (fallbackMainActivity != null) {
-                loadFileIntoEditor(fallbackMainActivity, true);
-            } else {
-                clearEditor();
-                tvCurrentFilePath.setText("没有找到可编辑的文本文件");
-            }
+            clearEditor();
+            tvCurrentFilePath.setText("没有找到可编辑的文本文件");
         }
     }
 
@@ -471,14 +449,14 @@ public class MainActivity extends Activity {
                         etIconPath.getText().toString().trim(),
                         etSplashPath.getText().toString().trim()
                     );
-                    File rootDir = projectManager.createShellProject(this, config, environmentManager.getProjectRootDir(appName));
+                    File rootDir = projectWorkspaceService.createProject(this, config);
                     logManager.appendLogLine("INFO", "项目已创建，可直接进入编辑页继续修改。");
                     logManager.appendKeyValue("INFO", "创建目录", rootDir.getAbsolutePath());
                     refreshProjectList();
-                    openProject(projectManager.readProjectEntry(rootDir));
+                    openProject(projectWorkspaceService.readProjectEntry(rootDir));
                 } catch (Exception e) {
                     logManager.appendLogLine("ERROR", "创建项目失败：" + e);
-                    logManager.appendKeyValue("ERROR", "目标目录", environmentManager.getProjectRootDir(appName));
+                    logManager.appendKeyValue("ERROR", "目标目录", projectWorkspaceService.getPlannedProjectRoot(appName));
                     appendExceptionDetailToLogs(e);
                     toast("创建项目失败");
                 }
@@ -623,7 +601,7 @@ public class MainActivity extends Activity {
                     refresh.run();
                     return;
                 }
-                if (zipOnly && !projectManager.isZipFile(clicked)) {
+                if (zipOnly && !projectWorkspaceService.isZipFile(clicked)) {
                     toast("这里只能选择 zip 压缩包");
                     return;
                 }
@@ -690,23 +668,17 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 try {
-                    File tempRoot = new File(environmentManager.getImportTempDir(), sanitizeName(zipFile.getName()));
-                    projectManager.extractZipToTemp(zipFile, tempRoot);
-                    final File detectedRoot = projectManager.deepFindAndroidProject(tempRoot);
-                    if (detectedRoot == null) {
-                        throw new IllegalStateException("没有从压缩包中识别到有效的 Android 工程根目录。");
-                    }
-                    final File importedRoot = projectManager.importProject(detectedRoot, stripExtension(zipFile.getName()), environmentManager.getImportedProjectRootDir());
+                    final ProjectWorkspaceService.ImportResult importResult = projectWorkspaceService.importZipProject(zipFile);
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
                             dismissProgressDialog();
                             logManager.appendLogLine("INFO", "压缩包已解压并导入到管理目录。");
                             logManager.appendKeyValue("INFO", "原压缩包保留", zipFile.getAbsolutePath());
-                            logManager.appendKeyValue("INFO", "识别根目录", detectedRoot.getAbsolutePath());
-                            logManager.appendKeyValue("INFO", "导入目录", importedRoot.getAbsolutePath());
+                            logManager.appendKeyValue("INFO", "识别根目录", importResult.getDetectedRoot().getAbsolutePath());
+                            logManager.appendKeyValue("INFO", "导入目录", importResult.getImportedRoot().getAbsolutePath());
                             refreshProjectList();
-                            openProject(projectManager.readProjectEntry(importedRoot));
+                            openProject(projectWorkspaceService.readProjectEntry(importResult.getImportedRoot()));
                         }
                     });
                 } catch (final Exception e) {
@@ -730,21 +702,17 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 try {
-                    final File detectedRoot = projectManager.deepFindAndroidProject(folder);
-                    if (detectedRoot == null) {
-                        throw new IllegalStateException("没有找到完整的 Android 工程目录。");
-                    }
-                    final File importedRoot = projectManager.importProject(detectedRoot, detectedRoot.getName(), environmentManager.getImportedProjectRootDir());
+                    final ProjectWorkspaceService.ImportResult importResult = projectWorkspaceService.importFolderProject(folder);
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
                             dismissProgressDialog();
                             logManager.appendLogLine("INFO", "文件夹已导入到管理目录。");
                             logManager.appendKeyValue("INFO", "源目录", folder.getAbsolutePath());
-                            logManager.appendKeyValue("INFO", "识别根目录", detectedRoot.getAbsolutePath());
-                            logManager.appendKeyValue("INFO", "实际导入目录", importedRoot.getAbsolutePath());
+                            logManager.appendKeyValue("INFO", "识别根目录", importResult.getDetectedRoot().getAbsolutePath());
+                            logManager.appendKeyValue("INFO", "实际导入目录", importResult.getImportedRoot().getAbsolutePath());
                             refreshProjectList();
-                            openProject(projectManager.readProjectEntry(importedRoot));
+                            openProject(projectWorkspaceService.readProjectEntry(importResult.getImportedRoot()));
                         }
                     });
                 } catch (final Exception e) {
@@ -763,71 +731,15 @@ public class MainActivity extends Activity {
     }
 
     private void loadProjectFiles() {
-        fileTreeItems.clear();
-        expandedDirs.clear();
         if (currentProject == null) {
+            fileTreeItems.clear();
             fileTreeAdapter.notifyDataSetChanged();
             return;
         }
-        expandedDirs.add(currentProject.getProjectDir());
-        expandedDirs.add(new File(currentProject.getProjectDir(), "app").getAbsolutePath());
-        expandedDirs.add(new File(currentProject.getProjectDir(), "app/src").getAbsolutePath());
-        expandedDirs.add(new File(currentProject.getProjectDir(), "app/src/main").getAbsolutePath());
-        flattenDirectory(new File(currentProject.getProjectDir()), 0);
+        projectFileService.ensureDefaultExpandedDirs(currentProject, expandedDirs);
+        fileTreeItems.clear();
+        fileTreeItems.addAll(projectFileService.buildFileTree(currentProject, expandedDirs));
         fileTreeAdapter.notifyDataSetChanged();
-    }
-
-    private void flattenDirectory(File dir, int depth) {
-        if (!dir.exists() || !dir.isDirectory()) {
-            return;
-        }
-        fileTreeItems.add(new FileTreeItem(dir, depth, true));
-        if (!expandedDirs.contains(dir.getAbsolutePath())) {
-            return;
-        }
-        File[] files = dir.listFiles();
-        if (files == null) {
-            return;
-        }
-        ArrayList<File> directories = new ArrayList<File>();
-        ArrayList<File> normalFiles = new ArrayList<File>();
-        for (int i = 0; i < files.length; i++) {
-            File file = files[i];
-            if (shouldIgnore(file)) {
-                continue;
-            }
-            if (file.isDirectory()) {
-                directories.add(file);
-            } else if (isTextEditableFile(file)) {
-                normalFiles.add(file);
-            }
-        }
-        Collections.sort(directories, new FileNameComparator());
-        Collections.sort(normalFiles, new FileNameComparator());
-        for (int i = 0; i < directories.size(); i++) {
-            flattenDirectory(directories.get(i), depth + 1);
-        }
-        for (int i = 0; i < normalFiles.size(); i++) {
-            fileTreeItems.add(new FileTreeItem(normalFiles.get(i), depth + 1, false));
-        }
-    }
-
-    private boolean shouldIgnore(File file) {
-        String name = file.getName();
-        return ".git".equals(name) || ".gradle".equals(name) || "build".equals(name) || ".lmproject".equals(name);
-    }
-
-    private boolean isTextEditableFile(File file) {
-        String name = file.getName().toLowerCase();
-        return name.endsWith(".java")
-            || name.endsWith(".kt")
-            || name.endsWith(".xml")
-            || name.endsWith(".gradle")
-            || name.endsWith(".kts")
-            || name.endsWith(".properties")
-            || name.endsWith(".txt")
-            || name.endsWith(".md")
-            || "gradlew".equals(name);
     }
 
     private void handleFileTreeClick(int position) {
@@ -835,19 +747,19 @@ public class MainActivity extends Activity {
             return;
         }
         FileTreeItem item = fileTreeItems.get(position);
-        if (item.isDirectory) {
-            String path = item.file.getAbsolutePath();
+        if (item.isDirectory()) {
+            String path = item.getFile().getAbsolutePath();
             if (expandedDirs.contains(path)) {
                 expandedDirs.remove(path);
             } else {
                 expandedDirs.add(path);
             }
             fileTreeItems.clear();
-            flattenDirectory(new File(currentProject.getProjectDir()), 0);
+            fileTreeItems.addAll(projectFileService.buildFileTree(currentProject, expandedDirs));
             fileTreeAdapter.notifyDataSetChanged();
             return;
         }
-        openTextFile(item.file);
+        openTextFile(item.getFile());
         hideFileDrawer();
     }
 
@@ -863,11 +775,11 @@ public class MainActivity extends Activity {
 
     private void loadFileIntoEditor(File file, boolean trackTab) {
         try {
-            String content = projectManager.readText(file);
+            String content = projectWorkspaceService.readText(file);
             currentOpenFile = file;
             etEditor.setFileName(file.getName());
             etEditor.setText(content);
-            tvCurrentFilePath.setText(buildDisplayPath(file));
+            tvCurrentFilePath.setText(projectFileService.buildDisplayPath(currentProject, file));
             suggestionCard.setVisibility(View.GONE);
             if (trackTab) {
                 editorTabManager.openTab(file);
@@ -888,31 +800,12 @@ public class MainActivity extends Activity {
         suggestionCard.setVisibility(View.GONE);
     }
 
-    private String buildDisplayPath(File file) {
-        if (file == null) {
-            return "请选择一个文件";
-        }
-        if (currentProject == null) {
-            return file.getAbsolutePath();
-        }
-        String projectRoot = currentProject.getProjectDir();
-        String fullPath = file.getAbsolutePath();
-        if (fullPath.startsWith(projectRoot)) {
-            String relative = fullPath.substring(projectRoot.length());
-            if (relative.startsWith(File.separator)) {
-                relative = relative.substring(1);
-            }
-            return currentProject.getProjectName() + "  /  " + relative;
-        }
-        return fullPath;
-    }
-
     private void saveCurrentFile() {
         if (currentOpenFile == null) {
             return;
         }
         try {
-            projectManager.writeText(currentOpenFile, etEditor.getText().toString());
+            projectWorkspaceService.writeText(currentOpenFile, etEditor.getText().toString());
             logManager.appendKeyValue("INFO", "已保存文件", currentOpenFile.getAbsolutePath());
         } catch (Exception e) {
             logManager.appendLogLine("ERROR", "保存文件失败：" + e.getMessage());
@@ -945,83 +838,57 @@ public class MainActivity extends Activity {
         }
         saveCurrentFile();
         showProgressDialog("检查错误代码", "正在进行打包前检查...");
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                final ArrayList<BuildIssue> issues = preflightChecker.collectProjectIssues(
-                    new File(currentProject.getProjectDir()),
-                    projectPrepared,
-                    environmentState,
-                    selectedJdkIndex,
-                    selectedNdkIndex
-                );
-                handler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (!issues.isEmpty()) {
-                            dismissProgressDialog();
-                            lastBuildIssues.clear();
-                            lastBuildIssues.addAll(issues);
-                            updateBugButtonState();
-                            logManager.appendLogLine("ERROR", "打包前检查未通过，已停止构建。");
-                            appendIssueListToLogs("预检查发现的问题", lastBuildIssues);
-                            showIssueDialog("检查发现错误", lastBuildIssues);
-                            return;
-                        }
-                        updateProgressDialog("检查通过，开始调用 Gradle 构建...");
-                        startRealBuild();
-                    }
-                });
-            }
-        }).start();
-    }
-
-    private void startRealBuild() {
-        isBuildRunning = true;
-        buildManager.runGradleBuild(
-            currentProject.getProjectDir(),
-            environmentState.getInstalledJdkDir(),
-            environmentState.getAndroidSdkDir(),
-            environmentState.getInstalledNdkDir(),
-            EnvironmentManager.JDK_NAMES[selectedJdkIndex],
-            new BuildManager.BuildListener() {
+        buildWorkflowService.checkAndBuild(
+            currentProject,
+            projectPrepared,
+            environmentState,
+            selectedJdkIndex,
+            selectedNdkIndex,
+            new BuildWorkflowService.Listener() {
                 @Override
-                public void onLogLine(final String line) {
-                    handler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            appendBuildOutput(line);
-                        }
-                    });
+                public void onPreflightFailed(ArrayList<BuildIssue> issues) {
+                    dismissProgressDialog();
+                    lastBuildIssues.clear();
+                    lastBuildIssues.addAll(issues);
+                    updateBugButtonState();
+                    logManager.appendLogLine("ERROR", "打包前检查未通过，已停止构建。");
+                    appendIssueListToLogs("预检查发现的问题", lastBuildIssues);
+                    showIssueDialog("检查发现错误", lastBuildIssues);
                 }
 
                 @Override
-                public void onFinished(final BuildResult result) {
-                    handler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            dismissProgressDialog();
-                            isBuildRunning = false;
-                            lastBuildIssues.clear();
-                            lastBuildIssues.addAll(result.getIssues());
-                            updateBugButtonState();
-                            if (result.isSuccess()) {
-                                logManager.appendLogLine("INFO", result.getMessage());
-                                if (result.getApkPath() != null && result.getApkPath().length() > 0) {
-                                    logManager.appendKeyValue("INFO", "APK 输出", result.getApkPath());
-                                }
-                                toast("打包成功");
-                            } else {
-                                logManager.appendLogLine("ERROR", result.getMessage());
-                                if (!lastBuildIssues.isEmpty()) {
-                                    appendIssueListToLogs("构建失败的问题列表", lastBuildIssues);
-                                    showIssueDialog("构建失败，可点击定位错误", lastBuildIssues);
-                                } else {
-                                    toast("打包失败");
-                                }
-                            }
+                public void onBuildStarted() {
+                    isBuildRunning = true;
+                    updateProgressDialog("检查通过，开始调用 Gradle 构建...");
+                }
+
+                @Override
+                public void onBuildLog(String line) {
+                    appendBuildOutput(line);
+                }
+
+                @Override
+                public void onBuildFinished(BuildResult result) {
+                    dismissProgressDialog();
+                    isBuildRunning = false;
+                    lastBuildIssues.clear();
+                    lastBuildIssues.addAll(result.getIssues());
+                    updateBugButtonState();
+                    if (result.isSuccess()) {
+                        logManager.appendLogLine("INFO", result.getMessage());
+                        if (result.getApkPath() != null && result.getApkPath().length() > 0) {
+                            logManager.appendKeyValue("INFO", "APK 输出", result.getApkPath());
                         }
-                    });
+                        toast("打包成功");
+                    } else {
+                        logManager.appendLogLine("ERROR", result.getMessage());
+                        if (!lastBuildIssues.isEmpty()) {
+                            appendIssueListToLogs("构建失败的问题列表", lastBuildIssues);
+                            showIssueDialog("构建失败，可点击定位错误", lastBuildIssues);
+                        } else {
+                            toast("打包失败");
+                        }
+                    }
                 }
             }
         );
@@ -1064,8 +931,8 @@ public class MainActivity extends Activity {
     }
 
     private void openIssue(BuildIssue issue) {
-        File issueFile = resolveIssueFile(issue.getFilePath());
-        if (issueFile != null && issueFile.exists() && issueFile.isFile() && isTextEditableFile(issueFile)) {
+        File issueFile = projectFileService.resolveIssueFile(currentProject, issue.getFilePath());
+        if (issueFile != null && issueFile.exists() && issueFile.isFile() && projectFileService.isTextEditableFile(issueFile)) {
             openTextFile(issueFile);
             if (issue.getLineNumber() > 0) {
                 moveCursorToLine(issue.getLineNumber());
@@ -1076,43 +943,6 @@ public class MainActivity extends Activity {
         tvIssueFix.setText(issue.getSuggestion());
         currentCopiedFix = issue.getSuggestion();
         toast("已定位到错误代码");
-    }
-
-    private File resolveIssueFile(String path) {
-        if (path == null || path.length() == 0 || currentProject == null) {
-            return null;
-        }
-        File direct = new File(path);
-        if (direct.exists()) {
-            return direct;
-        }
-        File relative = new File(currentProject.getProjectDir(), path);
-        if (relative.exists()) {
-            return relative;
-        }
-        return findFileBySuffix(new File(currentProject.getProjectDir()), new File(path).getName());
-    }
-
-    private File findFileBySuffix(File dir, String name) {
-        if (!dir.exists() || !dir.isDirectory()) {
-            return null;
-        }
-        File[] files = dir.listFiles();
-        if (files == null) {
-            return null;
-        }
-        for (int i = 0; i < files.length; i++) {
-            File file = files[i];
-            if (file.isDirectory()) {
-                File found = findFileBySuffix(file, name);
-                if (found != null) {
-                    return found;
-                }
-            } else if (file.getName().equals(name)) {
-                return file;
-            }
-        }
-        return null;
     }
 
     private void moveCursorToLine(int lineNumber) {
@@ -1351,10 +1181,10 @@ public class MainActivity extends Activity {
                 textView = (TextView) convertView;
             }
             FileTreeItem item = fileTreeItems.get(position);
-            String prefix = item.isDirectory ? (expandedDirs.contains(item.file.getAbsolutePath()) ? "⌄  " : "›  ") : "·  ";
-            textView.setPadding(dp(14) + item.depth * dp(18), dp(10), dp(12), dp(10));
-            textView.setText(prefix + item.file.getName());
-            textView.setTextColor(item.isDirectory ? Color.parseColor("#F3F7FD") : Color.parseColor("#B8C9E0"));
+            String prefix = item.isDirectory() ? (expandedDirs.contains(item.getFile().getAbsolutePath()) ? "⌄  " : "›  ") : "·  ";
+            textView.setPadding(dp(14) + item.getDepth() * dp(18), dp(10), dp(12), dp(10));
+            textView.setText(prefix + item.getFile().getName());
+            textView.setTextColor(item.isDirectory() ? Color.parseColor("#F3F7FD") : Color.parseColor("#B8C9E0"));
             return convertView;
         }
     }
@@ -1370,18 +1200,6 @@ public class MainActivity extends Activity {
             this.title = title;
             this.sub = sub;
             this.meta = meta;
-        }
-    }
-
-    private static class FileTreeItem {
-        final File file;
-        final int depth;
-        final boolean isDirectory;
-
-        FileTreeItem(File file, int depth, boolean isDirectory) {
-            this.file = file;
-            this.depth = depth;
-            this.isDirectory = isDirectory;
         }
     }
 
