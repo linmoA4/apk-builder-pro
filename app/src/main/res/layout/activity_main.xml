@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="14dp">
+
+        <Button
+            android:id="@+id/btnSettings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#2D2D2D"
+            android:minWidth="72dp"
+            android:text="设置"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="LM打包工具"
+            android:textColor="#FFFFFF"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <Space
+            android:layout_width="72dp"
+            android:layout_height="1dp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnCreateProject"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginRight="8dp"
+            android:layout_weight="1"
+            android:background="#00BCD4"
+            android:text="创建空壳项目"
+            android:textColor="#000000"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnImportProject"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="#607D8B"
+            android:text="导入项目"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/etPackageName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        android:background="#1E1E1E"
+        android:hint="目标包名"
+        android:inputType="text"
+        android:padding="12dp"
+        android:text="com.LM.pack"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#AAAAAA" />
+
+    <EditText
+        android:id="@+id/etAppName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        android:background="#1E1E1E"
+        android:hint="应用名称"
+        android:inputType="text"
+        android:padding="12dp"
+        android:text="LM打包工具"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#AAAAAA" />
+
+    <EditText
+        android:id="@+id/etMinSdk"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        android:background="#1E1E1E"
+        android:hint="最低 SDK 版本"
+        android:inputType="number"
+        android:padding="12dp"
+        android:text="29"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#AAAAAA" />
+
+    <EditText
+        android:id="@+id/etTargetSdk"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="14dp"
+        android:background="#1E1E1E"
+        android:hint="目标 SDK 版本"
+        android:inputType="number"
+        android:padding="12dp"
+        android:text="36"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#AAAAAA" />
+
+    <Button
+        android:id="@+id/btnGenerate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        android:background="#4CAF50"
+        android:text="生成/更新配置"
+        android:textColor="#000000"
+        android:textStyle="bold" />
+
+    <Button
+        android:id="@+id/btnBuild"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="14dp"
+        android:background="#FFC107"
+        android:text="检测并打包"
+        android:textColor="#000000"
+        android:textStyle="bold" />
+
+    <ScrollView
+        android:id="@+id/logScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#2D2D2D"
+        android:fillViewport="true"
+        android:padding="12dp"
+        android:scrollbars="vertical">
+
+        <TextView
+            android:id="@+id/tvLogs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:lineSpacingExtra="4dp"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+    </ScrollView>
+
+</LinearLayout>

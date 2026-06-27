@@ -1,0 +1,2 @@
+rootProject.name = "LM打包工具"
+include ':app'
