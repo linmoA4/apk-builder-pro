@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/startupRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.LM.pack.theme.LiquidGlassBackgroundView
+        android:id="@+id/bgSceneView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingLeft="26dp"
+        android:paddingTop="26dp"
+        android:paddingRight="26dp"
+        android:paddingBottom="26dp">
+
+        <FrameLayout
+            android:layout_width="176dp"
+            android:layout_height="176dp"
+            android:background="@drawable/bg_startup_avatar"
+            android:padding="18dp"
+            android:tag="panelRaised">
+
+            <ImageView
+                android:id="@+id/ivAvatar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_gravity="center"
+                android:adjustViewBounds="true"
+                android:scaleType="centerCrop"
+                android:src="@android:drawable/sym_def_app_icon" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:text="正在检查启动环境..."
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:tag="primary" />
+
+        <TextView
+            android:id="@+id/tvSubtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:text="首次启动会先解压内置 JDK、NDK 和 Gradle"
+            android:textSize="13sp"
+            android:tag="secondary" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:gravity="center"
+            android:text="准备进入工作台"
+            android:textSize="13sp"
+            android:tag="muted" />
+
+        <ProgressBar
+            android:id="@+id/progressBoot"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="10dp"
+            android:layout_marginTop="18dp"
+            android:max="100"
+            android:progress="0"
+            android:progressDrawable="@android:drawable/progress_horizontal" />
+
+        <TextView
+            android:id="@+id/tvProgress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="0%"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:tag="primary" />
+
+        <Button
+            android:id="@+id/btnRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginTop="20dp"
+            android:text="重试"
+            android:textStyle="bold"
+            android:visibility="gone"
+            android:tag="primaryButton primary" />
+    </LinearLayout>
+
+</FrameLayout>

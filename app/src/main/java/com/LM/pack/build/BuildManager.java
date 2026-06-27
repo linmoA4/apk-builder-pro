@@ -20,6 +20,12 @@ import java.util.regex.Pattern;
 
 public class BuildManager {
 
+    public interface OfflineGradleListener {
+        void onProgress(String message);
+        void onSuccess(File gradleExecutable);
+        void onError(String message);
+    }
+
     private static final String OFFLINE_GRADLE_ASSET_PATH = "toolchains/gradle/gradle-8.7-bin.zip";
     private static final String[] OFFLINE_GRADLE_URLS = {
         "https://services.gradle.org/distributions/gradle-8.7-bin.zip",
@@ -53,6 +59,47 @@ public class BuildManager {
                 executeGradleBuild(projectDir, jdkDir, sdkDir, ndkDir, selectedJdkName, listener);
             }
         }).start();
+    }
+
+    public void prepareOfflineGradleAsync(final OfflineGradleListener listener) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (listener != null) {
+                        listener.onProgress("正在检查 Gradle 运行环境...");
+                    }
+                    File gradleExecutable = prepareOfflineGradle(new BuildListener() {
+                        @Override
+                        public void onLogLine(String line) {
+                            if (listener != null && line != null && line.length() > 0) {
+                                listener.onProgress(line);
+                            }
+                        }
+
+                        @Override
+                        public void onFinished(BuildResult result) {
+                        }
+                    });
+                    if (gradleExecutable != null && gradleExecutable.exists()) {
+                        if (listener != null) {
+                            listener.onSuccess(gradleExecutable);
+                        }
+                    } else if (listener != null) {
+                        listener.onError("Gradle 运行环境准备失败");
+                    }
+                } catch (Exception e) {
+                    if (listener != null) {
+                        listener.onError("Gradle 运行环境准备失败：" + e.getMessage());
+                    }
+                }
+            }
+        }).start();
+    }
+
+    public boolean isOfflineGradlePrepared() {
+        File gradleExecutable = findGradleExecutable(new File(environmentManager.getGradleInstallDir()));
+        return gradleExecutable != null && gradleExecutable.exists() && gradleExecutable.isFile();
     }
 
     private void executeGradleBuild(
