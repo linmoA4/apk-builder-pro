@@ -3,14 +3,25 @@ package com.LM.pack.project;
 import android.content.Context;
 import android.content.res.AssetManager;
 import com.LM.pack.model.ProjectConfig;
+import com.LM.pack.model.ProjectEntry;
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Properties;
 import java.util.regex.Matcher;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public class ProjectManager {
+
+    private static final String META_DIR = ".lmproject";
+    private static final String META_FILE = "meta.properties";
 
     public File createShellProject(Context context, ProjectConfig config, String projectRootPath) throws IOException {
         File projectRoot = new File(projectRootPath);
@@ -18,6 +29,7 @@ public class ProjectManager {
         File javaDir = new File(appDir, "src/main/java/" + config.getPackagePath());
         File resLayoutDir = new File(appDir, "src/main/res/layout");
         File resValuesDir = new File(appDir, "src/main/res/values");
+        File resDrawableDir = new File(appDir, "src/main/res/drawable");
         File manifestFile = new File(appDir, "src/main/AndroidManifest.xml");
 
         ensureDir(projectRoot);
@@ -27,6 +39,7 @@ public class ProjectManager {
         ensureDir(javaDir);
         ensureDir(resLayoutDir);
         ensureDir(resValuesDir);
+        ensureDir(resDrawableDir);
 
         writeText(new File(projectRoot, "settings.gradle"), buildSettingsGradle(config));
         writeText(new File(projectRoot, "build.gradle"), buildRootGradle());
@@ -34,13 +47,19 @@ public class ProjectManager {
         writeText(new File(appDir, "build.gradle"), buildAppGradle(config));
         writeText(manifestFile, buildManifest(config));
         writeText(new File(javaDir, "MainActivity.java"), buildShellMainActivity(config));
-        writeText(new File(resLayoutDir, "activity_main.xml"), buildShellLayout(config));
+        writeText(new File(resLayoutDir, "activity_main.xml"), buildShellLayout());
         writeText(new File(resValuesDir, "strings.xml"), buildStrings(config));
         writeText(new File(resValuesDir, "colors.xml"), buildColors());
         writeText(new File(resValuesDir, "styles.xml"), buildStyles());
+        writeText(new File(appDir, "src/main/res/mipmap-anydpi-v26/ic_launcher.xml"), buildAdaptiveIconXml());
+        writeText(new File(appDir, "src/main/res/drawable/ic_launcher_foreground.xml"), buildDefaultLauncherForeground());
+        writeText(new File(appDir, "src/main/res/drawable/ic_launcher_background.xml"), buildDefaultLauncherBackground());
+        writeText(new File(appDir, "src/main/res/drawable/splash_image.xml"), buildDefaultSplashDrawable());
         writeText(new File(appDir, "proguard-rules.pro"), "");
 
         copyWrapperAssets(context, projectRoot);
+        applyBrandingAssets(config, projectRoot);
+        saveProjectMeta(projectRoot, config.getAppName(), config.getPackageName(), "创建项目", config.getVersionName(), findProjectIcon(projectRoot));
         return projectRoot;
     }
 
@@ -81,6 +100,292 @@ public class ProjectManager {
         }
 
         updateExistingMainActivityPackage(projectRoot, config);
+        applyBrandingAssets(config, projectRoot);
+        saveProjectMeta(projectRoot, config.getAppName(), config.getPackageName(), "创建项目", config.getVersionName(), findProjectIcon(projectRoot));
+    }
+
+    public ArrayList<ProjectEntry> scanProjects(String... rootPaths) {
+        ArrayList<ProjectEntry> entries = new ArrayList<ProjectEntry>();
+        for (int i = 0; i < rootPaths.length; i++) {
+            File root = new File(rootPaths[i]);
+            if (!root.exists() || !root.isDirectory()) {
+                continue;
+            }
+            File[] children = root.listFiles();
+            if (children == null) {
+                continue;
+            }
+            for (int j = 0; j < children.length; j++) {
+                File child = children[j];
+                if (!child.isDirectory()) {
+                    continue;
+                }
+                if (looksLikeAndroidProject(child)) {
+                    entries.add(readProjectEntry(child));
+                }
+            }
+        }
+        return entries;
+    }
+
+    public boolean isZipFile(File file) {
+        String name = file.getName().toLowerCase();
+        return name.endsWith(".zip");
+    }
+
+    public File extractZipToTemp(File zipFile, File tempDir) throws IOException {
+        clearDirectory(tempDir);
+        ensureDir(tempDir);
+        ZipInputStream zipInputStream = null;
+        try {
+            zipInputStream = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
+            ZipEntry entry;
+            while ((entry = zipInputStream.getNextEntry()) != null) {
+                File outputFile = new File(tempDir, entry.getName());
+                String targetPath = tempDir.getCanonicalPath();
+                String outputPath = outputFile.getCanonicalPath();
+                if (!outputPath.startsWith(targetPath + File.separator) && !outputPath.equals(targetPath)) {
+                    throw new IOException("压缩包包含非法路径: " + entry.getName());
+                }
+                if (entry.isDirectory()) {
+                    ensureDir(outputFile);
+                } else {
+                    ensureDir(outputFile.getParentFile());
+                    FileOutputStream outputStream = new FileOutputStream(outputFile);
+                    try {
+                        copyStream(zipInputStream, outputStream);
+                    } finally {
+                        outputStream.close();
+                    }
+                }
+                zipInputStream.closeEntry();
+            }
+            return tempDir;
+        } finally {
+            if (zipInputStream != null) {
+                zipInputStream.close();
+            }
+        }
+    }
+
+    public File deepFindAndroidProject(File candidate) {
+        if (candidate == null || !candidate.exists() || !candidate.isDirectory()) {
+            return null;
+        }
+        if (looksLikeAndroidProject(candidate)) {
+            return candidate;
+        }
+        File[] children = candidate.listFiles();
+        if (children == null) {
+            return null;
+        }
+        for (int i = 0; i < children.length; i++) {
+            File child = children[i];
+            if (!child.isDirectory()) {
+                continue;
+            }
+            File found = deepFindAndroidProject(child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    public boolean looksLikeAndroidProject(File dir) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) {
+            return false;
+        }
+        boolean hasManifest = new File(dir, "app/src/main/AndroidManifest.xml").exists();
+        boolean hasAppGradle = new File(dir, "app/build.gradle").exists() || new File(dir, "app/build.gradle.kts").exists();
+        boolean hasSettings = new File(dir, "settings.gradle").exists() || new File(dir, "settings.gradle.kts").exists();
+        boolean hasRootGradle = new File(dir, "build.gradle").exists() || new File(dir, "build.gradle.kts").exists();
+        return hasManifest && hasAppGradle && (hasSettings || hasRootGradle);
+    }
+
+    public File importProject(File detectedProjectDir, String projectName, String destinationRootDir) throws IOException {
+        if (!looksLikeAndroidProject(detectedProjectDir)) {
+            throw new IOException("目录结构不是有效的 Android 工程。");
+        }
+        File targetDir = new File(destinationRootDir, sanitizeName(projectName));
+        clearDirectory(targetDir);
+        copyDirectory(detectedProjectDir, targetDir);
+        ProjectEntry entry = readProjectEntry(targetDir);
+        saveProjectMeta(
+            targetDir,
+            safeText(entry.getProjectName(), projectName),
+            safeText(entry.getPackageName(), ""),
+            "导入项目",
+            safeText(entry.getVersionName(), "1.0"),
+            findProjectIcon(targetDir)
+        );
+        return targetDir;
+    }
+
+    public ProjectEntry readProjectEntry(File projectRoot) {
+        Properties meta = loadProjectMeta(projectRoot);
+        String projectName = firstNonEmpty(
+            meta.getProperty("projectName"),
+            readAppName(projectRoot),
+            projectRoot.getName()
+        );
+        String packageName = firstNonEmpty(meta.getProperty("packageName"), readPackageName(projectRoot), "");
+        String versionName = firstNonEmpty(meta.getProperty("versionName"), readVersionName(projectRoot), "1.0");
+        String iconPath = firstNonEmpty(meta.getProperty("iconPath"), findProjectIcon(projectRoot), "");
+        String mode = firstNonEmpty(meta.getProperty("mode"), "项目");
+        return new ProjectEntry(projectName, packageName, projectRoot.getAbsolutePath(), iconPath, mode, versionName);
+    }
+
+    public String readAppName(File projectRoot) {
+        try {
+            File stringsFile = new File(projectRoot, "app/src/main/res/values/strings.xml");
+            if (!stringsFile.exists()) {
+                return "";
+            }
+            Matcher matcher = java.util.regex.Pattern.compile("<string\\s+name=\"app_name\">(.*?)</string>").matcher(readText(stringsFile));
+            if (matcher.find()) {
+                return matcher.group(1).trim();
+            }
+        } catch (Exception e) {
+        }
+        return "";
+    }
+
+    public String readPackageName(File projectRoot) {
+        try {
+            File manifestFile = new File(projectRoot, "app/src/main/AndroidManifest.xml");
+            if (!manifestFile.exists()) {
+                return "";
+            }
+            Matcher matcher = java.util.regex.Pattern.compile("package=\"([^\"]+)\"").matcher(readText(manifestFile));
+            if (matcher.find()) {
+                return matcher.group(1).trim();
+            }
+        } catch (Exception e) {
+        }
+        return "";
+    }
+
+    public String readVersionName(File projectRoot) {
+        try {
+            File appGradle = new File(projectRoot, "app/build.gradle");
+            if (!appGradle.exists()) {
+                return "";
+            }
+            Matcher matcher = java.util.regex.Pattern.compile("versionName\\s+\"([^\"]+)\"").matcher(readText(appGradle));
+            if (matcher.find()) {
+                return matcher.group(1).trim();
+            }
+        } catch (Exception e) {
+        }
+        return "";
+    }
+
+    public String findProjectIcon(File projectRoot) {
+        String[] candidates = {
+            "app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+            "app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+            "app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+            "app/src/main/res/mipmap-hdpi/ic_launcher.png",
+            "app/src/main/res/mipmap-mdpi/ic_launcher.png",
+            "app/src/main/res/drawable/ic_launcher.png",
+            "app/src/main/res/drawable/ic_launcher.webp",
+            "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
+        };
+        for (int i = 0; i < candidates.length; i++) {
+            File file = new File(projectRoot, candidates[i]);
+            if (file.exists()) {
+                return file.getAbsolutePath();
+            }
+        }
+        return "";
+    }
+
+    public String readText(File file) throws IOException {
+        InputStream inputStream = null;
+        try {
+            inputStream = new FileInputStream(file);
+            byte[] buffer = new byte[4096];
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            int len;
+            while ((len = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, len);
+            }
+            return new String(outputStream.toByteArray(), StandardCharsets.UTF_8);
+        } finally {
+            if (inputStream != null) {
+                inputStream.close();
+            }
+        }
+    }
+
+    public void writeText(File file, String content) throws IOException {
+        ensureDir(file.getParentFile());
+        FileOutputStream outputStream = null;
+        try {
+            outputStream = new FileOutputStream(file);
+            outputStream.write(content.getBytes(StandardCharsets.UTF_8));
+        } finally {
+            if (outputStream != null) {
+                outputStream.close();
+            }
+        }
+    }
+
+    public void ensureDir(File dir) throws IOException {
+        if (dir == null || dir.exists()) {
+            return;
+        }
+        if (!dir.mkdirs()) {
+            throw new IOException("无法创建目录: " + dir.getAbsolutePath());
+        }
+    }
+
+    public void clearDirectory(File file) throws IOException {
+        if (file == null || !file.exists()) {
+            return;
+        }
+        if (file.isDirectory()) {
+            File[] files = file.listFiles();
+            if (files != null) {
+                for (int i = 0; i < files.length; i++) {
+                    clearDirectory(files[i]);
+                }
+            }
+        }
+        if (!file.delete()) {
+            throw new IOException("无法删除: " + file.getAbsolutePath());
+        }
+    }
+
+    public void copyDirectory(File source, File target) throws IOException {
+        if (source.isDirectory()) {
+            ensureDir(target);
+            File[] children = source.listFiles();
+            if (children == null) {
+                return;
+            }
+            for (int i = 0; i < children.length; i++) {
+                File child = children[i];
+                copyDirectory(child, new File(target, child.getName()));
+            }
+        } else {
+            ensureDir(target.getParentFile());
+            InputStream inputStream = null;
+            FileOutputStream outputStream = null;
+            try {
+                inputStream = new FileInputStream(source);
+                outputStream = new FileOutputStream(target);
+                copyStream(inputStream, outputStream);
+            } finally {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+                if (outputStream != null) {
+                    outputStream.close();
+                }
+            }
+        }
     }
 
     private void updateExistingMainActivityPackage(File projectRoot, ProjectConfig config) throws IOException {
@@ -92,7 +397,6 @@ public class ProjectManager {
         if (existingMainActivity == null) {
             return;
         }
-
         String javaContent = readText(existingMainActivity);
         String updatedContent;
         if (javaContent.contains("package ")) {
@@ -106,23 +410,109 @@ public class ProjectManager {
         writeText(existingMainActivity, updatedContent);
     }
 
-    private File findFileByName(File dir, String fileName) {
-        File[] files = dir.listFiles();
-        if (files == null) {
-            return null;
+    private void applyBrandingAssets(ProjectConfig config, File projectRoot) throws IOException {
+        copyIconIfPresent(config.getIconSourcePath(), projectRoot);
+        copySplashIfPresent(config.getSplashSourcePath(), projectRoot);
+    }
+
+    private void copyIconIfPresent(String sourcePath, File projectRoot) throws IOException {
+        if (sourcePath == null || sourcePath.trim().length() == 0) {
+            return;
         }
-        for (int i = 0; i < files.length; i++) {
-            File file = files[i];
-            if (file.isDirectory()) {
-                File match = findFileByName(file, fileName);
-                if (match != null) {
-                    return match;
-                }
-            } else if (fileName.equals(file.getName())) {
-                return file;
+        File sourceFile = new File(sourcePath);
+        if (!sourceFile.exists() || sourceFile.isDirectory()) {
+            return;
+        }
+        String lower = sourceFile.getName().toLowerCase();
+        if (!(lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp"))) {
+            return;
+        }
+        File placeholderXml = new File(projectRoot, "app/src/main/res/drawable/ic_launcher_foreground.xml");
+        if (placeholderXml.exists()) {
+            placeholderXml.delete();
+        }
+        File backgroundXml = new File(projectRoot, "app/src/main/res/drawable/ic_launcher_background.xml");
+        if (!backgroundXml.exists()) {
+            writeText(backgroundXml, buildDefaultLauncherBackground());
+        }
+        String extension = lower.endsWith(".webp") ? ".webp" : ".png";
+        File foregroundFile = new File(projectRoot, "app/src/main/res/drawable/ic_launcher_foreground" + extension);
+        copyDirectory(sourceFile, foregroundFile);
+        String[] folders = {"mipmap-mdpi", "mipmap-hdpi", "mipmap-xhdpi", "mipmap-xxhdpi", "mipmap-xxxhdpi"};
+        for (int i = 0; i < folders.length; i++) {
+            File targetFile = new File(projectRoot, "app/src/main/res/" + folders[i] + "/ic_launcher" + extension);
+            copyDirectory(sourceFile, targetFile);
+        }
+    }
+
+    private void copySplashIfPresent(String sourcePath, File projectRoot) throws IOException {
+        if (sourcePath == null || sourcePath.trim().length() == 0) {
+            return;
+        }
+        File sourceFile = new File(sourcePath);
+        if (!sourceFile.exists() || sourceFile.isDirectory()) {
+            return;
+        }
+        String lower = sourceFile.getName().toLowerCase();
+        if (!(lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp"))) {
+            return;
+        }
+        File placeholderXml = new File(projectRoot, "app/src/main/res/drawable/splash_image.xml");
+        if (placeholderXml.exists()) {
+            placeholderXml.delete();
+        }
+        String extension = lower.endsWith(".webp") ? ".webp" : ".png";
+        File targetFile = new File(projectRoot, "app/src/main/res/drawable/splash_image" + extension);
+        copyDirectory(sourceFile, targetFile);
+    }
+
+    private void saveProjectMeta(
+        File projectRoot,
+        String projectName,
+        String packageName,
+        String mode,
+        String versionName,
+        String iconPath
+    ) throws IOException {
+        File metaDir = new File(projectRoot, META_DIR);
+        ensureDir(metaDir);
+        Properties properties = new Properties();
+        properties.setProperty("projectName", safeText(projectName, projectRoot.getName()));
+        properties.setProperty("packageName", safeText(packageName, ""));
+        properties.setProperty("mode", safeText(mode, "项目"));
+        properties.setProperty("versionName", safeText(versionName, "1.0"));
+        properties.setProperty("iconPath", safeText(iconPath, ""));
+        FileOutputStream outputStream = null;
+        try {
+            outputStream = new FileOutputStream(new File(metaDir, META_FILE));
+            properties.store(outputStream, "LM project metadata");
+        } finally {
+            if (outputStream != null) {
+                outputStream.close();
             }
         }
-        return null;
+    }
+
+    private Properties loadProjectMeta(File projectRoot) {
+        Properties properties = new Properties();
+        File metaFile = new File(new File(projectRoot, META_DIR), META_FILE);
+        if (!metaFile.exists()) {
+            return properties;
+        }
+        InputStream inputStream = null;
+        try {
+            inputStream = new FileInputStream(metaFile);
+            properties.load(inputStream);
+        } catch (Exception e) {
+        } finally {
+            try {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (Exception e) {
+            }
+        }
+        return properties;
     }
 
     private String updateAppBuildGradle(String content, ProjectConfig config) {
@@ -131,6 +521,8 @@ public class ProjectManager {
         updated = updated.replaceAll("applicationId\\s+\"[^\"]+\"", "applicationId \"" + Matcher.quoteReplacement(config.getPackageName()) + "\"");
         updated = updated.replaceAll("minSdkVersion\\s+\\d+", "minSdkVersion " + config.getMinSdk());
         updated = updated.replaceAll("targetSdkVersion\\s+\\d+", "targetSdkVersion " + config.getTargetSdk());
+        updated = updated.replaceAll("versionCode\\s+\\d+", "versionCode " + config.getVersionCode());
+        updated = updated.replaceAll("versionName\\s+\"[^\"]+\"", "versionName \"" + Matcher.quoteReplacement(config.getVersionName()) + "\"");
         if (!updated.contains("namespace")) {
             return buildAppGradle(config);
         }
@@ -145,17 +537,32 @@ public class ProjectManager {
         if (!updated.contains("android:label=\"@string/app_name\"")) {
             updated = updated.replaceFirst("<application", "<application\n        android:label=\"@string/app_name\"");
         }
+        if (!updated.contains("android:icon=\"@mipmap/ic_launcher\"")) {
+            updated = updated.replaceFirst("<application", "<application\n        android:icon=\"@mipmap/ic_launcher\"");
+        }
+        if (!updated.contains("android:roundIcon=\"@mipmap/ic_launcher\"")) {
+            updated = updated.replaceFirst("<application", "<application\n        android:roundIcon=\"@mipmap/ic_launcher\"");
+        }
         return updated;
     }
 
     private String updateStrings(String content, ProjectConfig config) {
-        if (content.contains("name=\"app_name\"")) {
-            return content.replaceFirst(
+        String result = content;
+        if (result.contains("name=\"app_name\"")) {
+            result = result.replaceFirst(
                 "<string\\s+name=\"app_name\">.*?</string>",
                 "<string name=\"app_name\">" + escapeXml(config.getAppName()) + "</string>"
             );
+        } else {
+            result = result.replace("</resources>", "    <string name=\"app_name\">" + escapeXml(config.getAppName()) + "</string>\n</resources>");
         }
-        return "<resources>\n    <string name=\"app_name\">" + escapeXml(config.getAppName()) + "</string>\n</resources>\n";
+        if (!result.contains("name=\"welcome_message\"")) {
+            result = result.replace(
+                "</resources>",
+                "    <string name=\"welcome_message\">欢迎使用 " + escapeXml(config.getAppName()) + "</string>\n</resources>"
+            );
+        }
+        return result;
     }
 
     private String buildSettingsGradle(ProjectConfig config) {
@@ -200,8 +607,8 @@ public class ProjectManager {
             + "        applicationId \"" + escapeGradle(config.getPackageName()) + "\"\n"
             + "        minSdkVersion " + config.getMinSdk() + "\n"
             + "        targetSdkVersion " + config.getTargetSdk() + "\n"
-            + "        versionCode 1\n"
-            + "        versionName \"1.0\"\n"
+            + "        versionCode " + config.getVersionCode() + "\n"
+            + "        versionName \"" + escapeGradle(config.getVersionName()) + "\"\n"
             + "    }\n\n"
             + "    ndk {\n"
             + "        abiFilters 'arm64-v8a'\n"
@@ -240,6 +647,8 @@ public class ProjectManager {
             + "    <uses-permission android:name=\"android.permission.INTERNET\" />\n\n"
             + "    <application\n"
             + "        android:allowBackup=\"true\"\n"
+            + "        android:icon=\"@mipmap/ic_launcher\"\n"
+            + "        android:roundIcon=\"@mipmap/ic_launcher\"\n"
             + "        android:label=\"@string/app_name\"\n"
             + "        android:requestLegacyExternalStorage=\"true\"\n"
             + "        android:supportsRtl=\"true\"\n"
@@ -272,20 +681,26 @@ public class ProjectManager {
             + "}\n";
     }
 
-    private String buildShellLayout(ProjectConfig config) {
+    private String buildShellLayout() {
         return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
             + "<LinearLayout xmlns:android=\"http://schemas.android.com/apk/res/android\"\n"
             + "    android:layout_width=\"match_parent\"\n"
             + "    android:layout_height=\"match_parent\"\n"
-            + "    android:background=\"#000000\"\n"
+            + "    android:background=\"#10131B\"\n"
             + "    android:gravity=\"center\"\n"
             + "    android:orientation=\"vertical\"\n"
             + "    android:padding=\"24dp\">\n\n"
+            + "    <ImageView\n"
+            + "        android:layout_width=\"120dp\"\n"
+            + "        android:layout_height=\"120dp\"\n"
+            + "        android:layout_marginBottom=\"20dp\"\n"
+            + "        android:scaleType=\"centerCrop\"\n"
+            + "        android:src=\"@drawable/splash_image\" />\n\n"
             + "    <TextView\n"
             + "        android:id=\"@+id/tvHello\"\n"
             + "        android:layout_width=\"wrap_content\"\n"
             + "        android:layout_height=\"wrap_content\"\n"
-            + "        android:text=\"" + escapeXml(config.getAppName()) + "\"\n"
+            + "        android:text=\"@string/welcome_message\"\n"
             + "        android:textColor=\"#FFFFFF\"\n"
             + "        android:textSize=\"24sp\"\n"
             + "        android:textStyle=\"bold\" />\n\n"
@@ -296,15 +711,16 @@ public class ProjectManager {
         return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
             + "<resources>\n"
             + "    <string name=\"app_name\">" + escapeXml(config.getAppName()) + "</string>\n"
+            + "    <string name=\"welcome_message\">欢迎使用 " + escapeXml(config.getAppName()) + "</string>\n"
             + "</resources>\n";
     }
 
     private String buildColors() {
         return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
             + "<resources>\n"
-            + "    <color name=\"background_dark\">#000000</color>\n"
-            + "    <color name=\"panel_dark\">#1E1E1E</color>\n"
-            + "    <color name=\"log_panel\">#2D2D2D</color>\n"
+            + "    <color name=\"background_dark\">#10131B</color>\n"
+            + "    <color name=\"panel_dark\">#171C26</color>\n"
+            + "    <color name=\"launcher_background\">#5B8CFF</color>\n"
             + "    <color name=\"text_primary\">#FFFFFF</color>\n"
             + "</resources>\n";
     }
@@ -318,19 +734,42 @@ public class ProjectManager {
             + "</resources>\n";
     }
 
+    private String buildAdaptiveIconXml() {
+        return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+            + "<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">\n"
+            + "    <background android:drawable=\"@drawable/ic_launcher_background\" />\n"
+            + "    <foreground android:drawable=\"@drawable/ic_launcher_foreground\" />\n"
+            + "</adaptive-icon>\n";
+    }
+
+    private String buildDefaultLauncherForeground() {
+        return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+            + "<shape xmlns:android=\"http://schemas.android.com/apk/res/android\" android:shape=\"oval\">\n"
+            + "    <size android:width=\"108dp\" android:height=\"108dp\" />\n"
+            + "    <solid android:color=\"#FFFFFF\" />\n"
+            + "</shape>\n";
+    }
+
+    private String buildDefaultLauncherBackground() {
+        return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+            + "<shape xmlns:android=\"http://schemas.android.com/apk/res/android\" android:shape=\"rectangle\">\n"
+            + "    <solid android:color=\"@color/launcher_background\" />\n"
+            + "</shape>\n";
+    }
+
+    private String buildDefaultSplashDrawable() {
+        return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+            + "<shape xmlns:android=\"http://schemas.android.com/apk/res/android\" android:shape=\"rectangle\">\n"
+            + "    <corners android:radius=\"28dp\" />\n"
+            + "    <gradient android:angle=\"45\" android:startColor=\"#5B8CFF\" android:endColor=\"#7E57C2\" />\n"
+            + "</shape>\n";
+    }
+
     private void copyWrapperAssets(Context context, File projectRoot) throws IOException {
         copyAsset(context.getAssets(), "project_template/gradlew", new File(projectRoot, "gradlew"));
         copyAsset(context.getAssets(), "project_template/gradlew.bat", new File(projectRoot, "gradlew.bat"));
-        copyAsset(
-            context.getAssets(),
-            "project_template/gradle/wrapper/gradle-wrapper.jar",
-            new File(projectRoot, "gradle/wrapper/gradle-wrapper.jar")
-        );
-        copyAsset(
-            context.getAssets(),
-            "project_template/gradle/wrapper/gradle-wrapper.properties",
-            new File(projectRoot, "gradle/wrapper/gradle-wrapper.properties")
-        );
+        copyAsset(context.getAssets(), "project_template/gradle/wrapper/gradle-wrapper.jar", new File(projectRoot, "gradle/wrapper/gradle-wrapper.jar"));
+        copyAsset(context.getAssets(), "project_template/gradle/wrapper/gradle-wrapper.properties", new File(projectRoot, "gradle/wrapper/gradle-wrapper.properties"));
         new File(projectRoot, "gradlew").setExecutable(true);
     }
 
@@ -341,11 +780,7 @@ public class ProjectManager {
         try {
             inputStream = assetManager.open(assetPath);
             outputStream = new FileOutputStream(targetFile);
-            byte[] buffer = new byte[4096];
-            int len;
-            while ((len = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, len);
-            }
+            copyStream(inputStream, outputStream);
         } finally {
             if (inputStream != null) {
                 inputStream.close();
@@ -356,47 +791,50 @@ public class ProjectManager {
         }
     }
 
-    private void writeText(File file, String content) throws IOException {
-        ensureDir(file.getParentFile());
-        FileOutputStream outputStream = null;
-        try {
-            outputStream = new FileOutputStream(file);
-            outputStream.write(content.getBytes(StandardCharsets.UTF_8));
-        } finally {
-            if (outputStream != null) {
-                outputStream.close();
-            }
+    private void copyStream(InputStream inputStream, FileOutputStream outputStream) throws IOException {
+        byte[] buffer = new byte[8192];
+        int len;
+        while ((len = inputStream.read(buffer)) != -1) {
+            outputStream.write(buffer, 0, len);
         }
+        outputStream.flush();
     }
 
-    private String readText(File file) throws IOException {
-        InputStream inputStream = null;
-        try {
-            inputStream = new java.io.FileInputStream(file);
-            byte[] buffer = new byte[4096];
-            java.io.ByteArrayOutputStream outputStream = new java.io.ByteArrayOutputStream();
-            int len;
-            while ((len = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, len);
-            }
-            return new String(outputStream.toByteArray(), StandardCharsets.UTF_8);
-        } finally {
-            if (inputStream != null) {
-                inputStream.close();
+    private File findFileByName(File dir, String fileName) {
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return null;
+        }
+        for (int i = 0; i < files.length; i++) {
+            File file = files[i];
+            if (file.isDirectory()) {
+                File match = findFileByName(file, fileName);
+                if (match != null) {
+                    return match;
+                }
+            } else if (fileName.equals(file.getName())) {
+                return file;
             }
         }
+        return null;
     }
 
-    private void ensureDir(File dir) throws IOException {
-        if (dir == null) {
-            return;
+    private String sanitizeName(String value) {
+        return value.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+    }
+
+    private String firstNonEmpty(String a, String b, String c) {
+        if (a != null && a.length() > 0) {
+            return a;
         }
-        if (dir.exists()) {
-            return;
+        if (b != null && b.length() > 0) {
+            return b;
         }
-        if (!dir.mkdirs()) {
-            throw new IOException("无法创建目录: " + dir.getAbsolutePath());
-        }
+        return c == null ? "" : c;
+    }
+
+    private String safeText(String value, String fallback) {
+        return value == null || value.length() == 0 ? fallback : value;
     }
 
     private String escapeJava(String value) {

@@ -118,10 +118,21 @@ public class ToolchainInstaller {
         try {
             URL url = new URL(urlString);
             connection = (HttpURLConnection) url.openConnection();
-            connection.setConnectTimeout(30000);
-            connection.setReadTimeout(30000);
+            connection.setInstanceFollowRedirects(true);
+            connection.setConnectTimeout(60000);
+            connection.setReadTimeout(60000);
+            connection.setRequestProperty("User-Agent", "LM-APK-Builder/2.0");
             connection.connect();
-            if (connection.getResponseCode() >= 400) {
+            int responseCode = connection.getResponseCode();
+            if (responseCode >= 300 && responseCode < 400) {
+                String redirect = connection.getHeaderField("Location");
+                if (redirect != null && redirect.length() > 0) {
+                    connection.disconnect();
+                    downloadToFile(redirect, targetFile);
+                    return;
+                }
+            }
+            if (responseCode >= 400) {
                 throw new IllegalStateException("下载失败，HTTP " + connection.getResponseCode());
             }
             inputStream = new BufferedInputStream(connection.getInputStream());

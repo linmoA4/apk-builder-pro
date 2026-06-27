@@ -118,6 +118,18 @@ public class EnvironmentManager {
         return "/storage/emulated/0/LMBuildTools/projects/" + sanitizeDirName(appName);
     }
 
+    public String getManagedProjectRootDir() {
+        return "/storage/emulated/0/LMBuildTools/projects";
+    }
+
+    public String getImportedProjectRootDir() {
+        return "/storage/emulated/0/LMBuildTools/android/data";
+    }
+
+    public String getImportTempDir() {
+        return "/storage/emulated/0/LMBuildTools/import_temp";
+    }
+
     public String getPackageCacheDir() {
         return "/storage/emulated/0/LMBuildTools/packages";
     }

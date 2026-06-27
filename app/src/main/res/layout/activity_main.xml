@@ -1,162 +1,329 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#000000"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:background="#0F131B">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingBottom="14dp">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
 
-        <Button
-            android:id="@+id/btnSettings"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="#2D2D2D"
-            android:minWidth="72dp"
-            android:text="设置"
-            android:textColor="#FFFFFF"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/tvTitle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="LM打包工具"
-            android:textColor="#FFFFFF"
-            android:textSize="24sp"
-            android:textStyle="bold" />
-
-        <Space
-            android:layout_width="72dp"
-            android:layout_height="1dp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/btnCreateProject"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginRight="8dp"
-            android:layout_weight="1"
-            android:background="#00BCD4"
-            android:text="创建空壳项目"
-            android:textColor="#000000"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/btnImportProject"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:background="#607D8B"
-            android:text="导入项目"
-            android:textColor="#FFFFFF"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-    <EditText
-        android:id="@+id/etPackageName"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        android:background="#1E1E1E"
-        android:hint="目标包名"
-        android:inputType="text"
-        android:padding="12dp"
-        android:text="com.LM.pack"
-        android:textColor="#FFFFFF"
-        android:textColorHint="#AAAAAA" />
-
-    <EditText
-        android:id="@+id/etAppName"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        android:background="#1E1E1E"
-        android:hint="应用名称"
-        android:inputType="text"
-        android:padding="12dp"
-        android:text="LM打包工具"
-        android:textColor="#FFFFFF"
-        android:textColorHint="#AAAAAA" />
-
-    <EditText
-        android:id="@+id/etMinSdk"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        android:background="#1E1E1E"
-        android:hint="最低 SDK 版本"
-        android:inputType="number"
-        android:padding="12dp"
-        android:text="29"
-        android:textColor="#FFFFFF"
-        android:textColorHint="#AAAAAA" />
-
-    <EditText
-        android:id="@+id/etTargetSdk"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="14dp"
-        android:background="#1E1E1E"
-        android:hint="目标 SDK 版本"
-        android:inputType="number"
-        android:padding="12dp"
-        android:text="36"
-        android:textColor="#FFFFFF"
-        android:textColorHint="#AAAAAA" />
-
-    <Button
-        android:id="@+id/btnGenerate"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        android:background="#4CAF50"
-        android:text="生成/更新配置"
-        android:textColor="#000000"
-        android:textStyle="bold" />
-
-    <Button
-        android:id="@+id/btnBuild"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="14dp"
-        android:background="#FFC107"
-        android:text="检测并打包"
-        android:textColor="#000000"
-        android:textStyle="bold" />
-
-    <ScrollView
-        android:id="@+id/logScrollView"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="#2D2D2D"
-        android:fillViewport="true"
-        android:padding="12dp"
-        android:scrollbars="vertical">
-
-        <TextView
-            android:id="@+id/tvLogs"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:lineSpacingExtra="4dp"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp" />
-    </ScrollView>
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="12dp">
 
-</LinearLayout>
+            <Button
+                android:id="@+id/btnBackHome"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="#171C26"
+                android:text="←"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvToolbarTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="10dp"
+                android:layout_weight="1"
+                android:text="APK Builder Pro"
+                android:textColor="#FFFFFF"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnSettings"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:background="#171C26"
+                android:minWidth="70dp"
+                android:text="设置"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <LinearLayout
+                android:id="@+id/homePane"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="项目首页"
+                    android:textColor="#FFFFFF"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="14dp"
+                    android:text="创建一个可直接打包的 Android 架构，或从内部存储导入已有工程。"
+                    android:textColor="#95A1B6"
+                    android:textSize="14sp" />
+
+                <ListView
+                    android:id="@+id/lvProjects"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:cacheColorHint="#00000000"
+                    android:divider="@android:color/transparent"
+                    android:dividerHeight="10dp"
+                    android:listSelector="@android:color/transparent"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/emptyState"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="#171C26"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="24dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="这里还没有项目"
+                        android:textColor="#FFFFFF"
+                        android:textSize="22sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center"
+                        android:text="点右下角的加号，就能创建带名称、包名、版本号、图标、启动图的项目，或者导入压缩包和文件夹。"
+                        android:textColor="#8B97AE"
+                        android:textSize="14sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/editorPane"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingBottom="10dp">
+
+                    <Button
+                        android:id="@+id/btnToggleFiles"
+                        android:layout_width="wrap_content"
+                        android:layout_height="42dp"
+                        android:background="#171C26"
+                        android:text="文件"
+                        android:textColor="#FFFFFF"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvEditorProject"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="10dp"
+                        android:layout_weight="1"
+                        android:text="当前项目"
+                        android:textColor="#FFFFFF"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btnBug"
+                        android:layout_width="42dp"
+                        android:layout_height="42dp"
+                        android:background="#3E465A"
+                        android:text="🐞"
+                        android:textColor="#FFFFFF" />
+
+                    <Button
+                        android:id="@+id/btnSaveFile"
+                        android:layout_width="wrap_content"
+                        android:layout_height="42dp"
+                        android:layout_marginLeft="8dp"
+                        android:background="#2D7DFA"
+                        android:text="保存"
+                        android:textColor="#FFFFFF"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btnBuild"
+                        android:layout_width="42dp"
+                        android:layout_height="42dp"
+                        android:layout_marginLeft="8dp"
+                        android:background="#10B981"
+                        android:text="▶"
+                        android:textColor="#FFFFFF"
+                        android:textSize="18sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvCurrentFilePath"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:text="请选择一个文件"
+                    android:textColor="#8B97AE"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:id="@+id/suggestionCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:background="#251A1F"
+                    android:orientation="vertical"
+                    android:padding="12dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tvIssueTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="错误提示"
+                        android:textColor="#FFB4B4"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvIssueFix"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textColor="#FFFFFF"
+                        android:textIsSelectable="true" />
+
+                    <Button
+                        android:id="@+id/btnCopyFix"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="10dp"
+                        android:background="#C2410C"
+                        android:text="复制修复建议"
+                        android:textColor="#FFFFFF"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <FrameLayout
+                    android:id="@+id/editorFrame"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="#131925">
+
+                    <EditText
+                        android:id="@+id/etEditor"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="#131925"
+                        android:fontFamily="monospace"
+                        android:gravity="top|start"
+                        android:inputType="textMultiLine|textNoSuggestions"
+                        android:padding="14dp"
+                        android:textColor="#E5EEF8"
+                        android:textColorHint="#8B97AE"
+                        android:textSize="14sp" />
+
+                    <LinearLayout
+                        android:id="@+id/fileDrawer"
+                        android:layout_width="220dp"
+                        android:layout_height="match_parent"
+                        android:background="#171C26"
+                        android:elevation="12dp"
+                        android:orientation="vertical"
+                        android:padding="10dp"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="项目文件"
+                            android:textColor="#FFFFFF"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvDrawerHint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:layout_marginBottom="8dp"
+                            android:text="点击文件打开，点击文件夹展开或收起。"
+                            android:textColor="#8B97AE"
+                            android:textSize="12sp" />
+
+                        <ListView
+                            android:id="@+id/lvFiles"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:cacheColorHint="#00000000"
+                            android:divider="@android:color/transparent"
+                            android:dividerHeight="6dp"
+                            android:listSelector="@android:color/transparent" />
+                    </LinearLayout>
+                </FrameLayout>
+            </LinearLayout>
+        </FrameLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="8dp"
+            android:text="构建日志"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <ScrollView
+            android:id="@+id/logScrollView"
+            android:layout_width="match_parent"
+            android:layout_height="150dp"
+            android:background="#171C26"
+            android:fillViewport="true"
+            android:padding="12dp"
+            android:scrollbars="vertical">
+
+            <TextView
+                android:id="@+id/tvLogs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:lineSpacingExtra="4dp"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+        </ScrollView>
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnFabAdd"
+        android:layout_width="58dp"
+        android:layout_height="58dp"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="22dp"
+        android:background="#2D7DFA"
+        android:text="+"
+        android:textColor="#FFFFFF"
+        android:textSize="28sp" />
+
+</FrameLayout>
