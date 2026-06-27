@@ -19,7 +19,7 @@
             android:id="@+id/btnToggleFiles"
             android:layout_width="64dp"
             android:layout_height="36dp"
-            android:text="文件"
+            android:text="@string/editor_toggle_files"
             android:textStyle="bold"
             android:tag="ghostButton primary" />
 
@@ -31,7 +31,7 @@
             android:layout_weight="1"
             android:ellipsize="end"
             android:maxLines="1"
-            android:text="当前项目"
+            android:text="@string/editor_current_project"
             android:textSize="14sp"
             android:textStyle="bold"
             android:tag="primary" />
@@ -119,7 +119,7 @@
         android:paddingTop="9dp"
         android:paddingRight="12dp"
         android:paddingBottom="9dp"
-        android:text="请选择一个文件"
+        android:text="@string/no_file_selected"
         android:textSize="12sp"
         android:tag="panel secondary" />
 
@@ -144,7 +144,7 @@
                 android:id="@+id/tvDrawerTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="项目文件"
+                android:text="@string/editor_project_files"
                 android:textStyle="bold"
                 android:tag="primary" />
 
@@ -154,7 +154,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:layout_marginBottom="8dp"
-                android:text="右滑直接展开完整项目结构。点文件夹进入目录页，点文件直接打开。"
+                android:text="@string/editor_drawer_hint"
                 android:textSize="12sp"
                 android:tag="muted" />
 
@@ -190,7 +190,7 @@
                     android:id="@+id/tvIssueTitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="错误提示"
+                    android:text="@string/editor_issue_default_title"
                     android:textStyle="bold"
                     android:tag="warningText" />
 
@@ -207,7 +207,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="36dp"
                     android:layout_marginTop="10dp"
-                    android:text="复制修复建议"
+                    android:text="@string/editor_copy_fix"
                     android:textStyle="bold"
                     android:tag="warnButton primary" />
             </LinearLayout>

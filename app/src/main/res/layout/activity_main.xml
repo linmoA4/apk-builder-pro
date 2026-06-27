@@ -48,7 +48,7 @@
                     android:id="@+id/tvToolbarTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="APK Builder Pro"
+                android:text="@string/main_title"
                     android:textSize="17sp"
                     android:textStyle="bold"
                     android:tag="primary" />
@@ -57,7 +57,7 @@
                     android:id="@+id/tvToolbarSubtitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="更顺手的手机 APK 工作台"
+                    android:text="@string/main_subtitle"
                     android:textSize="11sp"
                     android:tag="muted" />
             </LinearLayout>
@@ -66,7 +66,7 @@
                 android:id="@+id/btnSettings"
                 android:layout_width="72dp"
                 android:layout_height="40dp"
-                android:text="设置"
+                android:text="@string/settings"
                 android:textStyle="bold"
                 android:tag="ghostButton primary" />
         </LinearLayout>
@@ -111,7 +111,7 @@
             android:id="@+id/btnCreateAction"
             android:layout_width="96dp"
             android:layout_height="42dp"
-            android:text="创建"
+            android:text="@string/create"
             android:textStyle="bold"
             android:tag="ghostButton primary" />
 
@@ -123,7 +123,7 @@
             android:id="@+id/btnImportAction"
             android:layout_width="96dp"
             android:layout_height="42dp"
-            android:text="导入"
+            android:text="@string/import_text"
             android:textStyle="bold"
             android:tag="ghostButton primary" />
     </LinearLayout>
@@ -165,7 +165,7 @@
                 android:id="@+id/tvProgressTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="处理中"
+                android:text="@string/processing"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:tag="primary" />
@@ -175,7 +175,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="请稍候..."
+                android:text="@string/please_wait"
                 android:textSize="13sp"
                 android:tag="secondary" />
 
@@ -200,7 +200,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="40dp"
                 android:layout_marginTop="14dp"
-                android:text="取消构建"
+                android:text="@string/cancel_build"
                 android:textStyle="bold"
                 android:visibility="gone"
                 android:tag="warnButton primary" />

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LM Builder</string>
+    <string name="welcome_message">Welcome to LM Builder</string>
+
+    <string name="main_title">APK Builder Pro</string>
+    <string name="main_subtitle">A smoother APK workspace on mobile</string>
+    <string name="main_title_editor">Editor</string>
+    <string name="settings">Settings</string>
+    <string name="create">Create</string>
+    <string name="import_text">Import</string>
+    <string name="processing">Processing</string>
+    <string name="please_wait">Please wait...</string>
+    <string name="cancel_build">Cancel Build</string>
+    <string name="progress_indeterminate_label">Processing</string>
+
+    <string name="home_projects_title">Projects</string>
+    <string name="home_projects_subtitle">Recently imported and created projects</string>
+    <string name="home_theme_chip">Themes</string>
+    <string name="home_empty_title">No projects yet</string>
+    <string name="home_empty_subtitle">Use the lower-right actions to create a project, or import a folder / archive from the same entry.</string>
+
+    <string name="editor_toggle_files">Files</string>
+    <string name="editor_current_project">Current project</string>
+    <string name="editor_project_files">Project files</string>
+    <string name="editor_drawer_hint">Swipe right to expand the full project structure. Tap a folder to browse it, or tap a file to open it.</string>
+    <string name="editor_issue_default_title">Issue</string>
+    <string name="editor_copy_fix">Copy fix suggestion</string>
+    <string name="editor_tab_empty">No file opened</string>
+    <string name="no_file_selected">Select a file</string>
+    <string name="no_editable_text_file">No editable text file was found</string>
+    <string name="package_unrecognized">Package not detected</string>
+    <string name="project_mode_generic">Project</string>
+    <string name="project_manage_hint">Long press to manage</string>
+    <string name="project_meta_format">%1$s  ·  v%2$s  ·  %3$s</string>
+    <string name="project_title_with_package">%1$s  ·  %2$s</string>
+
+    <string name="file_tree_folder_short">Folder</string>
+    <string name="file_tree_file_short">File</string>
+    <string name="file_tree_directory_short">Directory</string>
+    <string name="file_tree_directory_relative_format">Directory · opens in a new page · %1$s</string>
+    <string name="file_tree_file_relative_format">File · %1$s</string>
+
+    <string name="file_browser_title">Project structure</string>
+    <string name="file_browser_path_format">·· Go up  ·  %1$s</string>
+    <string name="file_browser_enter_directory">Tap to open directory</string>
+    <string name="file_browser_open_file">Tap to open in editor</string>
+
+    <string name="toast_no_fix_to_copy">There is no fix suggestion to copy right now</string>
+    <string name="clipboard_fix_label">Fix suggestion</string>
+    <string name="toast_fix_copied">Fix suggestion copied</string>
+    <string name="toast_open_file_failed">Failed to open file</string>
+    <string name="toast_save_failed">Save failed</string>
+    <string name="toast_open_project_first">Open a project first</string>
+    <string name="toast_build_running">A build task is already running</string>
+    <string name="toast_open_file_first">Open a file first</string>
+
+    <string name="log_home_intro">The home page stays compact and dark, and the editor area now uses a multi-tab layout closer to AIDE.</string>
+    <string name="log_current_jdk">Current JDK</string>
+    <string name="log_current_ndk">Current NDK</string>
+    <string name="log_android_sdk">Android SDK</string>
+    <string name="log_unregistered">Not set</string>
+    <string name="log_jdk_install_status">JDK install status</string>
+    <string name="log_ndk_install_status">NDK install status</string>
+    <string name="status_installed">Installed</string>
+    <string name="status_not_installed">Not installed</string>
+    <string name="log_project_count">Projects found</string>
+    <string name="log_project_opened">Project opened</string>
+    <string name="log_open_file_failed">Failed to open file: %1$s</string>
+    <string name="log_save_file_failed">Failed to save file: %1$s</string>
+
+    <string name="editor_detection_prefix">[Editor check] %1$s</string>
+
+    <string name="search_hint_query">Search text</string>
+    <string name="search_hint_replace">Replace with</string>
+    <string name="search_dialog_hint">Case is ignored by default. Supports find next, replace current, and replace all.</string>
+    <string name="search_dialog_title">Search and replace</string>
+    <string name="search_action_next">Next</string>
+    <string name="search_action_replace_current">Replace current</string>
+    <string name="search_action_replace_all">Replace all</string>
+    <string name="search_enter_query">Enter search text</string>
+    <string name="search_no_match">No matches found</string>
+    <string name="search_replaced_current">Current match replaced</string>
+    <string name="search_replaced_positioned">Located and replaced</string>
+    <string name="search_no_replace_match">No replaceable match found</string>
+    <string name="search_no_items">No matches</string>
+    <string name="search_replaced_count">Replaced %1$d match(es)</string>
+
+    <string name="issue_merge_conflict_message">Unresolved merge conflict markers were detected.</string>
+    <string name="issue_merge_conflict_suggestion">Remove the conflict markers and keep the correct code before continuing to edit or build.</string>
+    <string name="issue_xml_suggestion">Check XML tag closure, attribute quotes, and resource reference syntax.</string>
+    <string name="issue_xml_incomplete_suggestion">Check whether the XML structure is complete.</string>
+    <string name="issue_bracket_early_close_message">A bracket closes too early, so the structure is unbalanced.</string>
+    <string name="issue_bracket_early_close_suggestion">Check around this line for an extra `)`, `}` or `]`.</string>
+    <string name="issue_string_unclosed_message">A string is not properly closed.</string>
+    <string name="issue_string_unclosed_suggestion">Check whether the last string is missing its closing quote.</string>
+    <string name="issue_bracket_unbalanced_message">Bracket counts are not balanced.</string>
+    <string name="issue_bracket_unbalanced_suggestion">Check the most recent edits and confirm that `() { } [ ]` are paired correctly.</string>
+</resources>

@@ -20,6 +20,8 @@ import android.view.inputmethod.InputConnectionWrapper;
 import android.widget.EditText;
 import com.LM.pack.theme.AppThemePalette;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -49,7 +51,20 @@ public class CodeEditorView extends EditText {
     };
 
     private static final int HISTORY_LIMIT = 120;
+    private static final int FULL_HIGHLIGHT_CHAR_LIMIT = 180000;
+    private static final int FULL_HIGHLIGHT_LINE_LIMIT = 4000;
     private static final String INDENT = "    ";
+    private static final Pattern COMMENT_LINE_PATTERN = Pattern.compile("(?m)//.*$");
+    private static final Pattern COMMENT_BLOCK_PATTERN = Pattern.compile("/\\*[\\s\\S]*?\\*/");
+    private static final Pattern STRING_DOUBLE_PATTERN = Pattern.compile("\"(?:\\\\.|[^\"\\\\])*\"");
+    private static final Pattern STRING_SINGLE_PATTERN = Pattern.compile("'(?:\\\\.|[^'\\\\])*'");
+    private static final Pattern ANNOTATION_PATTERN = Pattern.compile("(?<![A-Za-z0-9_])@[A-Za-z0-9_:.]+");
+    private static final Pattern XML_TAG_PATTERN = Pattern.compile("</?[A-Za-z0-9_:-]+");
+    private static final Pattern XML_ATTR_PATTERN = Pattern.compile("\\b(?:android:)?[A-Za-z0-9_:-]+(?=\\=)");
+    private static final Pattern GRADLE_NUMBER_PATTERN = Pattern.compile("\\b[0-9]+(?:\\.[0-9]+)*\\b");
+    private static final Pattern CODE_NUMBER_PATTERN = Pattern.compile("\\b[0-9]+(?:\\.[0-9]+)?\\b");
+    private static final Pattern CLASS_PATTERN = Pattern.compile("\\b[A-Z][A-Za-z0-9_]*\\b");
+    private static final Map<String, Pattern> KEYWORD_PATTERN_CACHE = new HashMap<String, Pattern>();
 
     private final Rect tempRect = new Rect();
     private final Paint gutterPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -75,6 +90,8 @@ public class CodeEditorView extends EditText {
     private int searchMatchColor = Color.parseColor("#335A8FFF");
     private EditorSnapshot pendingSnapshot;
     private EditorEventListener editorEventListener;
+    private boolean lightweightMode;
+    private int lastLineDigits = -1;
 
     public interface EditorEventListener {
         void onHistoryChanged(boolean canUndo, boolean canRedo);
@@ -332,10 +349,17 @@ public class CodeEditorView extends EditText {
     private void updateGutterWidth() {
         int lineCount = Math.max(1, getLineCount());
         int digits = String.valueOf(lineCount).length();
+        if (digits == lastLineDigits && gutterWidth > 0) {
+            return;
+        }
+        lastLineDigits = digits;
         float charWidth = lineNumberPaint.measureText("0");
-        gutterWidth = (int) (getPaddingTop() + digits * charWidth + dp(26));
-        setPadding(gutterWidth, getPaddingTop(), getPaddingRight(), getPaddingBottom());
-        invalidate();
+        int newGutterWidth = (int) (getPaddingTop() + digits * charWidth + dp(26));
+        if (newGutterWidth != gutterWidth) {
+            gutterWidth = newGutterWidth;
+            setPadding(gutterWidth, getPaddingTop(), getPaddingRight(), getPaddingBottom());
+            invalidate();
+        }
     }
 
     private void scheduleHighlight() {
@@ -373,23 +397,27 @@ public class CodeEditorView extends EditText {
         isHighlighting = true;
         try {
             clearColorSpans(editable);
-            // TODO: 这里仍是全文 regex 重扫，大文件下应改成增量高亮或按可视区刷新。
-            applyPattern(editable, Pattern.compile("(?m)//.*$"), commentColor);
-            applyPattern(editable, Pattern.compile("/\\*[\\s\\S]*?\\*/"), commentColor);
-            applyPattern(editable, Pattern.compile("\"(?:\\\\.|[^\"\\\\])*\""), stringColor);
-            applyPattern(editable, Pattern.compile("'(?:\\\\.|[^'\\\\])*'"), stringColor);
-            applyPattern(editable, Pattern.compile("(?<![A-Za-z0-9_])@[A-Za-z0-9_:.]+"), annotationColor);
+            lightweightMode = shouldUseLightweightMode(editable);
+            if (lightweightMode) {
+                return;
+            }
+            String source = editable.toString();
+            applyPattern(editable, source, COMMENT_LINE_PATTERN, commentColor);
+            applyPattern(editable, source, COMMENT_BLOCK_PATTERN, commentColor);
+            applyPattern(editable, source, STRING_DOUBLE_PATTERN, stringColor);
+            applyPattern(editable, source, STRING_SINGLE_PATTERN, stringColor);
+            applyPattern(editable, source, ANNOTATION_PATTERN, annotationColor);
             if (isXmlFile()) {
-                applyPattern(editable, Pattern.compile("</?[A-Za-z0-9_:-]+"), xmlTagColor);
-                applyPattern(editable, Pattern.compile("\\b(?:android:)?[A-Za-z0-9_:-]+(?=\\=)"), xmlAttrColor);
-                applyKeywords(editable, XML_KEYWORDS, keywordColor);
+                applyPattern(editable, source, XML_TAG_PATTERN, xmlTagColor);
+                applyPattern(editable, source, XML_ATTR_PATTERN, xmlAttrColor);
+                applyKeywords(editable, source, XML_KEYWORDS, keywordColor);
             } else if (isGradleFile()) {
-                applyKeywords(editable, GRADLE_KEYWORDS, keywordColor);
-                applyPattern(editable, Pattern.compile("\\b[0-9]+(?:\\.[0-9]+)*\\b"), numberColor);
+                applyKeywords(editable, source, GRADLE_KEYWORDS, keywordColor);
+                applyPattern(editable, source, GRADLE_NUMBER_PATTERN, numberColor);
             } else {
-                applyKeywords(editable, JAVA_KOTLIN_KEYWORDS, keywordColor);
-                applyPattern(editable, Pattern.compile("\\b[0-9]+(?:\\.[0-9]+)?\\b"), numberColor);
-                applyPattern(editable, Pattern.compile("\\b[A-Z][A-Za-z0-9_]*\\b"), classColor);
+                applyKeywords(editable, source, JAVA_KOTLIN_KEYWORDS, keywordColor);
+                applyPattern(editable, source, CODE_NUMBER_PATTERN, numberColor);
+                applyPattern(editable, source, CLASS_PATTERN, classColor);
             }
         } finally {
             isHighlighting = false;
@@ -446,7 +474,30 @@ public class CodeEditorView extends EditText {
         }
     }
 
-    private void applyKeywords(Editable editable, String[] keywords, int color) {
+    private boolean shouldUseLightweightMode(Editable editable) {
+        if (editable == null) {
+            return false;
+        }
+        if (editable.length() > FULL_HIGHLIGHT_CHAR_LIMIT) {
+            return true;
+        }
+        return getLineCount() > FULL_HIGHLIGHT_LINE_LIMIT;
+    }
+
+    private void applyKeywords(Editable editable, String source, String[] keywords, int color) {
+        applyPattern(editable, source, resolveKeywordPattern(keywords), color);
+    }
+
+    private Pattern resolveKeywordPattern(String[] keywords) {
+        StringBuilder cacheKey = new StringBuilder();
+        for (int i = 0; i < keywords.length; i++) {
+            cacheKey.append(keywords[i]).append('#');
+        }
+        String key = cacheKey.toString();
+        Pattern cached = KEYWORD_PATTERN_CACHE.get(key);
+        if (cached != null) {
+            return cached;
+        }
         StringBuilder builder = new StringBuilder();
         builder.append("\\b(");
         for (int i = 0; i < keywords.length; i++) {
@@ -456,11 +507,13 @@ public class CodeEditorView extends EditText {
             builder.append(Pattern.quote(keywords[i]));
         }
         builder.append(")\\b");
-        applyPattern(editable, Pattern.compile(builder.toString()), color);
+        Pattern compiled = Pattern.compile(builder.toString());
+        KEYWORD_PATTERN_CACHE.put(key, compiled);
+        return compiled;
     }
 
-    private void applyPattern(Editable editable, Pattern pattern, int color) {
-        Matcher matcher = pattern.matcher(editable.toString());
+    private void applyPattern(Editable editable, String source, Pattern pattern, int color) {
+        Matcher matcher = pattern.matcher(source);
         while (matcher.find()) {
             editable.setSpan(new ForegroundColorSpan(color), matcher.start(), matcher.end(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }

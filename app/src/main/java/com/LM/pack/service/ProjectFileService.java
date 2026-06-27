@@ -3,17 +3,25 @@ package com.LM.pack.service;
 import com.LM.pack.model.FileTreeItem;
 import com.LM.pack.model.ProjectEntry;
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ProjectFileService {
+    private final Map<String, DirectoryCacheEntry> directoryCache = new HashMap<String, DirectoryCacheEntry>();
+
     public ArrayList<FileTreeItem> buildFileTree(ProjectEntry currentProject, ArrayList<String> expandedDirs) {
         ArrayList<FileTreeItem> items = new ArrayList<FileTreeItem>();
         if (currentProject == null) {
             return items;
         }
         File projectRoot = new File(currentProject.getProjectDir());
+        if (!projectRoot.exists() || !projectRoot.isDirectory()) {
+            return items;
+        }
         flattenDirectory(projectRoot, 0, expandedDirs, items);
         return items;
     }
@@ -36,8 +44,14 @@ public class ProjectFileService {
         }
         File root = new File(currentProject.getProjectDir());
         File currentDir = directory == null ? root : directory;
-        if (!currentDir.exists() || !currentDir.isDirectory()) {
+        if (!currentDir.exists() || !currentDir.isDirectory() || !isWithinRoot(root, currentDir)) {
             return items;
+        }
+        String cacheKey = currentDir.getAbsolutePath();
+        long fingerprint = buildDirectoryFingerprint(currentDir);
+        DirectoryCacheEntry cached = directoryCache.get(cacheKey);
+        if (cached != null && cached.fingerprint == fingerprint) {
+            return new ArrayList<FileTreeItem>(cached.items);
         }
         File[] files = currentDir.listFiles();
         if (files == null) {
@@ -64,6 +78,7 @@ public class ProjectFileService {
         for (int i = 0; i < normalFiles.size(); i++) {
             items.add(new FileTreeItem(normalFiles.get(i), 0, false));
         }
+        directoryCache.put(cacheKey, new DirectoryCacheEntry(fingerprint, new ArrayList<FileTreeItem>(items)));
         return items;
     }
 
@@ -85,7 +100,7 @@ public class ProjectFileService {
 
     public String buildDisplayPath(ProjectEntry currentProject, File file) {
         if (file == null) {
-            return "请选择一个文件";
+            return "";
         }
         if (currentProject == null) {
             return file.getAbsolutePath();
@@ -106,15 +121,16 @@ public class ProjectFileService {
         if (path == null || path.length() == 0 || currentProject == null) {
             return null;
         }
+        File projectRoot = new File(currentProject.getProjectDir());
         File direct = new File(path);
-        if (direct.exists()) {
+        if (direct.exists() && isWithinRoot(projectRoot, direct)) {
             return direct;
         }
         File relative = new File(currentProject.getProjectDir(), path);
-        if (relative.exists()) {
+        if (relative.exists() && isWithinRoot(projectRoot, relative)) {
             return relative;
         }
-        return findFileBySuffix(new File(currentProject.getProjectDir()), new File(path).getName());
+        return findFileBySuffix(projectRoot, new File(path).getName());
     }
 
     public File findFileBySuffix(File dir, String name) {
@@ -180,6 +196,45 @@ public class ProjectFileService {
         }
         String name = file.getName();
         return ".git".equals(name) || ".gradle".equals(name) || "build".equals(name) || ".lmproject".equals(name);
+    }
+
+    private long buildDirectoryFingerprint(File directory) {
+        long fingerprint = directory.lastModified();
+        File[] files = directory.listFiles();
+        if (files == null) {
+            return fingerprint;
+        }
+        fingerprint = 31L * fingerprint + files.length;
+        for (int i = 0; i < files.length; i++) {
+            File child = files[i];
+            fingerprint = 31L * fingerprint + child.getName().hashCode();
+            fingerprint = 31L * fingerprint + (child.isDirectory() ? 7 : 13);
+            fingerprint = 31L * fingerprint + child.lastModified();
+        }
+        return fingerprint;
+    }
+
+    private boolean isWithinRoot(File root, File target) {
+        if (root == null || target == null) {
+            return false;
+        }
+        try {
+            String rootPath = root.getCanonicalPath();
+            String targetPath = target.getCanonicalPath();
+            return targetPath.equals(rootPath) || targetPath.startsWith(rootPath + File.separator);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private static class DirectoryCacheEntry {
+        final long fingerprint;
+        final ArrayList<FileTreeItem> items;
+
+        DirectoryCacheEntry(long fingerprint, ArrayList<FileTreeItem> items) {
+            this.fingerprint = fingerprint;
+            this.items = items;
+        }
     }
 
     private static class FileNameComparator implements Comparator<File> {

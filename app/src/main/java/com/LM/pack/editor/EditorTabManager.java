@@ -8,6 +8,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import com.LM.pack.R;
 import com.LM.pack.theme.AppThemePalette;
 import java.io.File;
 import java.util.ArrayList;
@@ -116,7 +117,7 @@ public class EditorTabManager {
         container.removeAllViews();
         if (openFiles.isEmpty()) {
             TextView placeholder = new TextView(context);
-            placeholder.setText("未打开文件");
+            placeholder.setText(R.string.editor_tab_empty);
             placeholder.setTextColor(palette == null ? Color.parseColor("#7D8DA4") : palette.textMuted);
             placeholder.setTextSize(12f);
             placeholder.setGravity(Gravity.CENTER_VERTICAL);

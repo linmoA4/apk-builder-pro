@@ -1,4 +1,99 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">LM打包工具</string>
+    <string name="welcome_message">欢迎使用 LM打包工具</string>
+
+    <string name="main_title">APK Builder Pro</string>
+    <string name="main_subtitle">更顺手的手机 APK 工作台</string>
+    <string name="main_title_editor">编辑器</string>
+    <string name="settings">设置</string>
+    <string name="create">创建</string>
+    <string name="import_text">导入</string>
+    <string name="processing">处理中</string>
+    <string name="please_wait">请稍候...</string>
+    <string name="cancel_build">取消构建</string>
+    <string name="progress_indeterminate_label">处理中</string>
+
+    <string name="home_projects_title">项目</string>
+    <string name="home_projects_subtitle">最近导入和创建的工程</string>
+    <string name="home_theme_chip">多主题</string>
+    <string name="home_empty_title">还没有项目</string>
+    <string name="home_empty_subtitle">右下角展开后可以创建项目，或者用一个导入入口导入文件夹 / 压缩包。</string>
+
+    <string name="editor_toggle_files">目录</string>
+    <string name="editor_current_project">当前项目</string>
+    <string name="editor_project_files">项目文件</string>
+    <string name="editor_drawer_hint">右滑直接展开完整项目结构。点文件夹进入目录页，点文件直接打开。</string>
+    <string name="editor_issue_default_title">错误提示</string>
+    <string name="editor_copy_fix">复制修复建议</string>
+    <string name="editor_tab_empty">未打开文件</string>
+    <string name="no_file_selected">请选择一个文件</string>
+    <string name="no_editable_text_file">没有找到可编辑的文本文件</string>
+    <string name="package_unrecognized">未识别包名</string>
+    <string name="project_mode_generic">项目</string>
+    <string name="project_manage_hint">长按管理</string>
+    <string name="project_meta_format">%1$s  ·  v%2$s  ·  %3$s</string>
+    <string name="project_title_with_package">%1$s  ·  %2$s</string>
+
+    <string name="file_tree_folder_short">文件夹</string>
+    <string name="file_tree_file_short">文件</string>
+    <string name="file_tree_directory_short">目录</string>
+    <string name="file_tree_directory_relative_format">目录 · 点进后进入新页面 · %1$s</string>
+    <string name="file_tree_file_relative_format">文件 · %1$s</string>
+
+    <string name="file_browser_title">项目结构</string>
+    <string name="file_browser_path_format">·· 返回上一级  ·  %1$s</string>
+    <string name="file_browser_enter_directory">点击进入目录</string>
+    <string name="file_browser_open_file">点击打开到编辑器</string>
+
+    <string name="toast_no_fix_to_copy">当前没有可复制的修复建议</string>
+    <string name="clipboard_fix_label">修复建议</string>
+    <string name="toast_fix_copied">修复建议已复制</string>
+    <string name="toast_open_file_failed">打开文件失败</string>
+    <string name="toast_save_failed">保存失败</string>
+    <string name="toast_open_project_first">请先打开一个项目</string>
+    <string name="toast_build_running">已有打包任务正在执行</string>
+    <string name="toast_open_file_first">请先打开一个文件</string>
+
+    <string name="log_home_intro">首页保持紧凑深色工作区，编辑区已切到更接近 AIDE 的多标签结构。</string>
+    <string name="log_current_jdk">当前 JDK</string>
+    <string name="log_current_ndk">当前 NDK</string>
+    <string name="log_android_sdk">Android SDK</string>
+    <string name="log_unregistered">未登记</string>
+    <string name="log_jdk_install_status">JDK 安装状态</string>
+    <string name="log_ndk_install_status">NDK 安装状态</string>
+    <string name="status_installed">已安装</string>
+    <string name="status_not_installed">未安装</string>
+    <string name="log_project_count">已发现项目数</string>
+    <string name="log_project_opened">已打开项目</string>
+    <string name="log_open_file_failed">打开文件失败：%1$s</string>
+    <string name="log_save_file_failed">保存文件失败：%1$s</string>
+
+    <string name="editor_detection_prefix">[编辑器检测] %1$s</string>
+
+    <string name="search_hint_query">搜索内容</string>
+    <string name="search_hint_replace">替换为</string>
+    <string name="search_dialog_hint">默认忽略大小写。支持查找下一个、替换当前和全部替换。</string>
+    <string name="search_dialog_title">搜索与替换</string>
+    <string name="search_action_next">下一个</string>
+    <string name="search_action_replace_current">替换当前</string>
+    <string name="search_action_replace_all">全部替换</string>
+    <string name="search_enter_query">请输入搜索内容</string>
+    <string name="search_no_match">没有找到匹配内容</string>
+    <string name="search_replaced_current">已替换当前匹配</string>
+    <string name="search_replaced_positioned">已定位并替换</string>
+    <string name="search_no_replace_match">没有可替换的匹配</string>
+    <string name="search_no_items">没有匹配项</string>
+    <string name="search_replaced_count">已替换 %1$d 处</string>
+
+    <string name="issue_merge_conflict_message">检测到未处理的合并冲突标记。</string>
+    <string name="issue_merge_conflict_suggestion">先删除冲突标记并保留正确代码，再继续编辑或打包。</string>
+    <string name="issue_xml_suggestion">检查 XML 标签闭合、属性引号和资源引用格式。</string>
+    <string name="issue_xml_incomplete_suggestion">检查 XML 结构是否完整。</string>
+    <string name="issue_bracket_early_close_message">括号提前闭合，结构不平衡。</string>
+    <string name="issue_bracket_early_close_suggestion">检查这一行附近是否多写了 `)`、`}` 或 `]`。</string>
+    <string name="issue_string_unclosed_message">字符串没有正常闭合。</string>
+    <string name="issue_string_unclosed_suggestion">检查最后一个字符串的引号是否缺失。</string>
+    <string name="issue_bracket_unbalanced_message">括号数量不平衡。</string>
+    <string name="issue_bracket_unbalanced_suggestion">检查最近修改的位置，确认 `() { } [ ]` 是否成对出现。</string>
 </resources>

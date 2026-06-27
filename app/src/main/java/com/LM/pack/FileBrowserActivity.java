@@ -13,6 +13,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
+import com.LM.pack.R;
 import com.LM.pack.model.FileTreeItem;
 import com.LM.pack.model.ProjectEntry;
 import com.LM.pack.service.ProjectFileService;
@@ -73,7 +74,7 @@ public class FileBrowserActivity extends Activity {
         String projectDir = intent.getStringExtra(EXTRA_PROJECT_DIR);
         String packageName = intent.getStringExtra(EXTRA_PROJECT_PACKAGE);
         String currentDirPath = intent.getStringExtra(EXTRA_CURRENT_DIR);
-        currentProject = new ProjectEntry(projectName, packageName, projectDir, "", "项目", "");
+        currentProject = new ProjectEntry(projectName, packageName, projectDir, "", getString(R.string.project_mode_generic), "");
         currentDir = currentDirPath == null || currentDirPath.length() == 0 ? new File(projectDir) : new File(currentDirPath);
     }
 
@@ -126,7 +127,7 @@ public class FileBrowserActivity extends Activity {
             title = currentProject.getProjectName();
         }
         tvTitle.setText(title);
-        tvPath.setText("·· 返回上一级  ·  " + projectFileService.buildDisplayPath(currentProject, currentDir));
+        tvPath.setText(getString(R.string.file_browser_path_format, projectFileService.buildDisplayPath(currentProject, currentDir)));
         adapter.notifyDataSetChanged();
     }
 
@@ -217,7 +218,7 @@ public class FileBrowserActivity extends Activity {
                 holder.title.setText(fileName);
                 holder.title.setTextColor(palette.textSecondary);
             }
-            holder.sub.setText(item.isDirectory() ? "点击进入目录" : "点击打开到编辑器");
+            holder.sub.setText(item.isDirectory() ? R.string.file_browser_enter_directory : R.string.file_browser_open_file);
             holder.sub.setTextColor(palette.textMuted);
             return convertView;
         }

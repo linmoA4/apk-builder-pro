@@ -47,6 +47,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.LM.pack.build.BuildManager;
 import com.LM.pack.build.ProjectPreflightChecker;
 import com.LM.pack.editor.CodeEditorView;
+import com.LM.pack.editor.EditorIssueAnalyzer;
 import com.LM.pack.editor.EditorTabManager;
 import com.LM.pack.env.EnvironmentManager;
 import com.LM.pack.env.ToolchainInstaller;
@@ -66,6 +67,8 @@ import com.LM.pack.theme.AppThemePalette;
 import com.LM.pack.theme.GlassProgressBarView;
 import com.LM.pack.theme.LiquidGlassBackgroundView;
 import com.LM.pack.theme.ThemeManager;
+import com.LM.pack.ui.FileTreeListAdapter;
+import com.LM.pack.ui.ProjectListAdapter;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -107,6 +110,7 @@ public class MainActivity extends Activity {
     private ProjectFileService projectFileService;
     private BuildWorkflowService buildWorkflowService;
     private EnvironmentState environmentState;
+    private EditorIssueAnalyzer editorIssueAnalyzer;
 
     private ViewPager2 viewPager;
     private LinearLayout homePane;
@@ -151,8 +155,8 @@ public class MainActivity extends Activity {
     private final ArrayList<String> expandedDirs = new ArrayList<String>();
     private final ArrayList<BuildIssue> lastBuildIssues = new ArrayList<BuildIssue>();
 
-    private ProjectAdapter projectAdapter;
-    private FileTreeAdapter fileTreeAdapter;
+    private ProjectListAdapter projectAdapter;
+    private FileTreeListAdapter fileTreeAdapter;
     private EditorTabManager editorTabManager;
     private ProjectEntry currentProject;
     private File currentOpenFile;
@@ -168,8 +172,6 @@ public class MainActivity extends Activity {
     private boolean swipeHandled = false;
     private boolean addActionAnimating = false;
     private boolean fileDrawerAnimating = false;
-    private int lastAnimatedProjectPosition = -1;
-    private int lastAnimatedFilePosition = -1;
     private float gestureStartX = 0f;
     private float gestureStartY = 0f;
     private Runnable autoSaveRunnable;
@@ -195,6 +197,7 @@ public class MainActivity extends Activity {
         projectFileService = new ProjectFileService();
         buildWorkflowService = new BuildWorkflowService(buildManager, preflightChecker, environmentManager, handler);
         environmentState = environmentManager.loadState();
+        editorIssueAnalyzer = new EditorIssueAnalyzer(this);
         selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
         selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
 
@@ -338,8 +341,8 @@ public class MainActivity extends Activity {
     }
 
     private void initAdapters() {
-        projectAdapter = new ProjectAdapter();
-        fileTreeAdapter = new FileTreeAdapter();
+        projectAdapter = new ProjectListAdapter(this, themeManager, projectEntries);
+        fileTreeAdapter = new FileTreeListAdapter(this, themeManager, fileTreeItems);
         editorTabManager = new EditorTabManager(this, editorTabContainer);
         editorTabManager.setTabListener(new EditorTabManager.TabListener() {
             @Override
@@ -462,12 +465,12 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 if (currentCopiedFix.length() == 0) {
-                    toast("当前没有可复制的修复建议");
+                    toast(getString(R.string.toast_no_fix_to_copy));
                     return;
                 }
                 ClipboardManager clipboardManager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                clipboardManager.setPrimaryClip(ClipData.newPlainText("修复建议", currentCopiedFix));
-                toast("修复建议已复制");
+                clipboardManager.setPrimaryClip(ClipData.newPlainText(getString(R.string.clipboard_fix_label), currentCopiedFix));
+                toast(getString(R.string.toast_fix_copied));
             }
         });
 
@@ -539,26 +542,25 @@ public class MainActivity extends Activity {
     }
 
     private void appendStartupLogs() {
-        logManager.appendLogLine("INFO", "首页保持紧凑深色工作区，编辑区已切到更接近 AIDE 的多标签结构。");
-        logManager.appendKeyValue("INFO", "当前 JDK", EnvironmentManager.JDK_NAMES[selectedJdkIndex]);
-        logManager.appendKeyValue("INFO", "当前 NDK", EnvironmentManager.NDK_NAMES[selectedNdkIndex]);
-        logManager.appendKeyValue("INFO", "Android SDK", safeText(environmentState.getAndroidSdkDir(), "未登记"));
+        logManager.appendLogLine("INFO", getString(R.string.log_home_intro));
+        logManager.appendKeyValue("INFO", getString(R.string.log_current_jdk), EnvironmentManager.JDK_NAMES[selectedJdkIndex]);
+        logManager.appendKeyValue("INFO", getString(R.string.log_current_ndk), EnvironmentManager.NDK_NAMES[selectedNdkIndex]);
+        logManager.appendKeyValue("INFO", getString(R.string.log_android_sdk), safeText(environmentState.getAndroidSdkDir(), getString(R.string.log_unregistered)));
         logManager.appendKeyValue(
             "INFO",
-            "JDK 安装状态",
-            environmentManager.isSelectedJdkInstalled(selectedJdkIndex, environmentState) ? "已安装" : "未安装"
+            getString(R.string.log_jdk_install_status),
+            environmentManager.isSelectedJdkInstalled(selectedJdkIndex, environmentState) ? getString(R.string.status_installed) : getString(R.string.status_not_installed)
         );
         logManager.appendKeyValue(
             "INFO",
-            "NDK 安装状态",
-            environmentManager.isSelectedNdkInstalled(selectedNdkIndex, environmentState) ? "已安装" : "未安装"
+            getString(R.string.log_ndk_install_status),
+            environmentManager.isSelectedNdkInstalled(selectedNdkIndex, environmentState) ? getString(R.string.status_installed) : getString(R.string.status_not_installed)
         );
     }
 
     private void refreshProjectList() {
         projectEntries.clear();
         projectEntries.addAll(projectWorkspaceService.loadProjects());
-        lastAnimatedProjectPosition = -1;
         projectAdapter.notifyDataSetChanged();
         if (projectEntries.isEmpty()) {
             emptyState.setVisibility(View.VISIBLE);
@@ -567,7 +569,7 @@ public class MainActivity extends Activity {
             emptyState.setVisibility(View.GONE);
             lvProjects.setVisibility(View.VISIBLE);
         }
-        logManager.appendKeyValue("INFO", "已发现项目数", String.valueOf(projectEntries.size()));
+        logManager.appendKeyValue("INFO", getString(R.string.log_project_count), String.valueOf(projectEntries.size()));
     }
 
     private void applyThemeUi() {
@@ -587,10 +589,10 @@ public class MainActivity extends Activity {
             updateBugButtonState();
         }
         if (projectAdapter != null) {
-            projectAdapter.notifyDataSetChanged();
+            projectAdapter.setPalette(palette);
         }
         if (fileTreeAdapter != null) {
-            fileTreeAdapter.notifyDataSetChanged();
+            fileTreeAdapter.setPalette(palette);
         }
     }
 
@@ -598,14 +600,15 @@ public class MainActivity extends Activity {
         flushPendingAutoSave();
         btnBackHome.setVisibility(View.GONE);
         btnFabAdd.setVisibility(View.VISIBLE);
-        btnToggleFiles.setText("目录");
-        tvToolbarTitle.setText("APK Builder Pro");
+        btnToggleFiles.setText(R.string.editor_toggle_files);
+        tvToolbarTitle.setText(R.string.main_title);
         setSuggestionCardVisible(false, false);
         hideFileDrawer(false);
         hideAddActionOverlay(false);
         currentProject = null;
         projectPrepared = false;
         editorTabManager.clear();
+        fileTreeAdapter.setProjectRoot(null);
         clearEditor();
     }
 
@@ -621,18 +624,19 @@ public class MainActivity extends Activity {
         btnBackHome.setVisibility(View.VISIBLE);
         btnFabAdd.setVisibility(View.GONE);
         hideAddActionOverlay(false);
-        tvToolbarTitle.setText("编辑器");
-        tvEditorProject.setText(entry.getProjectName() + "  ·  " + safeText(entry.getPackageName(), "未识别包名"));
+        tvToolbarTitle.setText(R.string.main_title_editor);
+        tvEditorProject.setText(getString(R.string.project_title_with_package, entry.getProjectName(), safeText(entry.getPackageName(), getString(R.string.package_unrecognized))));
         tvCurrentFilePath.setText(entry.getProjectDir());
         setSuggestionCardVisible(false, false);
         lastBuildIssues.clear();
         updateBugButtonState();
         editorTabManager.clear();
+        fileTreeAdapter.setProjectRoot(entry.getProjectDir());
         loadProjectFiles();
         showFileDrawer(false);
-        btnToggleFiles.setText("目录");
+        btnToggleFiles.setText(R.string.editor_toggle_files);
         openDefaultEditorFile(entry);
-        logManager.appendKeyValue("INFO", "已打开项目", entry.getProjectDir());
+        logManager.appendKeyValue("INFO", getString(R.string.log_project_opened), entry.getProjectDir());
     }
 
     private void openDefaultEditorFile(ProjectEntry entry) {
@@ -641,7 +645,7 @@ public class MainActivity extends Activity {
             loadFileIntoEditor(defaultFile, true);
         } else {
             clearEditor();
-            tvCurrentFilePath.setText("没有找到可编辑的文本文件");
+            tvCurrentFilePath.setText(R.string.no_editable_text_file);
         }
     }
 
@@ -2106,14 +2110,28 @@ public class MainActivity extends Activity {
     private void loadProjectFiles() {
         if (currentProject == null) {
             fileTreeItems.clear();
-            lastAnimatedFilePosition = -1;
             fileTreeAdapter.notifyDataSetChanged();
             return;
         }
-        fileTreeItems.clear();
-        fileTreeItems.addAll(projectFileService.listDirectory(currentProject, new File(currentProject.getProjectDir())));
-        lastAnimatedFilePosition = -1;
-        fileTreeAdapter.notifyDataSetChanged();
+        final ProjectEntry projectSnapshot = currentProject;
+        final File rootDirectory = new File(projectSnapshot.getProjectDir());
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final ArrayList<FileTreeItem> items = projectFileService.listDirectory(projectSnapshot, rootDirectory);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (currentProject == null || !sameFile(rootDirectory, new File(currentProject.getProjectDir()))) {
+                            return;
+                        }
+                        fileTreeItems.clear();
+                        fileTreeItems.addAll(items);
+                        fileTreeAdapter.notifyDataSetChanged();
+                    }
+                });
+            }
+        }, "main-file-drawer-loader").start();
     }
 
     private void updateFileDrawerWidth() {
@@ -2181,8 +2199,8 @@ public class MainActivity extends Activity {
             }
             validateCurrentEditorContent();
         } catch (Exception e) {
-            logManager.appendLogLine("ERROR", "打开文件失败：" + e.getMessage());
-            toast("打开文件失败");
+            logManager.appendLogLine("ERROR", getString(R.string.log_open_file_failed, e.getMessage()));
+            toast(getString(R.string.toast_open_file_failed));
         }
     }
 
@@ -2197,7 +2215,7 @@ public class MainActivity extends Activity {
         etEditor.resetHistory();
         etEditor.clearSearchHighlights();
         etEditor.clearDiagnosticLines();
-        tvCurrentFilePath.setText("请选择一个文件");
+        tvCurrentFilePath.setText(R.string.no_file_selected);
         setSuggestionCardVisible(false, false);
         updateEditorActionButtons();
     }
@@ -2214,8 +2232,8 @@ public class MainActivity extends Activity {
             projectWorkspaceService.writeText(currentOpenFile, content);
             lastSavedText = content;
         } catch (Exception e) {
-            logManager.appendLogLine("ERROR", "保存文件失败：" + e.getMessage());
-            toast("保存失败");
+            logManager.appendLogLine("ERROR", getString(R.string.log_save_file_failed, e.getMessage()));
+            toast(getString(R.string.toast_save_failed));
         }
     }
 
@@ -2249,7 +2267,7 @@ public class MainActivity extends Activity {
         if (fileDrawer == null) {
             return;
         }
-        btnToggleFiles.setText("目录");
+        btnToggleFiles.setText(R.string.editor_toggle_files);
         if (!animated) {
             fileDrawer.animate().cancel();
             fileDrawer.setVisibility(View.VISIBLE);
@@ -2278,7 +2296,7 @@ public class MainActivity extends Activity {
         if (fileDrawer == null) {
             return;
         }
-        btnToggleFiles.setText("目录");
+        btnToggleFiles.setText(R.string.editor_toggle_files);
         if (!animated || fileDrawer.getVisibility() != View.VISIBLE) {
             fileDrawer.animate().cancel();
             fileDrawer.setVisibility(View.GONE);
@@ -2428,42 +2446,13 @@ public class MainActivity extends Activity {
             .start();
     }
 
-    private void animateListItem(View itemView, int position, boolean projectList) {
-        if (itemView == null) {
-            return;
-        }
-        int lastPosition = projectList ? lastAnimatedProjectPosition : lastAnimatedFilePosition;
-        if (position <= lastPosition) {
-            itemView.setAlpha(1f);
-            itemView.setTranslationX(0f);
-            itemView.setTranslationY(0f);
-            return;
-        }
-        itemView.animate().cancel();
-        itemView.setAlpha(0f);
-        itemView.setTranslationX(projectList ? dp(18) : -dp(14));
-        itemView.setTranslationY(dp(6));
-        itemView.animate()
-            .alpha(1f)
-            .translationX(0f)
-            .translationY(0f)
-            .setDuration(220L)
-            .setStartDelay(Math.min(150L, position * 22L))
-            .start();
-        if (projectList) {
-            lastAnimatedProjectPosition = position;
-        } else {
-            lastAnimatedFilePosition = position;
-        }
-    }
-
     private void detectAndBuild() {
         if (currentProject == null) {
-            toast("请先打开一个项目");
+            toast(getString(R.string.toast_open_project_first));
             return;
         }
         if (isBuildRunning) {
-            toast("已有打包任务正在执行");
+            toast(getString(R.string.toast_build_running));
             return;
         }
         File projectDir = new File(currentProject.getProjectDir());
@@ -2976,10 +2965,11 @@ public class MainActivity extends Activity {
             etEditor.clearDiagnosticLines();
             return;
         }
-        ArrayList<BuildIssue> issues = collectEditorIssues(currentOpenFile.getName(), etEditor.getText().toString());
+        ArrayList<BuildIssue> issues = editorIssueAnalyzer.analyze(currentOpenFile.getName(), etEditor.getText().toString());
         if (issues.isEmpty()) {
             etEditor.clearDiagnosticLines();
-            if (suggestionCard.getVisibility() == View.VISIBLE && currentCopiedFix.startsWith("[编辑器检测]")) {
+            if (suggestionCard.getVisibility() == View.VISIBLE
+                && currentCopiedFix.startsWith(getString(R.string.editor_detection_prefix, ""))) {
                 setSuggestionCardVisible(false, true);
                 currentCopiedFix = "";
             }
@@ -2996,84 +2986,7 @@ public class MainActivity extends Activity {
         setSuggestionCardVisible(true, true);
         tvIssueTitle.setText(firstIssue.getMessage());
         tvIssueFix.setText(firstIssue.getSuggestion());
-        currentCopiedFix = "[编辑器检测] " + firstIssue.getSuggestion();
-    }
-
-    private ArrayList<BuildIssue> collectEditorIssues(String fileName, String content) {
-        ArrayList<BuildIssue> issues = new ArrayList<BuildIssue>();
-        if (content == null) {
-            return issues;
-        }
-        if (content.contains("<<<<<<<") || content.contains("=======") || content.contains(">>>>>>>")) {
-            issues.add(new BuildIssue(fileName, -1, "检测到未处理的合并冲突标记。", "先删除冲突标记并保留正确代码，再继续编辑或打包。"));
-        }
-        String lowerName = fileName == null ? "" : fileName.toLowerCase();
-        if (lowerName.endsWith(".xml")) {
-            collectXmlEditorIssues(fileName, content, issues);
-        } else if (lowerName.endsWith(".java") || lowerName.endsWith(".kt") || lowerName.endsWith(".gradle") || lowerName.endsWith(".kts")) {
-            collectBraceIssues(fileName, content, issues);
-        }
-        return issues;
-    }
-
-    private void collectXmlEditorIssues(String fileName, String content, ArrayList<BuildIssue> issues) {
-        try {
-            DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new InputSource(new StringReader(content)));
-        } catch (SAXParseException e) {
-            issues.add(new BuildIssue(fileName, e.getLineNumber(), e.getMessage(), "检查 XML 标签闭合、属性引号和资源引用格式。"));
-        } catch (Exception e) {
-            issues.add(new BuildIssue(fileName, -1, e.getMessage(), "检查 XML 结构是否完整。"));
-        }
-    }
-
-    private void collectBraceIssues(String fileName, String content, ArrayList<BuildIssue> issues) {
-        int roundBalance = 0;
-        int curlyBalance = 0;
-        int squareBalance = 0;
-        int lineNumber = 1;
-        boolean inString = false;
-        char stringQuote = 0;
-        for (int i = 0; i < content.length(); i++) {
-            char c = content.charAt(i);
-            if (c == '\n') {
-                lineNumber++;
-            }
-            if (inString) {
-                if (c == stringQuote && (i == 0 || content.charAt(i - 1) != '\\')) {
-                    inString = false;
-                }
-                continue;
-            }
-            if (c == '"' || c == '\'') {
-                inString = true;
-                stringQuote = c;
-                continue;
-            }
-            if (c == '(') {
-                roundBalance++;
-            } else if (c == ')') {
-                roundBalance--;
-            } else if (c == '{') {
-                curlyBalance++;
-            } else if (c == '}') {
-                curlyBalance--;
-            } else if (c == '[') {
-                squareBalance++;
-            } else if (c == ']') {
-                squareBalance--;
-            }
-            if (roundBalance < 0 || curlyBalance < 0 || squareBalance < 0) {
-                issues.add(new BuildIssue(fileName, lineNumber, "括号提前闭合，结构不平衡。", "检查这一行附近是否多写了 `)`、`}` 或 `]`。"));
-                return;
-            }
-        }
-        if (inString) {
-            issues.add(new BuildIssue(fileName, lineNumber, "字符串没有正常闭合。", "检查最后一个字符串的引号是否缺失。"));
-            return;
-        }
-        if (roundBalance != 0 || curlyBalance != 0 || squareBalance != 0) {
-            issues.add(new BuildIssue(fileName, lineNumber, "括号数量不平衡。", "检查最近修改的位置，确认 `() { } [ ]` 是否成对出现。"));
-        }
+        currentCopiedFix = getString(R.string.editor_detection_prefix, firstIssue.getSuggestion());
     }
 
     private void showProgressDialog(String title, String message) {
@@ -3115,7 +3028,7 @@ public class MainActivity extends Activity {
 
     private void showSearchReplaceDialog() {
         if (currentOpenFile == null) {
-            toast("请先打开一个文件");
+            toast(getString(R.string.toast_open_file_first));
             return;
         }
         LinearLayout container = new LinearLayout(this);
@@ -3124,13 +3037,13 @@ public class MainActivity extends Activity {
         container.setPadding(padding, padding, padding, 0);
 
         final EditText etQuery = new EditText(this);
-        etQuery.setHint("搜索内容");
+        etQuery.setHint(R.string.search_hint_query);
         etQuery.setSingleLine(true);
         etQuery.setText(lastSearchQuery);
         container.addView(etQuery, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         final EditText etReplacement = new EditText(this);
-        etReplacement.setHint("替换为");
+        etReplacement.setHint(R.string.search_hint_replace);
         etReplacement.setSingleLine(true);
         etReplacement.setText(lastReplaceText);
         LinearLayout.LayoutParams replacementParams = new LinearLayout.LayoutParams(
@@ -3141,7 +3054,7 @@ public class MainActivity extends Activity {
         container.addView(etReplacement, replacementParams);
 
         final TextView tvHint = new TextView(this);
-        tvHint.setText("默认忽略大小写。支持查找下一个、替换当前和全部替换。");
+        tvHint.setText(R.string.search_dialog_hint);
         tvHint.setTextSize(12f);
         LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -3151,11 +3064,11 @@ public class MainActivity extends Activity {
         container.addView(tvHint, hintParams);
 
         final AlertDialog dialog = new AlertDialog.Builder(this)
-            .setTitle("搜索与替换")
+            .setTitle(R.string.search_dialog_title)
             .setView(container)
-            .setPositiveButton("下一个", null)
-            .setNeutralButton("替换当前", null)
-            .setNegativeButton("全部替换", null)
+            .setPositiveButton(R.string.search_action_next, null)
+            .setNeutralButton(R.string.search_action_replace_current, null)
+            .setNegativeButton(R.string.search_action_replace_all, null)
             .create();
         dialog.setOnDismissListener(dialogInterface -> {
             String query = etQuery.getText().toString().trim();
@@ -3169,12 +3082,12 @@ public class MainActivity extends Activity {
             lastSearchQuery = query;
             lastReplaceText = etReplacement.getText().toString();
             if (query.length() == 0) {
-                toast("请输入搜索内容");
+                toast(getString(R.string.search_enter_query));
                 etEditor.clearSearchHighlights();
                 return;
             }
             if (!etEditor.findNext(query, true)) {
-                toast("没有找到匹配内容");
+                toast(getString(R.string.search_no_match));
             }
         });
         dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
@@ -3183,19 +3096,19 @@ public class MainActivity extends Activity {
             lastSearchQuery = query;
             lastReplaceText = replacement;
             if (query.length() == 0) {
-                toast("请输入搜索内容");
+                toast(getString(R.string.search_enter_query));
                 return;
             }
             if (etEditor.replaceCurrentMatch(query, replacement, true)) {
                 etEditor.findNext(query, true);
-                toast("已替换当前匹配");
+                toast(getString(R.string.search_replaced_current));
                 return;
             }
             if (etEditor.findNext(query, true) && etEditor.replaceCurrentMatch(query, replacement, true)) {
                 etEditor.findNext(query, true);
-                toast("已定位并替换");
+                toast(getString(R.string.search_replaced_positioned));
             } else {
-                toast("没有可替换的匹配");
+                toast(getString(R.string.search_no_replace_match));
             }
         });
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> {
@@ -3204,14 +3117,14 @@ public class MainActivity extends Activity {
             lastSearchQuery = query;
             lastReplaceText = replacement;
             if (query.length() == 0) {
-                toast("请输入搜索内容");
+                toast(getString(R.string.search_enter_query));
                 return;
             }
             int replaced = etEditor.replaceAll(query, replacement, true);
             if (replaced <= 0) {
-                toast("没有匹配项");
+                toast(getString(R.string.search_no_items));
             } else {
-                toast("已替换 " + replaced + " 处");
+                toast(getString(R.string.search_replaced_count, replaced));
             }
         });
     }
@@ -3233,7 +3146,7 @@ public class MainActivity extends Activity {
         tvProgressMessage.setText(message);
         progressBarFancy.setIndeterminate(indeterminate);
         if (indeterminate) {
-            tvProgressPercent.setText("处理中");
+            tvProgressPercent.setText(R.string.progress_indeterminate_label);
         } else {
             int safePercent = Math.max(0, Math.min(100, percent));
             progressBarFancy.setProgress(safePercent);
@@ -3385,26 +3298,6 @@ public class MainActivity extends Activity {
         return null;
     }
 
-    private String buildFileSecondaryText(FileTreeItem item) {
-        if (item == null || item.getFile() == null) {
-            return "";
-        }
-        File parent = item.getFile().getParentFile();
-        if (currentProject == null || parent == null) {
-            return item.isDirectory() ? "文件夹" : "文件";
-        }
-        String projectDir = currentProject.getProjectDir();
-        String parentPath = parent.getAbsolutePath();
-        if (parentPath.startsWith(projectDir)) {
-            String relative = parentPath.substring(projectDir.length());
-            if (relative.length() == 0) {
-                relative = "/";
-            }
-            return (item.isDirectory() ? "目录 · 点进后进入新页面" : "文件 · ") + relative;
-        }
-        return item.isDirectory() ? "目录" : "文件";
-    }
-
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -3482,176 +3375,6 @@ public class MainActivity extends Activity {
             }
         }
         return super.dispatchTouchEvent(event);
-    }
-
-    private class ProjectAdapter extends BaseAdapter {
-        @Override
-        public int getCount() {
-            return projectEntries.size();
-        }
-
-        @Override
-        public Object getItem(int position) {
-            return projectEntries.get(position);
-        }
-
-        @Override
-        public long getItemId(int position) {
-            return position;
-        }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            ProjectCardHolder holder;
-            if (convertView == null) {
-                LinearLayout card = new LinearLayout(MainActivity.this);
-                card.setOrientation(LinearLayout.HORIZONTAL);
-                card.setGravity(Gravity.CENTER_VERTICAL);
-                card.setPadding(dp(14), dp(14), dp(14), dp(14));
-                card.setBackground(palette == null ? roundedDrawable("#182231", "#263246", 12) : themeManager.createPanelDrawable(palette, true));
-
-                ImageView iconView = new ImageView(MainActivity.this);
-                LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(52), dp(52));
-                iconParams.rightMargin = dp(14);
-                iconView.setLayoutParams(iconParams);
-                iconView.setBackground(palette == null ? roundedDrawable("#0F141B", "#2A3850", 10) : themeManager.createChipDrawable(palette));
-                iconView.setPadding(dp(8), dp(8), dp(8), dp(8));
-                iconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-                card.addView(iconView);
-
-                LinearLayout textColumn = new LinearLayout(MainActivity.this);
-                textColumn.setOrientation(LinearLayout.VERTICAL);
-                textColumn.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-                TextView title = new TextView(MainActivity.this);
-                title.setTextColor(Color.parseColor("#F3F7FD"));
-                title.setTextSize(14f);
-                textColumn.addView(title);
-
-                TextView sub = new TextView(MainActivity.this);
-                sub.setTextColor(Color.parseColor("#A2B0C3"));
-                sub.setTextSize(11f);
-                sub.setPadding(0, dp(2), 0, 0);
-                textColumn.addView(sub);
-
-                TextView meta = new TextView(MainActivity.this);
-                meta.setTextColor(Color.parseColor("#8FB6FF"));
-                meta.setTextSize(11f);
-                meta.setPadding(0, dp(4), 0, 0);
-                textColumn.addView(meta);
-
-                card.addView(textColumn);
-                holder = new ProjectCardHolder(iconView, title, sub, meta);
-                card.setTag(holder);
-                convertView = card;
-            } else {
-                holder = (ProjectCardHolder) convertView.getTag();
-            }
-
-            ProjectEntry entry = projectEntries.get(position);
-            convertView.setBackground(palette == null ? roundedDrawable("#182231", "#263246", 12) : themeManager.createPanelDrawable(palette, true));
-            holder.icon.setBackground(palette == null ? roundedDrawable("#0F141B", "#2A3850", 10) : themeManager.createChipDrawable(palette));
-            holder.title.setTextColor(palette == null ? Color.parseColor("#F3F7FD") : palette.textPrimary);
-            holder.sub.setTextColor(palette == null ? Color.parseColor("#A2B0C3") : palette.textSecondary);
-            holder.meta.setTextColor(palette == null ? Color.parseColor("#8FB6FF") : palette.accentStrong);
-            holder.title.setText(entry.getProjectName());
-            holder.sub.setText(safeText(entry.getPackageName(), "未识别包名"));
-            holder.meta.setText(entry.getMode() + "  ·  v" + safeText(entry.getVersionName(), "1.0") + "  ·  长按管理");
-            Bitmap bitmap = null;
-            if (entry.getIconPath() != null && entry.getIconPath().length() > 0 && !entry.getIconPath().endsWith(".xml")) {
-                bitmap = BitmapFactory.decodeFile(entry.getIconPath());
-            }
-            if (bitmap != null) {
-                holder.icon.setImageBitmap(bitmap);
-            } else {
-                holder.icon.setImageResource(android.R.drawable.sym_def_app_icon);
-            }
-            animateListItem(convertView, position, true);
-            return convertView;
-        }
-    }
-
-    private class FileTreeAdapter extends BaseAdapter {
-        @Override
-        public int getCount() {
-            return fileTreeItems.size();
-        }
-
-        @Override
-        public Object getItem(int position) {
-            return fileTreeItems.get(position);
-        }
-
-        @Override
-        public long getItemId(int position) {
-            return position;
-        }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            FileTreeRowHolder holder;
-            if (convertView == null) {
-                LinearLayout row = new LinearLayout(MainActivity.this);
-                row.setOrientation(LinearLayout.VERTICAL);
-                row.setPadding(dp(12), dp(10), dp(12), dp(10));
-
-                TextView title = new TextView(MainActivity.this);
-                title.setTextSize(12.5f);
-                title.setSingleLine(true);
-                title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                row.addView(title);
-
-                TextView sub = new TextView(MainActivity.this);
-                sub.setTextSize(10.5f);
-                sub.setPadding(0, dp(3), 0, 0);
-                sub.setSingleLine(true);
-                sub.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-                row.addView(sub);
-
-                holder = new FileTreeRowHolder(title, sub);
-                row.setTag(holder);
-                convertView = row;
-            } else {
-                holder = (FileTreeRowHolder) convertView.getTag();
-            }
-            FileTreeItem item = fileTreeItems.get(position);
-            String prefix = item.isDirectory() ? "›  " : "·  ";
-            convertView.setPadding(dp(16), dp(10), dp(12), dp(10));
-            convertView.setBackground(palette == null ? roundedDrawable("#151B24", "", 8) : themeManager.createPanelDrawable(palette, false));
-            holder.title.setText(prefix + item.getFile().getName());
-            holder.title.setTextColor(item.isDirectory()
-                ? (palette == null ? Color.parseColor("#F3F7FD") : palette.textPrimary)
-                : (palette == null ? Color.parseColor("#B8C9E0") : palette.textSecondary));
-            holder.sub.setText(buildFileSecondaryText(item));
-            holder.sub.setTextColor(palette == null ? Color.parseColor("#7D8DA4") : palette.textMuted);
-            holder.sub.setVisibility(View.VISIBLE);
-            animateListItem(convertView, position, false);
-            return convertView;
-        }
-    }
-
-    private static class ProjectCardHolder {
-        final ImageView icon;
-        final TextView title;
-        final TextView sub;
-        final TextView meta;
-
-        ProjectCardHolder(ImageView icon, TextView title, TextView sub, TextView meta) {
-            this.icon = icon;
-            this.title = title;
-            this.sub = sub;
-            this.meta = meta;
-        }
-    }
-
-    private static class FileTreeRowHolder {
-        final TextView title;
-        final TextView sub;
-
-        FileTreeRowHolder(TextView title, TextView sub) {
-            this.title = title;
-            this.sub = sub;
-        }
     }
 
     private static class FileNameComparator implements Comparator<File> {
