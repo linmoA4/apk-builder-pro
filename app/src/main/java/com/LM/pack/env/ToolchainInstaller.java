@@ -1,6 +1,7 @@
 package com.LM.pack.env;
 
 import android.content.Context;
+import android.content.res.AssetFileDescriptor;
 import android.content.res.AssetManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -18,7 +19,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 public class ToolchainInstaller {
 
     public interface InstallListener {
-        void onProgress(String message);
+        void onProgress(String message, int percent, boolean indeterminate);
         void onSuccess(String installedDir);
         void onError(String message);
     }
@@ -40,18 +41,18 @@ public class ToolchainInstaller {
                     File archiveFile = new File(archivePath);
                     ensureDir(archiveFile.getParentFile());
 
-                    if (environmentManager.isEmbeddedJdk(index)) {
-                        listener.onProgress("正在从 APK 内嵌资源复制 JDK 安装包...");
-                        copyAssetToFile(EnvironmentManager.JDK_ASSET_ARCHIVES[index], archiveFile);
-                    } else {
-                        listener.onProgress("正在下载 JDK 安装包...");
-                        downloadToFile(EnvironmentManager.JDK_URLS[index], archiveFile);
-                    }
+                    prepareArchive(
+                        EnvironmentManager.JDK_ASSET_ARCHIVES[index],
+                        EnvironmentManager.JDK_URLS[index],
+                        archiveFile,
+                        "JDK 安装包",
+                        listener
+                    );
 
                     File installRoot = new File(environmentManager.getJdkInstallDir(EnvironmentManager.JDK_NAMES[index]));
                     clearDirectory(installRoot);
                     ensureDir(installRoot);
-                    listener.onProgress("正在解压 JDK 到本地目录...");
+                    listener.onProgress("正在解压 JDK 到本地目录...", 100, true);
                     extractTarGz(archiveFile, installRoot);
                     File actualDir = resolveInstalledHome(installRoot);
                     listener.onSuccess(actualDir.getAbsolutePath());
@@ -71,18 +72,18 @@ public class ToolchainInstaller {
                     File archiveFile = new File(archivePath);
                     ensureDir(archiveFile.getParentFile());
 
-                    if (environmentManager.isEmbeddedNdk(index)) {
-                        listener.onProgress("正在从 APK 内嵌资源复制 NDK 安装包...");
-                        copyAssetToFile(EnvironmentManager.NDK_ASSET_ARCHIVES[index], archiveFile);
-                    } else {
-                        listener.onProgress("正在下载 NDK 安装包...");
-                        downloadToFile(EnvironmentManager.NDK_URLS[index], archiveFile);
-                    }
+                    prepareArchive(
+                        EnvironmentManager.NDK_ASSET_ARCHIVES[index],
+                        EnvironmentManager.NDK_URLS[index],
+                        archiveFile,
+                        "NDK 安装包",
+                        listener
+                    );
 
                     File installRoot = new File(environmentManager.getNdkInstallDir(EnvironmentManager.NDK_NAMES[index]));
                     clearDirectory(installRoot);
                     ensureDir(installRoot);
-                    listener.onProgress("正在解压 NDK 到本地目录...");
+                    listener.onProgress("正在解压 NDK 到本地目录...", 100, true);
                     extractZip(archiveFile, installRoot);
                     File actualDir = resolveInstalledHome(installRoot);
                     listener.onSuccess(actualDir.getAbsolutePath());
@@ -93,15 +94,62 @@ public class ToolchainInstaller {
         }).start();
     }
 
-    private void copyAssetToFile(String assetPath, File targetFile) throws Exception {
+    private void prepareArchive(
+        String assetPath,
+        String downloadUrl,
+        File targetFile,
+        String displayName,
+        InstallListener listener
+    ) throws Exception {
+        if (assetPath != null && assetPath.length() > 0 && assetExists(assetPath)) {
+            listener.onProgress("正在从应用内置资源复制" + displayName + "...", 0, false);
+            copyAssetToFile(assetPath, targetFile, listener, "正在复制" + displayName);
+            return;
+        }
+        if (targetFile.exists() && targetFile.length() > 0) {
+            listener.onProgress("已找到本地缓存，跳过下载。", 100, false);
+            return;
+        }
+        listener.onProgress("正在下载" + displayName + "...", 0, false);
+        downloadToFile(downloadUrl, targetFile, listener, "正在下载" + displayName);
+    }
+
+    private boolean assetExists(String assetPath) {
+        InputStream inputStream = null;
+        try {
+            inputStream = context.getAssets().open(assetPath);
+            return true;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            try {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void copyAssetToFile(String assetPath, File targetFile, InstallListener listener, String progressLabel) throws Exception {
         AssetManager assetManager = context.getAssets();
+        AssetFileDescriptor descriptor = null;
         InputStream inputStream = null;
         BufferedOutputStream outputStream = null;
         try {
+            long totalBytes = -1L;
+            try {
+                descriptor = assetManager.openFd(assetPath);
+                totalBytes = descriptor.getLength();
+            } catch (Exception ignored) {
+            }
             inputStream = assetManager.open(assetPath);
             outputStream = new BufferedOutputStream(new FileOutputStream(targetFile));
-            copyStream(inputStream, outputStream);
+            copyStream(inputStream, outputStream, totalBytes, progressLabel, listener);
         } finally {
+            if (descriptor != null) {
+                descriptor.close();
+            }
             if (inputStream != null) {
                 inputStream.close();
             }
@@ -111,7 +159,14 @@ public class ToolchainInstaller {
         }
     }
 
-    private void downloadToFile(String urlString, File targetFile) throws Exception {
+    private void downloadToFile(String urlString, File targetFile, InstallListener listener, String progressLabel) throws Exception {
+        downloadToFile(urlString, targetFile, listener, progressLabel, 0);
+    }
+
+    private void downloadToFile(String urlString, File targetFile, InstallListener listener, String progressLabel, int redirectCount) throws Exception {
+        if (redirectCount > 5) {
+            throw new IllegalStateException("下载重定向次数过多");
+        }
         HttpURLConnection connection = null;
         InputStream inputStream = null;
         BufferedOutputStream outputStream = null;
@@ -128,16 +183,17 @@ public class ToolchainInstaller {
                 String redirect = connection.getHeaderField("Location");
                 if (redirect != null && redirect.length() > 0) {
                     connection.disconnect();
-                    downloadToFile(redirect, targetFile);
+                    downloadToFile(redirect, targetFile, listener, progressLabel, redirectCount + 1);
                     return;
                 }
             }
             if (responseCode >= 400) {
                 throw new IllegalStateException("下载失败，HTTP " + connection.getResponseCode());
             }
+            long totalBytes = connection.getContentLengthLong();
             inputStream = new BufferedInputStream(connection.getInputStream());
             outputStream = new BufferedOutputStream(new FileOutputStream(targetFile));
-            copyStream(inputStream, outputStream);
+            copyStream(inputStream, outputStream, totalBytes, progressLabel, listener);
         } finally {
             if (inputStream != null) {
                 inputStream.close();
@@ -255,12 +311,45 @@ public class ToolchainInstaller {
         }
     }
 
-    private void copyStream(InputStream inputStream, BufferedOutputStream outputStream) throws Exception {
+    private void copyStream(
+        InputStream inputStream,
+        BufferedOutputStream outputStream,
+        long totalBytes,
+        String progressLabel,
+        InstallListener listener
+    ) throws Exception {
         byte[] buffer = new byte[8192];
         int len;
+        long copied = 0L;
+        int lastPercent = -1;
         while ((len = inputStream.read(buffer)) != -1) {
             outputStream.write(buffer, 0, len);
+            copied += len;
+            if (listener != null) {
+                if (totalBytes > 0) {
+                    int percent = (int) Math.min(100L, (copied * 100L) / totalBytes);
+                    if (percent != lastPercent) {
+                        listener.onProgress(progressLabel + "  " + formatSize(copied) + " / " + formatSize(totalBytes), percent, false);
+                        lastPercent = percent;
+                    }
+                } else {
+                    listener.onProgress(progressLabel + "  已完成 " + formatSize(copied), 0, true);
+                }
+            }
         }
         outputStream.flush();
+    }
+
+    private String formatSize(long bytes) {
+        if (bytes < 1024L) {
+            return bytes + " B";
+        }
+        if (bytes < 1024L * 1024L) {
+            return String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0);
+        }
+        if (bytes < 1024L * 1024L * 1024L) {
+            return String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024.0);
+        }
+        return String.format(java.util.Locale.US, "%.2f GB", bytes / 1024.0 / 1024.0 / 1024.0);
     }
 }

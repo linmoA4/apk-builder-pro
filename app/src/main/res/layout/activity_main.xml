@@ -2,31 +2,34 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0C1118">
+    android:background="@drawable/bg_app">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingLeft="10dp"
+        android:paddingTop="10dp"
+        android:paddingRight="10dp"
+        android:paddingBottom="8dp">
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:background="#111826"
-            android:elevation="4dp"
+            android:layout_height="54dp"
+            android:background="@drawable/bg_panel_raised"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingLeft="10dp"
-            android:paddingRight="10dp">
+            android:paddingLeft="8dp"
+            android:paddingRight="8dp">
 
             <Button
                 android:id="@+id/btnBackHome"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
-                android:background="#1A2333"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="@drawable/bg_button_ghost"
                 android:text="←"
-                android:textColor="#EAF2FF"
-                android:textSize="18sp"
+                android:textColor="@color/text_primary"
+                android:textSize="17sp"
                 android:visibility="gone" />
 
             <LinearLayout
@@ -41,210 +44,206 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="APK Builder Pro"
-                    android:textColor="#F5F8FF"
-                    android:textSize="18sp"
+                    android:textColor="@color/text_primary"
+                    android:textSize="17sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="AIDE 风格工作区"
-                    android:textColor="#8FA3BF"
+                    android:text="更紧凑的 AIDE 风格工作区"
+                    android:textColor="@color/text_muted"
                     android:textSize="11sp" />
             </LinearLayout>
 
             <Button
                 android:id="@+id/btnSettings"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:background="#1A2333"
-                android:minWidth="72dp"
+                android:layout_width="72dp"
+                android:layout_height="38dp"
+                android:background="@drawable/bg_button_ghost"
                 android:text="设置"
-                android:textColor="#EAF2FF"
+                android:textColor="@color/text_primary"
                 android:textStyle="bold" />
         </LinearLayout>
 
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1">
+            android:layout_weight="1"
+            android:layout_marginTop="10dp">
 
             <LinearLayout
                 android:id="@+id/homePane"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:orientation="horizontal"
-                android:padding="12dp">
+                android:orientation="vertical">
 
                 <LinearLayout
-                    android:layout_width="240dp"
-                    android:layout_height="match_parent"
-                    android:background="#111826"
-                    android:orientation="vertical"
-                    android:padding="12dp">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="项目"
-                        android:textColor="#F5F8FF"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:layout_marginBottom="10dp"
-                        android:text="最近导入和创建的工程"
-                        android:textColor="#7E93B2"
-                        android:textSize="12sp" />
-
-                    <ListView
-                        android:id="@+id/lvProjects"
-                        android:layout_width="match_parent"
-                        android:layout_height="0dp"
-                        android:layout_weight="1"
-                        android:cacheColorHint="#00000000"
-                        android:divider="@android:color/transparent"
-                        android:dividerHeight="6dp"
-                        android:listSelector="@android:color/transparent"
-                        android:visibility="gone" />
-
-                    <LinearLayout
-                        android:id="@+id/emptyState"
-                        android:layout_width="match_parent"
-                        android:layout_height="0dp"
-                        android:layout_weight="1"
-                        android:background="#141F31"
-                        android:gravity="center"
-                        android:orientation="vertical"
-                        android:padding="18dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="还没有项目"
-                            android:textColor="#FFFFFF"
-                            android:textSize="18sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:gravity="center"
-                            android:text="右下角新建，或导入已有工程。"
-                            android:textColor="#8FA3BF"
-                            android:textSize="13sp" />
-                    </LinearLayout>
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_marginLeft="12dp"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
                     android:layout_weight="1"
-                    android:background="#101722"
+                    android:background="@drawable/bg_panel_raised"
                     android:orientation="vertical"
-                    android:padding="18dp">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="欢迎进入工作区"
-                        android:textColor="#F5F8FF"
-                        android:textSize="22sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:text="这个版本已经换成接近 AIDE 的布局思路：左边是工程入口，中间是编辑区，底部是日志和问题输出。"
-                        android:textColor="#94A8C6"
-                        android:textSize="14sp" />
+                    android:padding="14dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="18dp"
+                        android:gravity="center_vertical"
                         android:orientation="horizontal">
 
                         <LinearLayout
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginRight="8dp"
                             android:layout_weight="1"
-                            android:background="#162131"
-                            android:orientation="vertical"
-                            android:padding="14dp">
+                            android:orientation="vertical">
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="工程浏览"
-                                android:textColor="#F5F8FF"
+                                android:text="项目"
+                                android:textColor="@color/text_primary"
+                                android:textSize="16sp"
                                 android:textStyle="bold" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="6dp"
-                                android:text="保留项目列表入口，后续可继续拆成真正的侧栏浏览器。"
-                                android:textColor="#8FA3BF"
+                                android:layout_marginTop="3dp"
+                                android:text="最近导入和创建的工程"
+                                android:textColor="@color/text_secondary"
                                 android:textSize="12sp" />
                         </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="28dp"
+                            android:background="@drawable/bg_button_ghost"
+                            android:gravity="center"
+                            android:paddingLeft="12dp"
+                            android:paddingRight="12dp"
+                            android:text="AIDE 风格"
+                            android:textColor="@color/text_chip"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1"
+                        android:layout_marginTop="12dp">
+
+                        <ListView
+                            android:id="@+id/lvProjects"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:cacheColorHint="#00000000"
+                            android:divider="@android:color/transparent"
+                            android:dividerHeight="8dp"
+                            android:listSelector="@android:color/transparent"
+                            android:visibility="gone" />
 
                         <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginLeft="8dp"
-                            android:layout_weight="1"
-                            android:background="#162131"
+                            android:id="@+id/emptyState"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="@drawable/bg_panel"
+                            android:gravity="center"
                             android:orientation="vertical"
-                            android:padding="14dp">
+                            android:padding="18dp">
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="代码编辑"
-                                android:textColor="#F5F8FF"
+                                android:text="还没有项目"
+                                android:textColor="@color/text_primary"
+                                android:textSize="18sp"
                                 android:textStyle="bold" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="6dp"
-                                android:text="支持文件树、编辑器、构建按钮和错误提示区联动。"
-                                android:textColor="#8FA3BF"
-                                android:textSize="12sp" />
+                                android:layout_marginTop="8dp"
+                                android:gravity="center"
+                                android:text="右下角新建，或者导入一个已有工程。"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="13sp" />
                         </LinearLayout>
-                    </LinearLayout>
+                    </FrameLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="176dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/bg_panel"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="工作区概览"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:text="布局改成更紧凑的手机 IDE 结构：上方项目入口，中间编辑区，底部日志输出。"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
-                        android:background="#141F31"
-                        android:orientation="vertical"
-                        android:padding="16dp">
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
 
                         <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="建议下一步"
-                            android:textColor="#F5F8FF"
-                            android:textStyle="bold" />
+                            android:layout_width="0dp"
+                            android:layout_height="34dp"
+                            android:layout_marginRight="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_button_ghost"
+                            android:gravity="center"
+                            android:text="项目列表"
+                            android:textColor="@color/text_chip"
+                            android:textSize="12sp" />
 
                         <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:text="1. 从左侧打开项目\n2. 进入编辑器后查看文件树\n3. 在底部日志查看构建输出"
-                            android:textColor="#90A5C2"
-                            android:textSize="13sp" />
+                            android:layout_width="0dp"
+                            android:layout_height="34dp"
+                            android:layout_marginLeft="6dp"
+                            android:layout_marginRight="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_button_ghost"
+                            android:gravity="center"
+                            android:text="文件树"
+                            android:textColor="@color/text_chip"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="34dp"
+                            android:layout_marginLeft="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_button_ghost"
+                            android:gravity="center"
+                            android:text="构建日志"
+                            android:textColor="@color/text_chip"
+                            android:textSize="12sp" />
                     </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="建议：先打开项目，再从文件树进入 `AndroidManifest.xml` 或 `build.gradle`。"
+                        android:textColor="@color/text_muted"
+                        android:textSize="12sp" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -253,13 +252,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:orientation="vertical"
-                android:padding="10dp"
                 android:visibility="gone">
 
                 <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:background="#111826"
+                    android:layout_height="46dp"
+                    android:background="@drawable/bg_panel_raised"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
                     android:paddingLeft="8dp"
@@ -267,11 +265,11 @@
 
                     <Button
                         android:id="@+id/btnToggleFiles"
-                        android:layout_width="wrap_content"
+                        android:layout_width="60dp"
                         android:layout_height="34dp"
-                        android:background="#1A2333"
+                        android:background="@drawable/bg_button_ghost"
                         android:text="文件"
-                        android:textColor="#EAF2FF"
+                        android:textColor="@color/text_primary"
                         android:textStyle="bold" />
 
                     <TextView
@@ -283,27 +281,27 @@
                         android:ellipsize="end"
                         android:maxLines="1"
                         android:text="当前项目"
-                        android:textColor="#F5F8FF"
-                        android:textSize="15sp"
+                        android:textColor="@color/text_primary"
+                        android:textSize="14sp"
                         android:textStyle="bold" />
 
                     <Button
                         android:id="@+id/btnBug"
                         android:layout_width="34dp"
                         android:layout_height="34dp"
-                        android:background="#38455E"
+                        android:background="@drawable/bg_button_ghost"
                         android:text="!"
-                        android:textColor="#FFFFFF"
+                        android:textColor="@color/text_primary"
                         android:textStyle="bold" />
 
                     <Button
                         android:id="@+id/btnSaveFile"
-                        android:layout_width="wrap_content"
+                        android:layout_width="56dp"
                         android:layout_height="34dp"
                         android:layout_marginLeft="8dp"
-                        android:background="#2563EB"
+                        android:background="@drawable/bg_button_primary"
                         android:text="保存"
-                        android:textColor="#FFFFFF"
+                        android:textColor="@color/text_primary"
                         android:textStyle="bold" />
 
                     <Button
@@ -311,16 +309,17 @@
                         android:layout_width="40dp"
                         android:layout_height="34dp"
                         android:layout_marginLeft="8dp"
-                        android:background="#059669"
+                        android:background="@drawable/bg_button_success"
                         android:text="▶"
-                        android:textColor="#FFFFFF"
-                        android:textSize="16sp" />
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp" />
                 </LinearLayout>
 
                 <HorizontalScrollView
                     android:layout_width="match_parent"
-                    android:layout_height="40dp"
-                    android:background="#172132"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/bg_panel"
                     android:fillViewport="true"
                     android:scrollbars="none">
 
@@ -334,37 +333,37 @@
 
                         <TextView
                             android:layout_width="wrap_content"
-                            android:layout_height="28dp"
-                            android:background="#21314B"
+                            android:layout_height="26dp"
+                            android:background="@drawable/bg_tab_active"
                             android:gravity="center_vertical"
-                            android:paddingLeft="12dp"
-                            android:paddingRight="12dp"
+                            android:paddingLeft="10dp"
+                            android:paddingRight="10dp"
                             android:text="当前文件"
-                            android:textColor="#F4F8FF"
+                            android:textColor="@color/text_chip"
                             android:textSize="12sp" />
 
                         <TextView
                             android:layout_width="wrap_content"
-                            android:layout_height="28dp"
+                            android:layout_height="26dp"
                             android:layout_marginLeft="6dp"
-                            android:background="#172132"
+                            android:background="@drawable/bg_tab_idle"
                             android:gravity="center_vertical"
-                            android:paddingLeft="12dp"
-                            android:paddingRight="12dp"
+                            android:paddingLeft="10dp"
+                            android:paddingRight="10dp"
                             android:text="AndroidManifest.xml"
-                            android:textColor="#8EA4C6"
+                            android:textColor="@color/text_secondary"
                             android:textSize="12sp" />
 
                         <TextView
                             android:layout_width="wrap_content"
-                            android:layout_height="28dp"
+                            android:layout_height="26dp"
                             android:layout_marginLeft="6dp"
-                            android:background="#172132"
+                            android:background="@drawable/bg_tab_idle"
                             android:gravity="center_vertical"
-                            android:paddingLeft="12dp"
-                            android:paddingRight="12dp"
+                            android:paddingLeft="10dp"
+                            android:paddingRight="10dp"
                             android:text="build.gradle"
-                            android:textColor="#8EA4C6"
+                            android:textColor="@color/text_secondary"
                             android:textSize="12sp" />
                     </LinearLayout>
                 </HorizontalScrollView>
@@ -373,30 +372,30 @@
                     android:id="@+id/tvCurrentFilePath"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="#101722"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/bg_panel"
                     android:ellipsize="middle"
                     android:maxLines="1"
                     android:paddingLeft="10dp"
-                    android:paddingTop="6dp"
+                    android:paddingTop="7dp"
                     android:paddingRight="10dp"
-                    android:paddingBottom="6dp"
+                    android:paddingBottom="7dp"
                     android:text="请选择一个文件"
-                    android:textColor="#8B9FBC"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
                     android:layout_weight="1"
+                    android:layout_marginTop="8dp"
                     android:orientation="horizontal">
 
                     <LinearLayout
                         android:id="@+id/fileDrawer"
-                        android:layout_width="220dp"
+                        android:layout_width="210dp"
                         android:layout_height="match_parent"
-                        android:layout_marginTop="8dp"
-                        android:background="#111826"
-                        android:elevation="2dp"
+                        android:background="@drawable/bg_panel_raised"
                         android:orientation="vertical"
                         android:padding="10dp"
                         android:visibility="gone">
@@ -405,7 +404,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="项目文件"
-                            android:textColor="#FFFFFF"
+                            android:textColor="@color/text_primary"
                             android:textStyle="bold" />
 
                         <TextView
@@ -415,7 +414,7 @@
                             android:layout_marginTop="4dp"
                             android:layout_marginBottom="8dp"
                             android:text="点击文件打开，点击文件夹展开或收起。"
-                            android:textColor="#8B97AE"
+                            android:textColor="@color/text_muted"
                             android:textSize="12sp" />
 
                         <ListView
@@ -439,9 +438,8 @@
                             android:id="@+id/suggestionCard"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
                             android:layout_marginBottom="8dp"
-                            android:background="#2B1B20"
+                            android:background="@drawable/bg_warning_card"
                             android:orientation="vertical"
                             android:padding="12dp"
                             android:visibility="gone">
@@ -451,7 +449,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:text="错误提示"
-                                android:textColor="#FFB4B4"
+                                android:textColor="#FFC4CB"
                                 android:textStyle="bold" />
 
                             <TextView
@@ -459,17 +457,17 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="6dp"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/text_primary"
                                 android:textIsSelectable="true" />
 
                             <Button
                                 android:id="@+id/btnCopyFix"
                                 android:layout_width="wrap_content"
-                                android:layout_height="36dp"
+                                android:layout_height="34dp"
                                 android:layout_marginTop="10dp"
-                                android:background="#C2410C"
+                                android:background="@drawable/bg_button_warn"
                                 android:text="复制修复建议"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/text_primary"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -478,14 +476,14 @@
                             android:layout_width="match_parent"
                             android:layout_height="0dp"
                             android:layout_weight="1"
-                            android:background="#0F1520"
+                            android:background="@drawable/bg_editor"
                             android:fontFamily="monospace"
                             android:gravity="top|start"
                             android:inputType="textMultiLine|textNoSuggestions"
                             android:padding="14dp"
-                            android:textColor="#E5EEF8"
-                            android:textColorHint="#8B97AE"
-                            android:textSize="14sp" />
+                            android:textColor="@color/text_primary"
+                            android:textColorHint="@color/text_muted"
+                            android:textSize="13sp" />
                     </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
@@ -493,14 +491,14 @@
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="190dp"
-            android:background="#0F1520"
+            android:layout_height="154dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/bg_panel_raised"
             android:orientation="vertical">
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="38dp"
-                android:background="#111826"
+                android:layout_height="36dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:paddingLeft="12dp"
@@ -510,16 +508,22 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="构建日志 / 问题输出"
-                    android:textColor="#F5F8FF"
+                    android:text="构建日志"
+                    android:textColor="@color/text_primary"
                     android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:background="@drawable/bg_button_ghost"
+                    android:gravity="center"
+                    android:paddingLeft="10dp"
+                    android:paddingTop="3dp"
+                    android:paddingRight="10dp"
+                    android:paddingBottom="3dp"
                     android:text="输出"
-                    android:textColor="#7F93AF"
-                    android:textSize="12sp" />
+                    android:textColor="@color/text_muted"
+                    android:textSize="11sp" />
             </LinearLayout>
 
             <ScrollView
@@ -528,7 +532,10 @@
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:fillViewport="true"
-                android:padding="12dp"
+                android:paddingLeft="12dp"
+                android:paddingTop="4dp"
+                android:paddingRight="12dp"
+                android:paddingBottom="12dp"
                 android:scrollbars="vertical">
 
                 <TextView
@@ -537,21 +544,21 @@
                     android:layout_height="wrap_content"
                     android:fontFamily="monospace"
                     android:lineSpacingExtra="4dp"
-                    android:textColor="#DCE7F5"
-                    android:textSize="13sp" />
+                    android:textColor="@color/text_chip"
+                    android:textSize="12sp" />
             </ScrollView>
         </LinearLayout>
     </LinearLayout>
 
     <Button
         android:id="@+id/btnFabAdd"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
+        android:layout_width="54dp"
+        android:layout_height="54dp"
         android:layout_gravity="bottom|end"
         android:layout_margin="18dp"
-        android:background="#2563EB"
+        android:background="@drawable/bg_button_primary"
         android:text="+"
-        android:textColor="#FFFFFF"
-        android:textSize="28sp" />
+        android:textColor="@color/text_primary"
+        android:textSize="26sp" />
 
 </FrameLayout>

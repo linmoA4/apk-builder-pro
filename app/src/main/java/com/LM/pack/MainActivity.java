@@ -147,6 +147,8 @@ public class MainActivity extends Activity {
         buildManager = new BuildManager();
         toolchainInstaller = new ToolchainInstaller(this, environmentManager);
         environmentState = environmentManager.loadState();
+        selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
+        selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
 
         bindViews();
         initAdapters();
@@ -154,6 +156,14 @@ public class MainActivity extends Activity {
         appendStartupLogs();
         refreshProjectList();
         showHome();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        environmentState = environmentManager.loadState();
+        selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
+        selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
     }
 
     private void bindViews() {
@@ -184,7 +194,7 @@ public class MainActivity extends Activity {
         logManager = new LogManager(tvLogs, logScrollView);
 
         ViewGroup.LayoutParams layoutParams = fileDrawer.getLayoutParams();
-        layoutParams.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.46f);
+        layoutParams.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.38f);
         fileDrawer.setLayoutParams(layoutParams);
     }
 
@@ -207,7 +217,7 @@ public class MainActivity extends Activity {
         btnSettings.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                showSettingsDialog();
+                startActivity(new Intent(MainActivity.this, SettingsActivity.class));
             }
         });
 
@@ -327,7 +337,7 @@ public class MainActivity extends Activity {
         editorPane.setVisibility(View.GONE);
         btnBackHome.setVisibility(View.GONE);
         btnFabAdd.setVisibility(View.VISIBLE);
-        btnToggleFiles.setText("文件");
+        btnToggleFiles.setText("目录");
         tvToolbarTitle.setText("APK Builder Pro");
         hideFileDrawer();
     }
@@ -348,7 +358,7 @@ public class MainActivity extends Activity {
         updateBugButtonState();
         loadProjectFiles();
         fileDrawer.setVisibility(View.VISIBLE);
-        btnToggleFiles.setText("隐藏");
+        btnToggleFiles.setText("收起");
         openDefaultEditorFile(entry);
         logManager.appendKeyValue("INFO", "已打开项目", entry.getProjectDir());
     }
@@ -873,13 +883,13 @@ public class MainActivity extends Activity {
             hideFileDrawer();
         } else {
             fileDrawer.setVisibility(View.VISIBLE);
-            btnToggleFiles.setText("隐藏");
+            btnToggleFiles.setText("收起");
         }
     }
 
     private void hideFileDrawer() {
         fileDrawer.setVisibility(View.GONE);
-        btnToggleFiles.setText("文件");
+        btnToggleFiles.setText("目录");
     }
 
     private void detectAndBuild() {
@@ -936,6 +946,8 @@ public class MainActivity extends Activity {
             return issues;
         }
         validateRequiredStructure(projectDir, issues);
+        validateGradleWrapper(projectDir, issues);
+        validateAndroidSdkConfiguration(projectDir, issues);
         validateXmlFile(new File(projectDir, "app/src/main/AndroidManifest.xml"), issues);
         validateXmlDirectory(new File(projectDir, "app/src/main/res"), issues);
         validateSourceDirectory(new File(projectDir, "app/src/main/java"), issues);
@@ -954,6 +966,38 @@ public class MainActivity extends Activity {
         }
         if (!manifest.exists()) {
             issues.add(new BuildIssue(manifest.getAbsolutePath(), -1, "缺少 AndroidManifest.xml。", "确认项目结构至少包含 `app/src/main/AndroidManifest.xml`。"));
+        }
+    }
+
+    private void validateGradleWrapper(File projectDir, ArrayList<BuildIssue> issues) {
+        File wrapperJar = new File(projectDir, "gradle/wrapper/gradle-wrapper.jar");
+        File wrapperProperties = new File(projectDir, "gradle/wrapper/gradle-wrapper.properties");
+        if (!wrapperJar.exists()) {
+            issues.add(new BuildIssue(wrapperJar.getAbsolutePath(), -1, "缺少 gradle-wrapper.jar。", "补齐 `gradle/wrapper/gradle-wrapper.jar` 后再打包。"));
+        }
+        if (!wrapperProperties.exists()) {
+            issues.add(new BuildIssue(wrapperProperties.getAbsolutePath(), -1, "缺少 gradle-wrapper.properties。", "补齐 `gradle/wrapper/gradle-wrapper.properties` 后再打包。"));
+        }
+    }
+
+    private void validateAndroidSdkConfiguration(File projectDir, ArrayList<BuildIssue> issues) {
+        File localProperties = new File(projectDir, "local.properties");
+        if (!localProperties.exists()) {
+            return;
+        }
+        try {
+            String content = projectManager.readText(localProperties);
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("sdk\\.dir\\s*=\\s*(.+)").matcher(content);
+            if (!matcher.find()) {
+                issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "local.properties 中没有 sdk.dir。", "补充 `sdk.dir=`，否则 Gradle 无法找到 Android SDK。"));
+                return;
+            }
+            String sdkDir = matcher.group(1).trim().replace("\\\\", "\\");
+            if (!environmentManager.isExistingDirectory(sdkDir)) {
+                issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "sdk.dir 指向的目录不存在。", "检查 Android SDK 路径是否有效，并确认平台和 build-tools 已安装。"));
+            }
+        } catch (Exception e) {
+            issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "读取 local.properties 失败。", "检查文件编码和读写权限。"));
         }
     }
 
@@ -1196,9 +1240,9 @@ public class MainActivity extends Activity {
 
     private void updateBugButtonState() {
         if (lastBuildIssues.isEmpty()) {
-            btnBug.setBackgroundColor(Color.parseColor("#3E465A"));
+            btnBug.setBackgroundResource(R.drawable.bg_button_ghost);
         } else {
-            btnBug.setBackgroundColor(Color.parseColor("#E5484D"));
+            btnBug.setBackgroundResource(R.drawable.bg_button_warn);
         }
     }
 
@@ -1356,6 +1400,7 @@ public class MainActivity extends Activity {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
                     logManager.appendLogLine("INFO", "JDK 版本已切换。");
+                    environmentManager.saveSelectedJdkIndex(selectedJdkIndex);
                     logManager.appendKeyValue("INFO", "已选 JDK", EnvironmentManager.JDK_NAMES[selectedJdkIndex]);
                     logManager.appendKeyValue("INFO", "安装来源", describeJdkSource(selectedJdkIndex));
                     logManager.appendKeyValue("INFO", "下载地址", EnvironmentManager.JDK_URLS[selectedJdkIndex]);
@@ -1378,6 +1423,7 @@ public class MainActivity extends Activity {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
                     logManager.appendLogLine("INFO", "NDK 版本已切换。");
+                    environmentManager.saveSelectedNdkIndex(selectedNdkIndex);
                     logManager.appendKeyValue("INFO", "已选 NDK", EnvironmentManager.NDK_NAMES[selectedNdkIndex]);
                     logManager.appendKeyValue("INFO", "安装来源", describeNdkSource(selectedNdkIndex));
                     logManager.appendKeyValue("INFO", "下载地址", EnvironmentManager.NDK_URLS[selectedNdkIndex]);
@@ -1400,7 +1446,7 @@ public class MainActivity extends Activity {
         showProgressDialog("工具链安装", "正在准备 JDK 安装资源...");
         toolchainInstaller.installJdk(selectedJdkIndex, new ToolchainInstaller.InstallListener() {
             @Override
-            public void onProgress(final String message) {
+            public void onProgress(final String message, final int percent, final boolean indeterminate) {
                 handler.post(new Runnable() {
                     @Override
                     public void run() {
@@ -1451,7 +1497,7 @@ public class MainActivity extends Activity {
         showProgressDialog("工具链安装", "正在准备 NDK 安装资源...");
         toolchainInstaller.installNdk(selectedNdkIndex, new ToolchainInstaller.InstallListener() {
             @Override
-            public void onProgress(final String message) {
+            public void onProgress(final String message, final int percent, final boolean indeterminate) {
                 handler.post(new Runnable() {
                     @Override
                     public void run() {
@@ -1590,6 +1636,20 @@ public class MainActivity extends Activity {
         return value;
     }
 
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density);
+    }
+
+    private GradientDrawable roundedDrawable(String fillColor, String strokeColor, float radiusDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(Color.parseColor(fillColor));
+        drawable.setCornerRadius(dp((int) radiusDp));
+        if (strokeColor != null && strokeColor.length() > 0) {
+            drawable.setStroke(1, Color.parseColor(strokeColor));
+        }
+        return drawable;
+    }
+
     private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
@@ -1629,18 +1689,16 @@ public class MainActivity extends Activity {
                 LinearLayout card = new LinearLayout(MainActivity.this);
                 card.setOrientation(LinearLayout.HORIZONTAL);
                 card.setGravity(Gravity.CENTER_VERTICAL);
-                card.setPadding(18, 18, 18, 18);
-                GradientDrawable drawable = new GradientDrawable();
-                drawable.setColor(Color.parseColor("#162131"));
-                drawable.setCornerRadius(12f);
-                drawable.setStroke(1, Color.parseColor("#22324B"));
-                card.setBackground(drawable);
+                card.setPadding(dp(14), dp(14), dp(14), dp(14));
+                card.setBackground(roundedDrawable("#182231", "#263246", 12));
 
                 ImageView iconView = new ImageView(MainActivity.this);
-                LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(72, 72);
-                iconParams.rightMargin = 18;
+                LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(52), dp(52));
+                iconParams.rightMargin = dp(14);
                 iconView.setLayoutParams(iconParams);
-                iconView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                iconView.setBackground(roundedDrawable("#0F141B", "#2A3850", 10));
+                iconView.setPadding(dp(8), dp(8), dp(8), dp(8));
+                iconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
                 card.addView(iconView);
 
                 LinearLayout textColumn = new LinearLayout(MainActivity.this);
@@ -1648,19 +1706,21 @@ public class MainActivity extends Activity {
                 textColumn.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
                 TextView title = new TextView(MainActivity.this);
-                title.setTextColor(Color.WHITE);
-                title.setTextSize(15f);
+                title.setTextColor(Color.parseColor("#F3F7FD"));
+                title.setTextSize(14f);
                 title.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
                 textColumn.addView(title);
 
                 TextView sub = new TextView(MainActivity.this);
-                sub.setTextColor(Color.parseColor("#95A1B6"));
-                sub.setTextSize(12f);
+                sub.setTextColor(Color.parseColor("#A2B0C3"));
+                sub.setTextSize(11f);
+                sub.setPadding(0, dp(2), 0, 0);
                 textColumn.addView(sub);
 
                 TextView meta = new TextView(MainActivity.this);
-                meta.setTextColor(Color.parseColor("#78A8FF"));
+                meta.setTextColor(Color.parseColor("#8FB6FF"));
                 meta.setTextSize(11f);
+                meta.setPadding(0, dp(4), 0, 0);
                 textColumn.addView(meta);
 
                 card.addView(textColumn);
@@ -1709,18 +1769,19 @@ public class MainActivity extends Activity {
             TextView textView;
             if (convertView == null) {
                 textView = new TextView(MainActivity.this);
-                textView.setTextColor(Color.WHITE);
-                textView.setPadding(12, 14, 12, 14);
-                textView.setTextSize(13f);
+                textView.setTextColor(Color.parseColor("#F3F7FD"));
+                textView.setPadding(dp(12), dp(10), dp(12), dp(10));
+                textView.setTextSize(12f);
+                textView.setBackground(roundedDrawable("#151B24", "", 8));
                 convertView = textView;
             } else {
                 textView = (TextView) convertView;
             }
             FileTreeItem item = fileTreeItems.get(position);
-            String prefix = item.isDirectory ? (expandedDirs.contains(item.file.getAbsolutePath()) ? "▾  " : "▸  ") : "·  ";
-            textView.setPadding(18 + item.depth * 26, 14, 12, 14);
+            String prefix = item.isDirectory ? (expandedDirs.contains(item.file.getAbsolutePath()) ? "⌄  " : "›  ") : "·  ";
+            textView.setPadding(dp(14) + item.depth * dp(18), dp(10), dp(12), dp(10));
             textView.setText(prefix + item.file.getName());
-            textView.setTextColor(item.isDirectory ? Color.parseColor("#F5F8FF") : Color.parseColor("#BFD1EA"));
+            textView.setTextColor(item.isDirectory ? Color.parseColor("#F3F7FD") : Color.parseColor("#B8C9E0"));
             return convertView;
         }
     }

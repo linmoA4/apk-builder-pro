@@ -61,6 +61,7 @@ public class BuildManager {
             processBuilder.redirectErrorStream(true);
             processBuilder.environment().put("JAVA_HOME", jdkDir);
             processBuilder.environment().put("ANDROID_NDK_HOME", ndkDir);
+            processBuilder.environment().put("ANDROID_NDK_ROOT", ndkDir);
             processBuilder.environment().put("PATH", jdkDir + "/bin:" + processBuilder.environment().get("PATH"));
 
             process = processBuilder.start();

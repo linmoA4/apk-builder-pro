@@ -14,6 +14,8 @@ public class EnvironmentManager {
     private static final String KEY_JDK_DIR = "installed_jdk_dir";
     private static final String KEY_NDK_NAME = "installed_ndk_name";
     private static final String KEY_NDK_DIR = "installed_ndk_dir";
+    private static final String KEY_SELECTED_JDK_INDEX = "selected_jdk_index";
+    private static final String KEY_SELECTED_NDK_INDEX = "selected_ndk_index";
 
     private final SharedPreferences sharedPreferences;
     private final File baseDir;
@@ -107,6 +109,36 @@ public class EnvironmentManager {
             .putString(KEY_NDK_DIR, dir)
             .apply();
         return loadState();
+    }
+
+    public int loadSelectedJdkIndex() {
+        int index = sharedPreferences.getInt(KEY_SELECTED_JDK_INDEX, 3);
+        if (index < 0 || index >= JDK_NAMES.length) {
+            return 3;
+        }
+        return index;
+    }
+
+    public int loadSelectedNdkIndex() {
+        int index = sharedPreferences.getInt(KEY_SELECTED_NDK_INDEX, 0);
+        if (index < 0 || index >= NDK_NAMES.length) {
+            return 0;
+        }
+        return index;
+    }
+
+    public void saveSelectedJdkIndex(int index) {
+        if (index < 0 || index >= JDK_NAMES.length) {
+            return;
+        }
+        sharedPreferences.edit().putInt(KEY_SELECTED_JDK_INDEX, index).apply();
+    }
+
+    public void saveSelectedNdkIndex(int index) {
+        if (index < 0 || index >= NDK_NAMES.length) {
+            return;
+        }
+        sharedPreferences.edit().putInt(KEY_SELECTED_NDK_INDEX, index).apply();
     }
 
     public boolean isSelectedJdkInstalled(int selectedJdkIndex, EnvironmentState state) {

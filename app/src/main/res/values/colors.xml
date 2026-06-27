@@ -1,7 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background_dark">#000000</color>
-    <color name="panel_dark">#1E1E1E</color>
-    <color name="log_panel">#2D2D2D</color>
-    <color name="text_primary">#FFFFFF</color>
+    <color name="background_dark">#0F141B</color>
+    <color name="surface_dark">#151B24</color>
+    <color name="surface_raised">#1A2230</color>
+    <color name="surface_muted">#111821</color>
+    <color name="surface_chip">#1C273A</color>
+    <color name="stroke_dark">#263246</color>
+    <color name="accent_blue">#4E89FF</color>
+    <color name="accent_green">#23A26D</color>
+    <color name="accent_warn">#D45E6E</color>
+    <color name="warning_surface">#331E24</color>
+    <color name="warning_stroke">#6B3B45</color>
+    <color name="text_primary">#F3F7FD</color>
+    <color name="text_secondary">#A2B0C3</color>
+    <color name="text_muted">#7D8DA4</color>
+    <color name="text_chip">#DCE7F8</color>
+    <color name="log_panel">#0E141C</color>
 </resources>
