@@ -19,7 +19,10 @@ import android.os.Environment;
 import android.os.Handler;
 import android.provider.Settings;
 import android.text.InputType;
+import android.text.TextWatcher;
+import android.text.Editable;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
@@ -49,6 +52,9 @@ import com.LM.pack.project.ProjectManager;
 import com.LM.pack.service.BuildWorkflowService;
 import com.LM.pack.service.ProjectFileService;
 import com.LM.pack.service.ProjectWorkspaceService;
+import com.LM.pack.theme.AppThemePalette;
+import com.LM.pack.theme.LiquidGlassBackgroundView;
+import com.LM.pack.theme.ThemeManager;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -61,6 +67,7 @@ public class MainActivity extends Activity {
 
     private LogManager logManager;
     private EnvironmentManager environmentManager;
+    private ThemeManager themeManager;
     private ProjectManager projectManager;
     private BuildManager buildManager;
     private ProjectPreflightChecker preflightChecker;
@@ -75,6 +82,7 @@ public class MainActivity extends Activity {
     private LinearLayout fileDrawer;
     private LinearLayout suggestionCard;
     private LinearLayout editorTabContainer;
+    private LiquidGlassBackgroundView bgSceneView;
     private TextView tvToolbarTitle;
     private TextView tvEditorProject;
     private TextView tvCurrentFilePath;
@@ -107,6 +115,13 @@ public class MainActivity extends Activity {
     private int selectedJdkIndex = 3;
     private int selectedNdkIndex = 0;
     private String currentCopiedFix = "";
+    private String lastSavedText = "";
+    private boolean suppressEditorWriteback = false;
+    private boolean swipeHandled = false;
+    private float gestureStartX = 0f;
+    private float gestureStartY = 0f;
+    private Runnable autoSaveRunnable;
+    private AppThemePalette palette;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -116,6 +131,7 @@ public class MainActivity extends Activity {
         handler = new Handler(getMainLooper());
         SharedPreferences sharedPreferences = getSharedPreferences(EnvironmentManager.PREFS_NAME, MODE_PRIVATE);
         environmentManager = new EnvironmentManager(this, sharedPreferences);
+        themeManager = new ThemeManager(this);
         projectManager = new ProjectManager();
         buildManager = new BuildManager(this, environmentManager);
         preflightChecker = new ProjectPreflightChecker(projectManager, environmentManager);
@@ -129,6 +145,8 @@ public class MainActivity extends Activity {
         bindViews();
         initAdapters();
         bindEvents();
+        initEditorWriteback();
+        applyThemeUi();
         appendStartupLogs();
         refreshProjectList();
         showHome();
@@ -140,6 +158,7 @@ public class MainActivity extends Activity {
         environmentState = environmentManager.loadState();
         selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
         selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
+        applyThemeUi();
     }
 
     private void bindViews() {
@@ -149,6 +168,7 @@ public class MainActivity extends Activity {
         fileDrawer = (LinearLayout) findViewById(R.id.fileDrawer);
         suggestionCard = (LinearLayout) findViewById(R.id.suggestionCard);
         editorTabContainer = (LinearLayout) findViewById(R.id.editorTabContainer);
+        bgSceneView = (LiquidGlassBackgroundView) findViewById(R.id.bgSceneView);
         tvToolbarTitle = (TextView) findViewById(R.id.tvToolbarTitle);
         tvEditorProject = (TextView) findViewById(R.id.tvEditorProject);
         tvCurrentFilePath = (TextView) findViewById(R.id.tvCurrentFilePath);
@@ -185,13 +205,13 @@ public class MainActivity extends Activity {
                 if (file == null || sameFile(file, currentOpenFile)) {
                     return;
                 }
-                saveCurrentFile();
+                flushPendingAutoSave();
                 loadFileIntoEditor(file, false);
             }
 
             @Override
             public void onActiveTabClosed(File fallbackFile) {
-                saveCurrentFile();
+                flushPendingAutoSave();
                 if (fallbackFile != null) {
                     loadFileIntoEditor(fallbackFile, false);
                 } else {
@@ -207,7 +227,7 @@ public class MainActivity extends Activity {
         btnBackHome.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                saveCurrentFile();
+                flushPendingAutoSave();
                 showHome();
             }
         });
@@ -230,13 +250,6 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 toggleFileDrawer();
-            }
-        });
-
-        btnSaveFile.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                saveCurrentFile();
             }
         });
 
@@ -289,6 +302,32 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void initEditorWriteback() {
+        autoSaveRunnable = new Runnable() {
+            @Override
+            public void run() {
+                saveCurrentFile();
+            }
+        };
+        etEditor.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (suppressEditorWriteback || currentOpenFile == null) {
+                    return;
+                }
+                scheduleAutoSave();
+            }
+        });
+    }
+
     private void appendStartupLogs() {
         logManager.appendLogLine("INFO", "首页保持紧凑深色工作区，编辑区已切到更接近 AIDE 的多标签结构。");
         logManager.appendKeyValue("INFO", "当前 JDK", EnvironmentManager.JDK_NAMES[selectedJdkIndex]);
@@ -320,12 +359,36 @@ public class MainActivity extends Activity {
         logManager.appendKeyValue("INFO", "已发现项目数", String.valueOf(projectEntries.size()));
     }
 
+    private void applyThemeUi() {
+        palette = themeManager.getPalette(this);
+        themeManager.applyActivityWindow(this, palette);
+        themeManager.applyTaggedStyles(findViewById(R.id.mainRoot), palette);
+        if (bgSceneView != null) {
+            bgSceneView.setPalette(palette);
+        }
+        if (etEditor != null) {
+            etEditor.applyThemePalette(palette);
+        }
+        if (editorTabManager != null) {
+            editorTabManager.setPalette(palette);
+        }
+        if (btnBug != null) {
+            updateBugButtonState();
+        }
+        if (projectAdapter != null) {
+            projectAdapter.notifyDataSetChanged();
+        }
+        if (fileTreeAdapter != null) {
+            fileTreeAdapter.notifyDataSetChanged();
+        }
+    }
+
     private void showHome() {
         homePane.setVisibility(View.VISIBLE);
         editorPane.setVisibility(View.GONE);
         btnBackHome.setVisibility(View.GONE);
         btnFabAdd.setVisibility(View.VISIBLE);
-        btnToggleFiles.setText("目录");
+        btnToggleFiles.setText("文件");
         tvToolbarTitle.setText("APK Builder Pro");
         suggestionCard.setVisibility(View.GONE);
         hideFileDrawer();
@@ -472,13 +535,18 @@ public class MainActivity extends Activity {
 
         Button button = new Button(this);
         button.setText(buttonText);
-        button.setTextColor(Color.WHITE);
-        button.setBackgroundColor(Color.parseColor("#2D7DFA"));
+        if (palette != null) {
+            button.setTextColor(palette.textPrimary);
+            button.setBackground(themeManager.createPrimaryButtonDrawable(palette));
+        } else {
+            button.setTextColor(Color.WHITE);
+            button.setBackgroundColor(Color.parseColor("#2D7DFA"));
+        }
         row.addView(button, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView hint = new TextView(this);
         hint.setText(zipOnly ? "  仅可选择 zip 文件" : "  支持 png / jpg / webp");
-        hint.setTextColor(Color.parseColor("#95A1B6"));
+        hint.setTextColor(palette == null ? Color.parseColor("#95A1B6") : palette.textMuted);
         hint.setGravity(Gravity.CENTER_VERTICAL);
         row.addView(hint, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -506,7 +574,7 @@ public class MainActivity extends Activity {
     private TextView buildFieldLabel(String text) {
         TextView label = new TextView(this);
         label.setText(text);
-        label.setTextColor(Color.WHITE);
+        label.setTextColor(palette == null ? Color.WHITE : palette.textPrimary);
         label.setPadding(0, 0, 0, dp(12));
         return label;
     }
@@ -515,9 +583,15 @@ public class MainActivity extends Activity {
         EditText editText = new EditText(this);
         editText.setHint(hint + "，例如 " + placeholder);
         editText.setText(defaultValue);
-        editText.setTextColor(Color.WHITE);
-        editText.setHintTextColor(Color.GRAY);
-        editText.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        if (palette != null) {
+            editText.setTextColor(palette.textPrimary);
+            editText.setHintTextColor(palette.textMuted);
+            editText.setBackground(themeManager.createEditorDrawable(palette));
+        } else {
+            editText.setTextColor(Color.WHITE);
+            editText.setHintTextColor(Color.GRAY);
+            editText.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        }
         editText.setPadding(dp(16), dp(16), dp(16), dp(16));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.bottomMargin = dp(12);
@@ -539,13 +613,18 @@ public class MainActivity extends Activity {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
             TextView tip = buildFieldLabel("提示：当前未授予“管理所有文件”权限，可能无法浏览下载目录或根目录。你可以先授权，再回来继续导入。");
-            tip.setTextColor(Color.parseColor("#8FA3BF"));
+            tip.setTextColor(palette == null ? Color.parseColor("#8FA3BF") : palette.textSecondary);
             container.addView(tip);
 
             Button btnGrant = new Button(this);
             btnGrant.setText("去授权文件访问");
-            btnGrant.setTextColor(Color.WHITE);
-            btnGrant.setBackgroundColor(Color.parseColor("#2563EB"));
+            if (palette != null) {
+                btnGrant.setTextColor(palette.textPrimary);
+                btnGrant.setBackground(themeManager.createPrimaryButtonDrawable(palette));
+            } else {
+                btnGrant.setTextColor(Color.WHITE);
+                btnGrant.setBackgroundColor(Color.parseColor("#2563EB"));
+            }
             btnGrant.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -768,7 +847,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (!sameFile(file, currentOpenFile)) {
-            saveCurrentFile();
+            flushPendingAutoSave();
         }
         loadFileIntoEditor(file, true);
     }
@@ -777,8 +856,11 @@ public class MainActivity extends Activity {
         try {
             String content = projectWorkspaceService.readText(file);
             currentOpenFile = file;
+            lastSavedText = content;
             etEditor.setFileName(file.getName());
+            suppressEditorWriteback = true;
             etEditor.setText(content);
+            suppressEditorWriteback = false;
             tvCurrentFilePath.setText(projectFileService.buildDisplayPath(currentProject, file));
             suggestionCard.setVisibility(View.GONE);
             if (trackTab) {
@@ -793,9 +875,13 @@ public class MainActivity extends Activity {
     }
 
     private void clearEditor() {
+        flushPendingAutoSave();
         currentOpenFile = null;
+        lastSavedText = "";
         etEditor.setFileName("");
+        suppressEditorWriteback = true;
         etEditor.setText("");
+        suppressEditorWriteback = false;
         tvCurrentFilePath.setText("请选择一个文件");
         suggestionCard.setVisibility(View.GONE);
     }
@@ -805,12 +891,26 @@ public class MainActivity extends Activity {
             return;
         }
         try {
-            projectWorkspaceService.writeText(currentOpenFile, etEditor.getText().toString());
-            logManager.appendKeyValue("INFO", "已保存文件", currentOpenFile.getAbsolutePath());
+            String content = etEditor.getText().toString();
+            if (content.equals(lastSavedText)) {
+                return;
+            }
+            projectWorkspaceService.writeText(currentOpenFile, content);
+            lastSavedText = content;
         } catch (Exception e) {
             logManager.appendLogLine("ERROR", "保存文件失败：" + e.getMessage());
             toast("保存失败");
         }
+    }
+
+    private void scheduleAutoSave() {
+        handler.removeCallbacks(autoSaveRunnable);
+        handler.postDelayed(autoSaveRunnable, 220L);
+    }
+
+    private void flushPendingAutoSave() {
+        handler.removeCallbacks(autoSaveRunnable);
+        saveCurrentFile();
     }
 
     private void toggleFileDrawer() {
@@ -824,7 +924,7 @@ public class MainActivity extends Activity {
 
     private void hideFileDrawer() {
         fileDrawer.setVisibility(View.GONE);
-        btnToggleFiles.setText("目录");
+        btnToggleFiles.setText("文件");
     }
 
     private void detectAndBuild() {
@@ -836,7 +936,7 @@ public class MainActivity extends Activity {
             toast("已有打包任务正在执行");
             return;
         }
-        saveCurrentFile();
+        flushPendingAutoSave();
         showProgressDialog("检查错误代码", "正在进行打包前检查...");
         buildWorkflowService.checkAndBuild(
             currentProject,
@@ -964,10 +1064,18 @@ public class MainActivity extends Activity {
     }
 
     private void updateBugButtonState() {
+        if (palette == null) {
+            if (lastBuildIssues.isEmpty()) {
+                btnBug.setBackgroundResource(R.drawable.bg_button_ghost);
+            } else {
+                btnBug.setBackgroundResource(R.drawable.bg_button_warn);
+            }
+            return;
+        }
         if (lastBuildIssues.isEmpty()) {
-            btnBug.setBackgroundResource(R.drawable.bg_button_ghost);
+            btnBug.setBackground(themeManager.createGhostButtonDrawable(palette));
         } else {
-            btnBug.setBackgroundResource(R.drawable.bg_button_warn);
+            btnBug.setBackground(themeManager.createWarnButtonDrawable(palette));
         }
     }
 
@@ -1070,6 +1178,59 @@ public class MainActivity extends Activity {
         return first != null && second != null && first.getAbsolutePath().equals(second.getAbsolutePath());
     }
 
+    private String buildFileSecondaryText(FileTreeItem item) {
+        if (item == null || item.getFile() == null) {
+            return "";
+        }
+        File parent = item.getFile().getParentFile();
+        if (currentProject == null || parent == null) {
+            return item.isDirectory() ? "文件夹" : "文件";
+        }
+        String projectDir = currentProject.getProjectDir();
+        String parentPath = parent.getAbsolutePath();
+        if (parentPath.startsWith(projectDir)) {
+            String relative = parentPath.substring(projectDir.length());
+            if (relative.length() == 0) {
+                relative = "/";
+            }
+            return (item.isDirectory() ? "目录 · " : "文件 · ") + relative;
+        }
+        return item.isDirectory() ? "目录" : "文件";
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (editorPane != null && editorPane.getVisibility() == View.VISIBLE && event != null) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    gestureStartX = event.getX();
+                    gestureStartY = event.getY();
+                    swipeHandled = false;
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                case MotionEvent.ACTION_UP:
+                    if (!swipeHandled) {
+                        float dx = event.getX() - gestureStartX;
+                        float dy = event.getY() - gestureStartY;
+                        if (Math.abs(dx) > dp(72) && Math.abs(dx) > Math.abs(dy) * 1.2f) {
+                            if (dx > 0 && fileDrawer.getVisibility() != View.VISIBLE) {
+                                fileDrawer.setVisibility(View.VISIBLE);
+                                btnToggleFiles.setText("收起");
+                                swipeHandled = true;
+                            } else if (dx < 0 && fileDrawer.getVisibility() == View.VISIBLE) {
+                                hideFileDrawer();
+                                swipeHandled = true;
+                            }
+                        }
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
     private class ProjectAdapter extends BaseAdapter {
         @Override
         public int getCount() {
@@ -1094,13 +1255,13 @@ public class MainActivity extends Activity {
                 card.setOrientation(LinearLayout.HORIZONTAL);
                 card.setGravity(Gravity.CENTER_VERTICAL);
                 card.setPadding(dp(14), dp(14), dp(14), dp(14));
-                card.setBackground(roundedDrawable("#182231", "#263246", 12));
+                card.setBackground(palette == null ? roundedDrawable("#182231", "#263246", 12) : themeManager.createPanelDrawable(palette, true));
 
                 ImageView iconView = new ImageView(MainActivity.this);
                 LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(52), dp(52));
                 iconParams.rightMargin = dp(14);
                 iconView.setLayoutParams(iconParams);
-                iconView.setBackground(roundedDrawable("#0F141B", "#2A3850", 10));
+                iconView.setBackground(palette == null ? roundedDrawable("#0F141B", "#2A3850", 10) : themeManager.createChipDrawable(palette));
                 iconView.setPadding(dp(8), dp(8), dp(8), dp(8));
                 iconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
                 card.addView(iconView);
@@ -1135,6 +1296,11 @@ public class MainActivity extends Activity {
             }
 
             ProjectEntry entry = projectEntries.get(position);
+            convertView.setBackground(palette == null ? roundedDrawable("#182231", "#263246", 12) : themeManager.createPanelDrawable(palette, true));
+            holder.icon.setBackground(palette == null ? roundedDrawable("#0F141B", "#2A3850", 10) : themeManager.createChipDrawable(palette));
+            holder.title.setTextColor(palette == null ? Color.parseColor("#F3F7FD") : palette.textPrimary);
+            holder.sub.setTextColor(palette == null ? Color.parseColor("#A2B0C3") : palette.textSecondary);
+            holder.meta.setTextColor(palette == null ? Color.parseColor("#8FB6FF") : palette.accentStrong);
             holder.title.setText(entry.getProjectName());
             holder.sub.setText(safeText(entry.getPackageName(), "未识别包名"));
             holder.meta.setText(entry.getMode() + "  ·  v" + safeText(entry.getVersionName(), "1.0"));
@@ -1169,22 +1335,42 @@ public class MainActivity extends Activity {
 
         @Override
         public View getView(int position, View convertView, ViewGroup parent) {
-            TextView textView;
+            FileTreeRowHolder holder;
             if (convertView == null) {
-                textView = new TextView(MainActivity.this);
-                textView.setTextColor(Color.parseColor("#F3F7FD"));
-                textView.setPadding(dp(12), dp(10), dp(12), dp(10));
-                textView.setTextSize(12f);
-                textView.setBackground(roundedDrawable("#151B24", "", 8));
-                convertView = textView;
+                LinearLayout row = new LinearLayout(MainActivity.this);
+                row.setOrientation(LinearLayout.VERTICAL);
+                row.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+                TextView title = new TextView(MainActivity.this);
+                title.setTextSize(12.5f);
+                title.setSingleLine(true);
+                title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                row.addView(title);
+
+                TextView sub = new TextView(MainActivity.this);
+                sub.setTextSize(10.5f);
+                sub.setPadding(0, dp(3), 0, 0);
+                sub.setSingleLine(true);
+                sub.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+                row.addView(sub);
+
+                holder = new FileTreeRowHolder(title, sub);
+                row.setTag(holder);
+                convertView = row;
             } else {
-                textView = (TextView) convertView;
+                holder = (FileTreeRowHolder) convertView.getTag();
             }
             FileTreeItem item = fileTreeItems.get(position);
             String prefix = item.isDirectory() ? (expandedDirs.contains(item.getFile().getAbsolutePath()) ? "⌄  " : "›  ") : "·  ";
-            textView.setPadding(dp(14) + item.getDepth() * dp(18), dp(10), dp(12), dp(10));
-            textView.setText(prefix + item.getFile().getName());
-            textView.setTextColor(item.isDirectory() ? Color.parseColor("#F3F7FD") : Color.parseColor("#B8C9E0"));
+            convertView.setPadding(dp(14) + item.getDepth() * dp(18), dp(10), dp(12), dp(10));
+            convertView.setBackground(palette == null ? roundedDrawable("#151B24", "", 8) : themeManager.createPanelDrawable(palette, false));
+            holder.title.setText(prefix + item.getFile().getName());
+            holder.title.setTextColor(item.isDirectory()
+                ? (palette == null ? Color.parseColor("#F3F7FD") : palette.textPrimary)
+                : (palette == null ? Color.parseColor("#B8C9E0") : palette.textSecondary));
+            holder.sub.setText(buildFileSecondaryText(item));
+            holder.sub.setTextColor(palette == null ? Color.parseColor("#7D8DA4") : palette.textMuted);
+            holder.sub.setVisibility(item.getDepth() > 0 || !item.isDirectory() ? View.VISIBLE : View.GONE);
             return convertView;
         }
     }
@@ -1200,6 +1386,16 @@ public class MainActivity extends Activity {
             this.title = title;
             this.sub = sub;
             this.meta = meta;
+        }
+    }
+
+    private static class FileTreeRowHolder {
+        final TextView title;
+        final TextView sub;
+
+        FileTreeRowHolder(TextView title, TextView sub) {
+            this.title = title;
+            this.sub = sub;
         }
     }
 

@@ -27,6 +27,9 @@ public class EnvironmentManager {
     private final SharedPreferences sharedPreferences;
     private final File baseDir;
 
+    public static final String SDK_DISPLAY_NAME = "Android SDK Command-line Tools";
+    public static final String SDK_ASSET_ARCHIVE = "toolchains/sdk/commandlinetools-linux-latest.zip";
+
     public static final String[] JDK_NAMES = {
         "JDK 8 (长期支持版)",
         "JDK 11 (长期支持版)",
@@ -45,6 +48,15 @@ public class EnvironmentManager {
         "https://aka.ms/download-jdk/microsoft-jdk-26-linux-x64.tar.gz"
     };
 
+    public static final String[][] JDK_FALLBACK_URLS = {
+        {"https://aka.ms/download-jdk/microsoft-jdk-8-linux-x64.tar.gz"},
+        {"https://aka.ms/download-jdk/microsoft-jdk-11-linux-x64.tar.gz"},
+        {"https://aka.ms/download-jdk/microsoft-jdk-17-linux-x64.tar.gz"},
+        {"https://aka.ms/download-jdk/microsoft-jdk-21-linux-x64.tar.gz"},
+        {"https://aka.ms/download-jdk/microsoft-jdk-25-linux-x64.tar.gz"},
+        {"https://aka.ms/download-jdk/microsoft-jdk-26-linux-x64.tar.gz"}
+    };
+
     public static final String[] NDK_NAMES = {
         "NDK r27c (稳定版，推荐)",
         "NDK r28c (较新稳定版)",
@@ -55,6 +67,21 @@ public class EnvironmentManager {
         "https://dl.google.com/android/repository/android-ndk-r27c-linux.zip",
         "https://dl.google.com/android/repository/android-ndk-r28c-linux.zip",
         "https://dl.google.com/android/repository/android-ndk-r29-beta3-linux.zip"
+    };
+
+    public static final String[][] NDK_FALLBACK_URLS = {
+        {
+            "https://dl.google.com/android/repository/android-ndk-r27c-linux.zip",
+            "https://redirector.gvt1.com/edgedl/android/repository/android-ndk-r27c-linux.zip"
+        },
+        {
+            "https://dl.google.com/android/repository/android-ndk-r28c-linux.zip",
+            "https://redirector.gvt1.com/edgedl/android/repository/android-ndk-r28c-linux.zip"
+        },
+        {
+            "https://dl.google.com/android/repository/android-ndk-r29-beta3-linux.zip",
+            "https://redirector.gvt1.com/edgedl/android/repository/android-ndk-r29-beta3-linux.zip"
+        }
     };
 
     public static final String[] JDK_ASSET_ARCHIVES = {
@@ -267,6 +294,18 @@ public class EnvironmentManager {
         return getPackageCacheDir() + "/gradle/gradle-8.7-bin.zip";
     }
 
+    public String getSdkPackageArchivePath() {
+        return getPackageCacheDir() + "/sdk/commandlinetools-linux-latest.zip";
+    }
+
+    public String getEmbeddedSdkInstallDir() {
+        return new File(baseDir, "sdk").getAbsolutePath();
+    }
+
+    public String getEmbeddedSdkCmdlineToolsDir() {
+        return new File(new File(getEmbeddedSdkInstallDir(), "cmdline-tools"), "latest").getAbsolutePath();
+    }
+
     public String getGradleInstallDir() {
         return new File(baseDir, "gradle").getAbsolutePath();
     }
@@ -305,6 +344,24 @@ public class EnvironmentManager {
 
     public boolean isEmbeddedNdk(int index) {
         return NDK_ASSET_ARCHIVES[index] != null && NDK_ASSET_ARCHIVES[index].length() > 0;
+    }
+
+    public int findEmbeddedJdkIndex() {
+        for (int i = 0; i < JDK_ASSET_ARCHIVES.length; i++) {
+            if (isEmbeddedJdk(i)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    public int findEmbeddedNdkIndex() {
+        for (int i = 0; i < NDK_ASSET_ARCHIVES.length; i++) {
+            if (isEmbeddedNdk(i)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private String sanitizeDirName(String name) {

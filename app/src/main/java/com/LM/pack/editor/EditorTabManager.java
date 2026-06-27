@@ -8,6 +8,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import com.LM.pack.theme.AppThemePalette;
 import java.io.File;
 import java.util.ArrayList;
 
@@ -23,6 +24,7 @@ public class EditorTabManager {
     private final ArrayList<File> openFiles = new ArrayList<File>();
     private File activeFile;
     private TabListener tabListener;
+    private AppThemePalette palette;
 
     public EditorTabManager(Context context, LinearLayout container) {
         this.context = context;
@@ -31,6 +33,11 @@ public class EditorTabManager {
 
     public void setTabListener(TabListener tabListener) {
         this.tabListener = tabListener;
+    }
+
+    public void setPalette(AppThemePalette palette) {
+        this.palette = palette;
+        render();
     }
 
     public void clear() {
@@ -110,7 +117,7 @@ public class EditorTabManager {
         if (openFiles.isEmpty()) {
             TextView placeholder = new TextView(context);
             placeholder.setText("未打开文件");
-            placeholder.setTextColor(Color.parseColor("#7D8DA4"));
+            placeholder.setTextColor(palette == null ? Color.parseColor("#7D8DA4") : palette.textMuted);
             placeholder.setTextSize(12f);
             placeholder.setGravity(Gravity.CENTER_VERTICAL);
             placeholder.setPadding(dp(10), 0, dp(10), 0);
@@ -124,7 +131,7 @@ public class EditorTabManager {
 
             TextView tab = new TextView(context);
             tab.setText(file.getName());
-            tab.setTextColor(Color.parseColor(active ? "#DCE7F8" : "#A2B0C3"));
+            tab.setTextColor(resolveTabTextColor(active));
             tab.setTextSize(12f);
             tab.setGravity(Gravity.CENTER_VERTICAL);
             tab.setPadding(dp(12), 0, dp(12), 0);
@@ -158,10 +165,27 @@ public class EditorTabManager {
 
     private GradientDrawable buildTabBackground(boolean active) {
         GradientDrawable drawable = new GradientDrawable();
-        drawable.setCornerRadius(dp(10));
-        drawable.setColor(Color.parseColor(active ? "#1C273A" : "#151B24"));
-        drawable.setStroke(1, Color.parseColor(active ? "#4E89FF" : "#263246"));
+        boolean liquid = palette != null && palette.liquid;
+        drawable.setCornerRadius(dp(liquid ? 20 : 10));
+        drawable.setColor(resolveTabBackgroundColor(active));
+        drawable.setStroke(1, active
+            ? (palette == null ? Color.parseColor("#4E89FF") : palette.accent)
+            : (palette == null ? Color.parseColor("#263246") : (palette.liquid ? palette.fresnelStroke : palette.stroke)));
         return drawable;
+    }
+
+    private int resolveTabTextColor(boolean active) {
+        if (palette == null) {
+            return Color.parseColor(active ? "#DCE7F8" : "#A2B0C3");
+        }
+        return active ? palette.textChip : palette.textSecondary;
+    }
+
+    private int resolveTabBackgroundColor(boolean active) {
+        if (palette == null) {
+            return Color.parseColor(active ? "#1C273A" : "#151B24");
+        }
+        return active ? palette.chipSurface : palette.surfaceMuted;
     }
 
     private boolean sameFile(File first, File second) {

@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/settingsRoot"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@drawable/bg_app">
+    android:layout_height="match_parent">
+
+    <com.LM.pack.theme.LiquidGlassBackgroundView
+        android:id="@+id/bgSceneView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -11,22 +16,22 @@
         android:padding="10dp">
 
         <LinearLayout
+            android:id="@+id/settingsToolbarCard"
             android:layout_width="match_parent"
-            android:layout_height="54dp"
-            android:background="@drawable/bg_panel_raised"
+            android:layout_height="56dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingLeft="8dp"
-            android:paddingRight="8dp">
+            android:paddingRight="8dp"
+            android:tag="panelRaised">
 
             <Button
                 android:id="@+id/btnBackSettings"
-                android:layout_width="38dp"
-                android:layout_height="38dp"
-                android:background="@drawable/bg_button_ghost"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:text="←"
-                android:textColor="@color/text_primary"
-                android:textSize="17sp" />
+                android:textSize="17sp"
+                android:tag="ghostButton primary" />
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -36,19 +41,21 @@
                 android:orientation="vertical">
 
                 <TextView
+                    android:id="@+id/tvSettingsTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="工具链设置"
-                    android:textColor="@color/text_primary"
+                    android:text="环境与主题"
                     android:textSize="17sp"
-                    android:textStyle="bold" />
+                    android:textStyle="bold"
+                    android:tag="primary" />
 
                 <TextView
+                    android:id="@+id/tvSettingsSubtitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Android SDK / JDK / NDK 安装、登记和状态检查"
-                    android:textColor="@color/text_muted"
-                    android:textSize="11sp" />
+                    android:text="内置工具自动准备，联网工具改成按钮 + 弹窗"
+                    android:textSize="11sp"
+                    android:tag="muted" />
             </LinearLayout>
         </LinearLayout>
 
@@ -66,306 +73,285 @@
                 android:orientation="vertical">
 
                 <LinearLayout
+                    android:id="@+id/environmentSummaryCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="@drawable/bg_panel_raised"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:padding="14dp"
+                    android:tag="panelRaised">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="当前环境"
-                        android:textColor="@color/text_primary"
                         android:textSize="15sp"
-                        android:textStyle="bold" />
+                        android:textStyle="bold"
+                        android:tag="primary" />
 
                     <TextView
                         android:id="@+id/tvEnvironmentSummary"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:textColor="@color/text_secondary"
                         android:textIsSelectable="true"
-                        android:textSize="13sp" />
+                        android:textSize="13sp"
+                        android:tag="secondary" />
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/embeddedToolCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:background="@drawable/bg_panel_raised"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:padding="14dp"
+                    android:tag="panelRaised">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Android SDK"
-                        android:textColor="@color/text_primary"
+                        android:text="内置环境"
                         android:textSize="15sp"
-                        android:textStyle="bold" />
+                        android:textStyle="bold"
+                        android:tag="primary" />
 
                     <TextView
                         android:id="@+id/tvSdkHint"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
-                        android:text="这个路径会用于预检平台包、build-tools、platform-tools，并在缺少 local.properties 时自动写入 sdk.dir。"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-
-                    <EditText
-                        android:id="@+id/etSdkPath"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:background="@drawable/bg_editor"
-                        android:hint="填写 Android SDK 根目录"
-                        android:padding="12dp"
-                        android:textColor="@color/text_primary"
-                        android:textColorHint="@color/text_muted"
-                        android:textSize="13sp" />
+                        android:textSize="12sp"
+                        android:tag="secondary" />
 
                     <Button
-                        android:id="@+id/btnSaveSdkPath"
+                        android:id="@+id/btnPrepareEmbedded"
                         android:layout_width="match_parent"
-                        android:layout_height="38dp"
+                        android:layout_height="42dp"
+                        android:layout_marginTop="12dp"
+                        android:text="准备内置 SDK / JDK 21 / NDK r27"
+                        android:textStyle="bold"
+                        android:tag="primaryButton primary" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
                         android:layout_marginTop="10dp"
-                        android:background="@drawable/bg_button_ghost"
-                        android:text="登记 Android SDK 路径"
-                        android:textColor="@color/text_primary" />
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnOpenSdkDir"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_marginRight="6dp"
+                            android:layout_weight="1"
+                            android:text="打开 SDK 目录"
+                            android:tag="ghostButton primary" />
+
+                        <Button
+                            android:id="@+id/btnOpenJdkDir"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_marginLeft="6dp"
+                            android:layout_marginRight="6dp"
+                            android:layout_weight="1"
+                            android:text="打开 JDK 目录"
+                            android:tag="ghostButton primary" />
+
+                        <Button
+                            android:id="@+id/btnOpenNdkDir"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_marginLeft="6dp"
+                            android:layout_weight="1"
+                            android:text="打开 NDK 目录"
+                            android:tag="ghostButton primary" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/onlineToolsCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:background="@drawable/bg_panel_raised"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:padding="14dp"
+                    android:tag="panelRaised">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="JDK"
-                        android:textColor="@color/text_primary"
+                        android:text="联网工具"
                         android:textSize="15sp"
-                        android:textStyle="bold" />
+                        android:textStyle="bold"
+                        android:tag="primary" />
 
                     <TextView
                         android:id="@+id/tvJdkSourceHint"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-
-                    <LinearLayout
-                        android:id="@+id/jdkOptionContainer"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:orientation="vertical" />
-
-                    <Button
-                        android:id="@+id/btnInstallJdk"
-                        android:layout_width="match_parent"
-                        android:layout_height="40dp"
-                        android:layout_marginTop="12dp"
-                        android:background="@drawable/bg_button_primary"
-                        android:text="安装当前 JDK"
-                        android:textColor="@color/text_primary"
-                        android:textStyle="bold" />
-
-                    <EditText
-                        android:id="@+id/etJdkPath"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:background="@drawable/bg_editor"
-                        android:hint="填写已安装的 JDK 目录"
-                        android:padding="12dp"
-                        android:textColor="@color/text_primary"
-                        android:textColorHint="@color/text_muted"
-                        android:textSize="13sp" />
-
-                    <Button
-                        android:id="@+id/btnSaveJdkPath"
-                        android:layout_width="match_parent"
-                        android:layout_height="38dp"
-                        android:layout_marginTop="10dp"
-                        android:background="@drawable/bg_button_ghost"
-                        android:text="登记 JDK 路径"
-                        android:textColor="@color/text_primary" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:background="@drawable/bg_panel_raised"
-                    android:orientation="vertical"
-                    android:padding="14dp">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="NDK"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
+                        android:textSize="12sp"
+                        android:tag="secondary" />
 
                     <TextView
                         android:id="@+id/tvNdkSourceHint"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-
-                    <LinearLayout
-                        android:id="@+id/ndkOptionContainer"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:orientation="vertical" />
+                        android:layout_marginTop="4dp"
+                        android:textSize="12sp"
+                        android:tag="secondary" />
 
                     <Button
-                        android:id="@+id/btnInstallNdk"
+                        android:id="@+id/btnSelectOnlineJdk"
                         android:layout_width="match_parent"
                         android:layout_height="40dp"
                         android:layout_marginTop="12dp"
-                        android:background="@drawable/bg_button_primary"
-                        android:text="安装当前 NDK"
-                        android:textColor="@color/text_primary"
-                        android:textStyle="bold" />
-
-                    <EditText
-                        android:id="@+id/etNdkPath"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:background="@drawable/bg_editor"
-                        android:hint="填写已安装的 NDK 目录"
-                        android:padding="12dp"
-                        android:textColor="@color/text_primary"
-                        android:textColorHint="@color/text_muted"
-                        android:textSize="13sp" />
+                        android:text="选择 JDK 版本"
+                        android:tag="ghostButton primary" />
 
                     <Button
-                        android:id="@+id/btnSaveNdkPath"
+                        android:id="@+id/btnSelectOnlineNdk"
                         android:layout_width="match_parent"
-                        android:layout_height="38dp"
-                        android:layout_marginTop="10dp"
-                        android:background="@drawable/bg_button_ghost"
-                        android:text="登记 NDK 路径"
-                        android:textColor="@color/text_primary" />
+                        android:layout_height="40dp"
+                        android:layout_marginTop="8dp"
+                        android:text="选择 NDK 版本"
+                        android:tag="ghostButton primary" />
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/themeCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:background="@drawable/bg_panel_raised"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:padding="14dp"
+                    android:tag="panelRaised">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="安装目录规划"
-                        android:textColor="@color/text_primary"
+                        android:text="主题"
                         android:textSize="15sp"
-                        android:textStyle="bold" />
+                        android:textStyle="bold"
+                        android:tag="primary" />
+
+                    <TextView
+                        android:id="@+id/tvThemeSummary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textSize="12sp"
+                        android:tag="secondary" />
+
+                    <Button
+                        android:id="@+id/btnAppearanceMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="12dp"
+                        android:text="选择亮暗模式"
+                        android:tag="ghostButton primary" />
+
+                    <Button
+                        android:id="@+id/btnSurfaceStyle"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="8dp"
+                        android:text="选择主题材质"
+                        android:tag="ghostButton primary" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/directoryPlanCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="vertical"
+                    android:padding="14dp"
+                    android:tag="panelRaised">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="目录规划"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:tag="primary" />
 
                     <TextView
                         android:id="@+id/tvDirectoryPlan"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:textColor="@color/text_secondary"
                         android:textIsSelectable="true"
-                        android:textSize="12sp" />
+                        android:textSize="12sp"
+                        android:tag="secondary" />
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/toolsCatalogCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:background="@drawable/bg_panel_raised"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:padding="14dp"
+                    android:tag="panelRaised">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="工具资料"
-                        android:textColor="@color/text_primary"
                         android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:orientation="vertical">
-
-                        <Button
-                            android:id="@+id/btnCoreTools"
-                            android:layout_width="match_parent"
-                            android:layout_height="36dp"
-                            android:background="@drawable/bg_button_ghost"
-                            android:text="核心构建工具"
-                            android:textColor="@color/text_primary" />
-
-                        <Button
-                            android:id="@+id/btnCrossTools"
-                            android:layout_width="match_parent"
-                            android:layout_height="36dp"
-                            android:layout_marginTop="8dp"
-                            android:background="@drawable/bg_button_ghost"
-                            android:text="跨平台开发框架"
-                            android:textColor="@color/text_primary" />
-
-                        <Button
-                            android:id="@+id/btnTestTools"
-                            android:layout_width="match_parent"
-                            android:layout_height="36dp"
-                            android:layout_marginTop="8dp"
-                            android:background="@drawable/bg_button_ghost"
-                            android:text="测试与仿真环境"
-                            android:textColor="@color/text_primary" />
-
-                        <Button
-                            android:id="@+id/btnDevopsTools"
-                            android:layout_width="match_parent"
-                            android:layout_height="36dp"
-                            android:layout_marginTop="8dp"
-                            android:background="@drawable/bg_button_ghost"
-                            android:text="版本控制与调试"
-                            android:textColor="@color/text_primary" />
-
-                        <Button
-                            android:id="@+id/btnMirrorTools"
-                            android:layout_width="match_parent"
-                            android:layout_height="36dp"
-                            android:layout_marginTop="8dp"
-                            android:background="@drawable/bg_button_ghost"
-                            android:text="国内镜像命令"
-                            android:textColor="@color/text_primary" />
-                    </LinearLayout>
+                        android:textStyle="bold"
+                        android:tag="primary" />
 
                     <TextView
                         android:id="@+id/tvReferenceOutput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="点击按钮以弹窗查看资料，不再在当前页面塞长文本。"
+                        android:textSize="12sp"
+                        android:tag="secondary" />
+
+                    <Button
+                        android:id="@+id/btnCoreTools"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
                         android:layout_marginTop="12dp"
-                        android:background="@drawable/bg_editor"
-                        android:padding="12dp"
-                        android:textColor="@color/text_secondary"
-                        android:textIsSelectable="true"
-                        android:textSize="12sp" />
+                        android:text="核心构建工具"
+                        android:tag="ghostButton primary" />
+
+                    <Button
+                        android:id="@+id/btnCrossTools"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="8dp"
+                        android:text="跨平台开发框架"
+                        android:tag="ghostButton primary" />
+
+                    <Button
+                        android:id="@+id/btnTestTools"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="8dp"
+                        android:text="测试与仿真环境"
+                        android:tag="ghostButton primary" />
+
+                    <Button
+                        android:id="@+id/btnDevopsTools"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="8dp"
+                        android:text="版本控制与调试"
+                        android:tag="ghostButton primary" />
+
+                    <Button
+                        android:id="@+id/btnMirrorTools"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="8dp"
+                        android:text="国内镜像命令"
+                        android:tag="ghostButton primary" />
                 </LinearLayout>
             </LinearLayout>
         </ScrollView>
@@ -375,37 +361,38 @@
         android:id="@+id/progressOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#880B1017"
+        android:background="#88101926"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone">
 
         <LinearLayout
+            android:id="@+id/progressCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:layout_marginLeft="26dp"
             android:layout_marginRight="26dp"
-            android:background="@drawable/bg_panel_raised"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="16dp"
+            android:tag="panelRaised">
 
             <TextView
                 android:id="@+id/tvProgressTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="工具链安装"
-                android:textColor="@color/text_primary"
                 android:textSize="15sp"
-                android:textStyle="bold" />
+                android:textStyle="bold"
+                android:tag="primary" />
 
             <TextView
                 android:id="@+id/tvProgressMessage"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="13sp" />
+                android:textSize="13sp"
+                android:tag="secondary" />
 
             <ProgressBar
                 android:id="@+id/progressBarInstall"
@@ -422,8 +409,8 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:gravity="end"
-                android:textColor="@color/text_muted"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:tag="muted" />
         </LinearLayout>
     </FrameLayout>
 </FrameLayout>

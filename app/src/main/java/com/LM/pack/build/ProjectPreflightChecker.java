@@ -119,16 +119,16 @@ public class ProjectPreflightChecker {
         String preferredSdkDir = environmentState == null ? "" : safeText(environmentState.getAndroidSdkDir());
         try {
             if (!localProperties.exists()) {
-                issues.add(
-                    new BuildIssue(
-                        localProperties.getAbsolutePath(),
-                        -1,
-                        "缺少 local.properties。",
-                        environmentManager.isExistingDirectory(preferredSdkDir)
-                            ? "当前预检查只做只读检查，不会自动改写项目。请手动补充 `sdk.dir=`，或在单独修复流程里生成该文件。"
-                            : "先在设置页登记有效的 Android SDK 路径，再手动补充 `sdk.dir=`。"
-                    )
-                );
+                if (!environmentManager.isExistingDirectory(preferredSdkDir)) {
+                    issues.add(
+                        new BuildIssue(
+                            localProperties.getAbsolutePath(),
+                            -1,
+                            "缺少 local.properties。",
+                            "先准备可用的 Android SDK，再决定是否手动补充 `sdk.dir=`。"
+                        )
+                    );
+                }
                 return preferredSdkDir;
             }
 
@@ -143,14 +143,6 @@ public class ProjectPreflightChecker {
             }
 
             if (environmentManager.isExistingDirectory(preferredSdkDir)) {
-                issues.add(
-                    new BuildIssue(
-                        localProperties.getAbsolutePath(),
-                        -1,
-                        "local.properties 中没有 sdk.dir。",
-                        "当前预检查不会自动修改项目。请手动补充 `sdk.dir=`，或在后续修复流程中生成该配置。"
-                    )
-                );
                 return preferredSdkDir;
             }
             issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "local.properties 中没有 sdk.dir。", "先在设置页登记 Android SDK 路径，或手动补充 `sdk.dir=`。"));

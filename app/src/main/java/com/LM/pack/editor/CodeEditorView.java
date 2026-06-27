@@ -12,6 +12,7 @@ import android.text.TextWatcher;
 import android.text.style.ForegroundColorSpan;
 import android.util.AttributeSet;
 import android.widget.EditText;
+import com.LM.pack.theme.AppThemePalette;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -45,6 +46,14 @@ public class CodeEditorView extends EditText {
     private boolean isHighlighting;
     private String fileName = "";
     private int gutterWidth;
+    private int commentColor = Color.parseColor("#5E7F6E");
+    private int stringColor = Color.parseColor("#D7BA7D");
+    private int annotationColor = Color.parseColor("#7FB0FF");
+    private int keywordColor = Color.parseColor("#C586C0");
+    private int numberColor = Color.parseColor("#B5CEA8");
+    private int classColor = Color.parseColor("#4EC9B0");
+    private int xmlTagColor = Color.parseColor("#4EC9B0");
+    private int xmlAttrColor = Color.parseColor("#9CDCFE");
 
     public CodeEditorView(Context context) {
         super(context);
@@ -86,6 +95,26 @@ public class CodeEditorView extends EditText {
         scheduleHighlight();
     }
 
+    public void applyThemePalette(AppThemePalette palette) {
+        if (palette == null) {
+            return;
+        }
+        gutterPaint.setColor(palette.gutter);
+        lineNumberPaint.setColor(palette.lineNumber);
+        commentColor = palette.editorComment;
+        stringColor = palette.editorString;
+        annotationColor = palette.editorAnnotation;
+        keywordColor = palette.editorKeyword;
+        numberColor = palette.editorNumber;
+        classColor = palette.editorClass;
+        xmlTagColor = palette.editorXmlTag;
+        xmlAttrColor = palette.editorXmlAttr;
+        setTextColor(palette.textPrimary);
+        setHintTextColor(palette.textMuted);
+        invalidate();
+        scheduleHighlight();
+    }
+
     public void setFileName(String fileName) {
         this.fileName = fileName == null ? "" : fileName.toLowerCase();
         scheduleHighlight();
@@ -123,22 +152,22 @@ public class CodeEditorView extends EditText {
         isHighlighting = true;
         try {
             clearColorSpans(editable);
-            applyPattern(editable, Pattern.compile("(?m)//.*$"), "#5E7F6E");
-            applyPattern(editable, Pattern.compile("/\\*[\\s\\S]*?\\*/"), "#5E7F6E");
-            applyPattern(editable, Pattern.compile("\"(?:\\\\.|[^\"\\\\])*\""), "#D7BA7D");
-            applyPattern(editable, Pattern.compile("'(?:\\\\.|[^'\\\\])*'"), "#D7BA7D");
-            applyPattern(editable, Pattern.compile("(?<![A-Za-z0-9_])@[A-Za-z0-9_:.]+"), "#7FB0FF");
+            applyPattern(editable, Pattern.compile("(?m)//.*$"), commentColor);
+            applyPattern(editable, Pattern.compile("/\\*[\\s\\S]*?\\*/"), commentColor);
+            applyPattern(editable, Pattern.compile("\"(?:\\\\.|[^\"\\\\])*\""), stringColor);
+            applyPattern(editable, Pattern.compile("'(?:\\\\.|[^'\\\\])*'"), stringColor);
+            applyPattern(editable, Pattern.compile("(?<![A-Za-z0-9_])@[A-Za-z0-9_:.]+"), annotationColor);
             if (isXmlFile()) {
-                applyPattern(editable, Pattern.compile("</?[A-Za-z0-9_:-]+"), "#4EC9B0");
-                applyPattern(editable, Pattern.compile("\\b(?:android:)?[A-Za-z0-9_:-]+(?=\\=)"), "#9CDCFE");
-                applyKeywords(editable, XML_KEYWORDS, "#C586C0");
+                applyPattern(editable, Pattern.compile("</?[A-Za-z0-9_:-]+"), xmlTagColor);
+                applyPattern(editable, Pattern.compile("\\b(?:android:)?[A-Za-z0-9_:-]+(?=\\=)"), xmlAttrColor);
+                applyKeywords(editable, XML_KEYWORDS, keywordColor);
             } else if (isGradleFile()) {
-                applyKeywords(editable, GRADLE_KEYWORDS, "#C586C0");
-                applyPattern(editable, Pattern.compile("\\b[0-9]+(?:\\.[0-9]+)*\\b"), "#B5CEA8");
+                applyKeywords(editable, GRADLE_KEYWORDS, keywordColor);
+                applyPattern(editable, Pattern.compile("\\b[0-9]+(?:\\.[0-9]+)*\\b"), numberColor);
             } else {
-                applyKeywords(editable, JAVA_KOTLIN_KEYWORDS, "#C586C0");
-                applyPattern(editable, Pattern.compile("\\b[0-9]+(?:\\.[0-9]+)?\\b"), "#B5CEA8");
-                applyPattern(editable, Pattern.compile("\\b[A-Z][A-Za-z0-9_]*\\b"), "#4EC9B0");
+                applyKeywords(editable, JAVA_KOTLIN_KEYWORDS, keywordColor);
+                applyPattern(editable, Pattern.compile("\\b[0-9]+(?:\\.[0-9]+)?\\b"), numberColor);
+                applyPattern(editable, Pattern.compile("\\b[A-Z][A-Za-z0-9_]*\\b"), classColor);
             }
         } finally {
             isHighlighting = false;
@@ -152,7 +181,7 @@ public class CodeEditorView extends EditText {
         }
     }
 
-    private void applyKeywords(Editable editable, String[] keywords, String color) {
+    private void applyKeywords(Editable editable, String[] keywords, int color) {
         StringBuilder builder = new StringBuilder();
         builder.append("\\b(");
         for (int i = 0; i < keywords.length; i++) {
@@ -165,9 +194,8 @@ public class CodeEditorView extends EditText {
         applyPattern(editable, Pattern.compile(builder.toString()), color);
     }
 
-    private void applyPattern(Editable editable, Pattern pattern, String colorValue) {
+    private void applyPattern(Editable editable, Pattern pattern, int color) {
         Matcher matcher = pattern.matcher(editable.toString());
-        int color = Color.parseColor(colorValue);
         while (matcher.find()) {
             editable.setSpan(new ForegroundColorSpan(color), matcher.start(), matcher.end(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }

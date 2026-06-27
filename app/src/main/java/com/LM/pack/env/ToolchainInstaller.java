@@ -44,6 +44,7 @@ public class ToolchainInstaller {
                     prepareArchive(
                         EnvironmentManager.JDK_ASSET_ARCHIVES[index],
                         EnvironmentManager.JDK_URLS[index],
+                        EnvironmentManager.JDK_FALLBACK_URLS[index],
                         archiveFile,
                         "JDK 安装包",
                         listener
@@ -75,6 +76,7 @@ public class ToolchainInstaller {
                     prepareArchive(
                         EnvironmentManager.NDK_ASSET_ARCHIVES[index],
                         EnvironmentManager.NDK_URLS[index],
+                        EnvironmentManager.NDK_FALLBACK_URLS[index],
                         archiveFile,
                         "NDK 安装包",
                         listener
@@ -94,9 +96,41 @@ public class ToolchainInstaller {
         }).start();
     }
 
+    public void installEmbeddedSdk(final InstallListener listener) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    String archivePath = environmentManager.getSdkPackageArchivePath();
+                    File archiveFile = new File(archivePath);
+                    ensureDir(archiveFile.getParentFile());
+                    prepareArchive(
+                        EnvironmentManager.SDK_ASSET_ARCHIVE,
+                        "",
+                        new String[0],
+                        archiveFile,
+                        "Android SDK 命令行工具",
+                        listener
+                    );
+
+                    File installRoot = new File(environmentManager.getEmbeddedSdkInstallDir());
+                    clearDirectory(installRoot);
+                    ensureDir(installRoot);
+                    listener.onProgress("正在解压 Android SDK 命令行工具...", 100, true);
+                    extractZip(archiveFile, installRoot);
+                    normalizeEmbeddedSdkLayout(installRoot);
+                    listener.onSuccess(installRoot.getAbsolutePath());
+                } catch (Exception e) {
+                    listener.onError("Android SDK 解压失败：" + e.getMessage());
+                }
+            }
+        }).start();
+    }
+
     private void prepareArchive(
         String assetPath,
         String downloadUrl,
+        String[] fallbackUrls,
         File targetFile,
         String displayName,
         InstallListener listener
@@ -110,8 +144,62 @@ public class ToolchainInstaller {
             listener.onProgress("已找到本地缓存，跳过下载。", 100, false);
             return;
         }
+        String resolvedUrl = resolveDownloadUrl(downloadUrl, fallbackUrls, displayName, listener);
         listener.onProgress("正在下载" + displayName + "...", 0, false);
-        downloadToFile(downloadUrl, targetFile, listener, "正在下载" + displayName);
+        downloadToFile(resolvedUrl, targetFile, listener, "正在下载" + displayName);
+    }
+
+    private String resolveDownloadUrl(String primaryUrl, String[] fallbackUrls, String displayName, InstallListener listener) throws Exception {
+        java.util.LinkedHashSet<String> candidates = new java.util.LinkedHashSet<String>();
+        if (primaryUrl != null && primaryUrl.trim().length() > 0) {
+            candidates.add(primaryUrl.trim());
+        }
+        if (fallbackUrls != null) {
+            for (int i = 0; i < fallbackUrls.length; i++) {
+                if (fallbackUrls[i] != null && fallbackUrls[i].trim().length() > 0) {
+                    candidates.add(fallbackUrls[i].trim());
+                }
+            }
+        }
+        if (candidates.isEmpty()) {
+            throw new IllegalStateException(displayName + " 没有可用下载地址");
+        }
+        listener.onProgress("正在校验 " + displayName + " 下载链路...", 0, true);
+        java.util.Iterator<String> iterator = candidates.iterator();
+        while (iterator.hasNext()) {
+            String candidate = iterator.next();
+            if (isUrlReachable(candidate, 0)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException(displayName + " 所有下载链路都不可用");
+    }
+
+    private boolean isUrlReachable(String urlString, int redirectCount) {
+        if (urlString == null || urlString.length() == 0 || redirectCount > 5) {
+            return false;
+        }
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(urlString).openConnection();
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(12000);
+            connection.setReadTimeout(12000);
+            connection.setRequestMethod("HEAD");
+            connection.setRequestProperty("User-Agent", "LM-APK-Builder/2.1");
+            int responseCode = connection.getResponseCode();
+            if (responseCode >= 300 && responseCode < 400) {
+                String redirect = connection.getHeaderField("Location");
+                return redirect != null && redirect.length() > 0 && isUrlReachable(redirect, redirectCount + 1);
+            }
+            return responseCode >= 200 && responseCode < 400;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
     }
 
     private boolean assetExists(String assetPath) {
@@ -276,6 +364,59 @@ public class ToolchainInstaller {
             if (zipInputStream != null) {
                 zipInputStream.close();
             }
+        }
+    }
+
+    private void normalizeEmbeddedSdkLayout(File installRoot) throws Exception {
+        File cmdlineToolsRoot = new File(installRoot, "cmdline-tools");
+        if (!cmdlineToolsRoot.exists()) {
+            return;
+        }
+        File latestDir = new File(cmdlineToolsRoot, "latest");
+        if (latestDir.exists()) {
+            return;
+        }
+        File[] children = cmdlineToolsRoot.listFiles();
+        if (children == null || children.length == 0) {
+            return;
+        }
+        File nestedRoot = null;
+        for (int i = 0; i < children.length; i++) {
+            if (children[i].isDirectory()) {
+                nestedRoot = children[i];
+                break;
+            }
+        }
+        if (nestedRoot == null) {
+            return;
+        }
+        if (new File(nestedRoot, "bin").exists() || new File(nestedRoot, "lib").exists()) {
+            nestedRoot.renameTo(latestDir);
+            return;
+        }
+        if (new File(cmdlineToolsRoot, "bin").exists() || new File(cmdlineToolsRoot, "lib").exists()) {
+            File tempDir = new File(installRoot, "cmdline-tools-temp");
+            if (tempDir.exists()) {
+                clearDirectory(tempDir);
+            }
+            ensureDir(tempDir);
+            File[] toolFiles = cmdlineToolsRoot.listFiles();
+            if (toolFiles == null) {
+                return;
+            }
+            for (int i = 0; i < toolFiles.length; i++) {
+                toolFiles[i].renameTo(new File(tempDir, toolFiles[i].getName()));
+            }
+            clearDirectory(cmdlineToolsRoot);
+            ensureDir(cmdlineToolsRoot);
+            ensureDir(latestDir);
+            File[] staged = tempDir.listFiles();
+            if (staged != null) {
+                for (int i = 0; i < staged.length; i++) {
+                    staged[i].renameTo(new File(latestDir, staged[i].getName()));
+                }
+            }
+            clearDirectory(tempDir);
         }
     }
 

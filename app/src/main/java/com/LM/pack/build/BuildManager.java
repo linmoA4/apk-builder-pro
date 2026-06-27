@@ -21,6 +21,10 @@ import java.util.regex.Pattern;
 public class BuildManager {
 
     private static final String OFFLINE_GRADLE_ASSET_PATH = "toolchains/gradle/gradle-8.7-bin.zip";
+    private static final String[] OFFLINE_GRADLE_URLS = {
+        "https://services.gradle.org/distributions/gradle-8.7-bin.zip",
+        "https://downloads.gradle.org/distributions/gradle-8.7-bin.zip"
+    };
 
     private final Context context;
     private final EnvironmentManager environmentManager;
@@ -157,11 +161,17 @@ public class BuildManager {
             ensureDir(new File(environmentManager.getPackageCacheDir()));
             File archiveFile = new File(environmentManager.getGradlePackageArchivePath());
             if (!archiveFile.exists() || archiveFile.length() == 0L) {
-                if (!assetExists(OFFLINE_GRADLE_ASSET_PATH)) {
-                    return null;
+                if (assetExists(OFFLINE_GRADLE_ASSET_PATH)) {
+                    listener.onLogLine("检测到内置 Gradle 资源，正在复制到本地缓存。");
+                    copyAssetToFile(OFFLINE_GRADLE_ASSET_PATH, archiveFile);
+                } else {
+                    String downloadUrl = resolveAvailableGradleUrl();
+                    if (downloadUrl == null) {
+                        return null;
+                    }
+                    listener.onLogLine("未找到内置 Gradle，正在下载可用的 Gradle 8.7 安装包。");
+                    downloadToFile(downloadUrl, archiveFile);
                 }
-                listener.onLogLine("检测到内置 Gradle 资源，正在复制到本地缓存。");
-                copyAssetToFile(OFFLINE_GRADLE_ASSET_PATH, archiveFile);
             }
             File installRoot = new File(environmentManager.getGradleInstallDir());
             File gradleBin = findGradleExecutable(installRoot);
@@ -184,6 +194,15 @@ public class BuildManager {
             }
             return null;
         }
+    }
+
+    private String resolveAvailableGradleUrl() {
+        for (int i = 0; i < OFFLINE_GRADLE_URLS.length; i++) {
+            if (isUrlReachable(OFFLINE_GRADLE_URLS[i], 0)) {
+                return OFFLINE_GRADLE_URLS[i];
+            }
+        }
+        return null;
     }
 
     private boolean assetExists(String assetPath) {
@@ -223,6 +242,68 @@ public class BuildManager {
             }
             if (outputStream != null) {
                 outputStream.close();
+            }
+        }
+    }
+
+    private void downloadToFile(String urlString, File targetFile) throws Exception {
+        java.net.HttpURLConnection connection = null;
+        InputStream inputStream = null;
+        BufferedOutputStream outputStream = null;
+        try {
+            connection = (java.net.HttpURLConnection) new java.net.URL(urlString).openConnection();
+            connection.setConnectTimeout(60000);
+            connection.setReadTimeout(60000);
+            connection.setInstanceFollowRedirects(true);
+            connection.setRequestProperty("User-Agent", "LM-APK-Builder/2.1");
+            connection.connect();
+            if (connection.getResponseCode() >= 400) {
+                throw new IllegalStateException("Gradle 下载失败，HTTP " + connection.getResponseCode());
+            }
+            inputStream = new BufferedInputStream(connection.getInputStream());
+            outputStream = new BufferedOutputStream(new FileOutputStream(targetFile));
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, len);
+            }
+            outputStream.flush();
+        } finally {
+            if (inputStream != null) {
+                inputStream.close();
+            }
+            if (outputStream != null) {
+                outputStream.close();
+            }
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private boolean isUrlReachable(String urlString, int redirectCount) {
+        if (urlString == null || redirectCount > 5) {
+            return false;
+        }
+        java.net.HttpURLConnection connection = null;
+        try {
+            connection = (java.net.HttpURLConnection) new java.net.URL(urlString).openConnection();
+            connection.setConnectTimeout(12000);
+            connection.setReadTimeout(12000);
+            connection.setRequestMethod("HEAD");
+            connection.setInstanceFollowRedirects(false);
+            connection.setRequestProperty("User-Agent", "LM-APK-Builder/2.1");
+            int responseCode = connection.getResponseCode();
+            if (responseCode >= 300 && responseCode < 400) {
+                String redirect = connection.getHeaderField("Location");
+                return redirect != null && isUrlReachable(redirect, redirectCount + 1);
+            }
+            return responseCode >= 200 && responseCode < 400;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
             }
         }
     }
