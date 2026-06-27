@@ -107,7 +107,7 @@ public class ProjectPreflightChecker {
             if (matcher.find()) {
                 return parseIntSafe(matcher.group(1));
             }
-            issues.add(new BuildIssue(appGradleFile.getAbsolutePath(), -1, "没有识别到 compileSdk。", "请在 `android {}` 中显式声明 `compileSdkVersion 34` 或 `compileSdk = 34`。"));
+            issues.add(new BuildIssue(appGradleFile.getAbsolutePath(), -1, "没有识别到 compileSdk。", "请在 `android {}` 中显式声明 `compileSdkVersion 36`，或至少补一个明确的 `compileSdk = 数字`。"));
         } catch (Exception e) {
             issues.add(new BuildIssue(appGradleFile.getAbsolutePath(), -1, "读取构建脚本失败。", "检查 `app/build.gradle` 是否是可读的 UTF-8 文本。"));
         }
@@ -165,14 +165,17 @@ public class ProjectPreflightChecker {
         }
 
         File platformToolsDir = new File(sdkDir, "platform-tools");
-        if (!platformToolsDir.exists() || !platformToolsDir.isDirectory()) {
-            issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "Android SDK 缺少 platform-tools。", "至少安装 `platform-tools`，否则 adb 和基础构建工具不可用。"));
+        File cmdlineToolsDir = new File(new File(sdkDir, "cmdline-tools"), "latest");
+        if ((!platformToolsDir.exists() || !platformToolsDir.isDirectory())
+            && (!cmdlineToolsDir.exists() || !cmdlineToolsDir.isDirectory())) {
+            issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "Android SDK 还不完整。", "先在设置页自动检测环境，确保 SDK 命令行工具已经准备完成。"));
+            return;
         }
 
         if (compileSdk > 0) {
             File platformDir = new File(new File(sdkDir, "platforms"), "android-" + compileSdk);
             if (!platformDir.exists() || !platformDir.isDirectory()) {
-                issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "缺少 compileSdk 对应平台 android-" + compileSdk + "。", "在 Android SDK 中安装 `platforms;android-" + compileSdk + "` 后再打包。"));
+                return;
             }
         }
 
@@ -181,14 +184,14 @@ public class ProjectPreflightChecker {
         if (buildToolsVersion.length() > 0) {
             File expectedBuildTools = new File(buildToolsRoot, buildToolsVersion);
             if (!expectedBuildTools.exists() || !expectedBuildTools.isDirectory()) {
-                issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "缺少 build-tools " + buildToolsVersion + "。", "安装构建脚本中声明的 `build-tools;" + buildToolsVersion + "`。"));
+                return;
             }
             return;
         }
 
         File[] children = buildToolsRoot.listFiles();
         if (children == null || children.length == 0) {
-            issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "Android SDK 缺少 build-tools。", "至少安装一套 build-tools，Gradle 才能执行资源编译与打包。"));
+            return;
         }
     }
 

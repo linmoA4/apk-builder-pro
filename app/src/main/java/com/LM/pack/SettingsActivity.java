@@ -22,46 +22,9 @@ import com.LM.pack.theme.AppThemePalette;
 import com.LM.pack.theme.LiquidGlassBackgroundView;
 import com.LM.pack.theme.ThemeManager;
 import java.io.File;
-import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Map;
 
 public class SettingsActivity extends Activity {
-
-    private static final String[] CORE_TOOL_ITEMS = {
-        "Gradle 官方发行版\nhttps://services.gradle.org/distributions/",
-        "Maven 中央仓库\nhttps://mvnrepository.com/",
-        "Google Maven 仓库\nhttps://maven.google.com/"
-    };
-
-    private static final String[] CROSS_PLATFORM_ITEMS = {
-        "Flutter 官方中文文档与下载\nhttps://flutterchina.club/",
-        "Flutter 清华镜像克隆\ngit clone -b master https://mirrors.tuna.tsinghua.edu.cn/git/flutter-sdk.git",
-        "Node.js 官方下载\nhttps://nodejs.org/",
-        "npm 淘宝镜像设置\nnpm config set registry https://registry.npm.taobao.org",
-        "Xamarin Android Workload\ndotnet workload install android",
-        "Xamarin 开源地址\nhttps://gitcode.com/gh_mirrors/xa/xamarin-android",
-        "uni-app 脚手架\nvue create -p dcloudio/uni-preset-vue my-first-uni-app",
-        "uni-app 源码与文档\nhttps://gitcode.com/dcloud/uni-app"
-    };
-
-    private static final String[] TEST_TOOL_ITEMS = {
-        "JUnit 4 发布页\nhttps://github.com/junit-team/junit4/releases/",
-        "JUnit 5 发布页\nhttps://github.com/junit-team/junit5/releases/",
-        "Android 模拟器 QEMU 核心\nhttps://qemu.weilnetz.de/w64/"
-    };
-
-    private static final String[] DEVOPS_TOOL_ITEMS = {
-        "Git 官方下载\nhttps://git-scm.com/",
-        "Postman 官方下载\nhttps://www.postman.com/downloads/"
-    };
-
-    private static final String[] MIRROR_COMMAND_ITEMS = {
-        "npm registry\nnpm config set registry https://registry.npm.taobao.org",
-        "npm disturl\nnpm config set disturl https://npm.taobao.org/dist",
-        "Flutter PUB_HOSTED_URL\nPUB_HOSTED_URL=https://pub.flutter-io.cn",
-        "Flutter FLUTTER_STORAGE_BASE_URL\nFLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn"
-    };
 
     private Handler handler;
     private EnvironmentManager environmentManager;
@@ -77,10 +40,6 @@ public class SettingsActivity extends Activity {
     private LiquidGlassBackgroundView bgSceneView;
     private Button btnBackSettings;
     private Button btnPrepareEmbedded;
-    private Button btnOpenSdkDir;
-    private Button btnOpenJdkDir;
-    private Button btnOpenNdkDir;
-    private Button btnOpenGradleDir;
     private Button btnAppearanceMode;
     private Button btnSurfaceStyle;
     private TextView tvEnvironmentSummary;
@@ -133,10 +92,6 @@ public class SettingsActivity extends Activity {
         bgSceneView = (LiquidGlassBackgroundView) findViewById(R.id.bgSceneView);
         btnBackSettings = (Button) findViewById(R.id.btnBackSettings);
         btnPrepareEmbedded = (Button) findViewById(R.id.btnPrepareEmbedded);
-        btnOpenSdkDir = (Button) findViewById(R.id.btnOpenSdkDir);
-        btnOpenJdkDir = (Button) findViewById(R.id.btnOpenJdkDir);
-        btnOpenNdkDir = (Button) findViewById(R.id.btnOpenNdkDir);
-        btnOpenGradleDir = (Button) findViewById(R.id.btnOpenGradleDir);
         btnAppearanceMode = (Button) findViewById(R.id.btnAppearanceMode);
         btnSurfaceStyle = (Button) findViewById(R.id.btnSurfaceStyle);
         tvEnvironmentSummary = (TextView) findViewById(R.id.tvEnvironmentSummary);
@@ -155,10 +110,6 @@ public class SettingsActivity extends Activity {
     private void bindEvents() {
         btnBackSettings.setOnClickListener(v -> finish());
         btnPrepareEmbedded.setOnClickListener(v -> maybePrepareEmbeddedTools(true));
-        btnOpenSdkDir.setOnClickListener(v -> showDirectoryDialog("Android SDK 目录", new File(environmentManager.getEmbeddedSdkInstallDir())));
-        btnOpenJdkDir.setOnClickListener(v -> showDirectoryDialog("JDK 目录", new File(new File(environmentManager.getBaseDir()), "jdk")));
-        btnOpenNdkDir.setOnClickListener(v -> showDirectoryDialog("NDK 目录", new File(new File(environmentManager.getBaseDir()), "ndk")));
-        btnOpenGradleDir.setOnClickListener(v -> showDirectoryDialog("Gradle 目录", new File(environmentManager.getGradleInstallDir())));
         btnAppearanceMode.setOnClickListener(v -> showAppearanceModeDialog());
         btnSurfaceStyle.setOnClickListener(v -> showSurfaceStyleDialog());
     }
@@ -221,7 +172,7 @@ public class SettingsActivity extends Activity {
         toolchainInstaller.installEmbeddedSdk(new ToolchainInstaller.InstallListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
-                handler.post(() -> showProgressOverlay("解压内置 SDK", message, percent, indeterminate));
+                handler.post(() -> showProgressOverlay("准备 Android SDK", message, blendProgress(0, 42, percent), indeterminate));
             }
 
             @Override
@@ -248,7 +199,7 @@ public class SettingsActivity extends Activity {
         toolchainInstaller.installJdk(embeddedJdkIndex, new ToolchainInstaller.InstallListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
-                handler.post(() -> showProgressOverlay("解压内置 JDK 21", message, percent, indeterminate));
+                handler.post(() -> showProgressOverlay("准备 JDK 21", message, blendProgress(42, 20, percent), indeterminate));
             }
 
             @Override
@@ -279,7 +230,7 @@ public class SettingsActivity extends Activity {
         toolchainInstaller.installNdk(embeddedNdkIndex, new ToolchainInstaller.InstallListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
-                handler.post(() -> showProgressOverlay("解压内置 NDK r27", message, percent, indeterminate));
+                handler.post(() -> showProgressOverlay("准备 NDK r27", message, blendProgress(62, 18, percent), indeterminate));
             }
 
             @Override
@@ -309,7 +260,7 @@ public class SettingsActivity extends Activity {
         buildManager.prepareOfflineGradleAsync(new BuildManager.OfflineGradleListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
-                handler.post(() -> showProgressOverlay("解压内置 Gradle 8.7", message, percent, indeterminate));
+                handler.post(() -> showProgressOverlay("准备 Gradle 8.7", message, blendProgress(80, 20, percent), indeterminate));
             }
 
             @Override
@@ -500,14 +451,14 @@ public class SettingsActivity extends Activity {
         String jdkStatus = embeddedJdk >= 0 && environmentManager.isSelectedJdkInstalled(embeddedJdk, environmentState) ? "已准备" : "未准备";
         String ndkStatus = embeddedNdk >= 0 && environmentManager.isSelectedNdkInstalled(embeddedNdk, environmentState) ? "已准备" : "未准备";
         String gradleStatus = buildManager.isOfflineGradlePrepared() ? "已准备" : "未准备";
-        return "自动检测按钮会统一处理 SDK、JDK 21、NDK r27 和 Gradle 8.7。"
-            + " 当前状态：SDK " + sdkStatus + "；JDK 21 " + jdkStatus + "；NDK r27 " + ndkStatus + "；Gradle 8.7 " + gradleStatus + "。";
+        return "这里只保留一个按钮。点一下后会自动检测、下载、复制、解压并登记 4 个核心环境。"
+            + "\n当前状态：SDK " + sdkStatus + "；JDK 21 " + jdkStatus + "；NDK r27 " + ndkStatus + "；Gradle 8.7 " + gradleStatus + "。";
     }
 
     private String buildConfigSummary() {
-        return "当前已经固定为内置环境优先：JDK 21、NDK r27、Android SDK、Gradle 8.7。"
-            + " 如果 APK 内没有打包资源，会自动走联网下载并继续显示真实解压进度。"
-            + " 下载器里也已经配置了直链源：SDK " + EnvironmentManager.SDK_VERIFIED_DIRECT_URLS.length
+        return "当前固定优先使用 APK 内置或自动下载的 Android SDK、JDK 21、NDK r27、Gradle 8.7。"
+            + "\n准备环境时会先检测本地缓存，再自动补齐缺失资源。解压阶段显示真实百分比，不再只转圈。"
+            + "\n下载器已接入直链源：SDK " + EnvironmentManager.SDK_VERIFIED_DIRECT_URLS.length
             + " 条、JDK " + EnvironmentManager.JDK_VERIFIED_DIRECT_URLS.length
             + " 条、Gradle " + EnvironmentManager.GRADLE_VERIFIED_DIRECT_URLS.length + " 条。";
     }
@@ -533,14 +484,15 @@ public class SettingsActivity extends Activity {
     private String buildDirectoryPlan() {
         StringBuilder builder = new StringBuilder();
         builder.append("工作根目录：").append(environmentManager.getBaseDir()).append('\n');
-        builder.append("1. packages：保存下载或复制过来的原始压缩包缓存，避免重复下载。").append('\n');
-        builder.append("2. sdk：Android SDK 解压后的实际工作目录，cmdline-tools 会整理到 latest。").append('\n');
-        builder.append("3. jdk：固定放 JDK 21 目录。").append('\n');
-        builder.append("4. ndk：固定放 NDK r27 目录。").append('\n');
-        builder.append("5. gradle：固定放 Gradle 8.7 离线运行目录。").append('\n');
-        builder.append("6. projects：创建的新项目目录。").append('\n');
-        builder.append("7. android/data：导入进来的现有项目目录。").append('\n');
-        builder.append("8. import_temp：导入压缩包时的临时解压目录。");
+        builder.append('\n');
+        builder.append("`packages/`：保存下载或从 APK 复制出来的原始压缩包，避免重复下载。").append('\n');
+        builder.append("`sdk/`：Android SDK 的实际工作目录，`cmdline-tools` 会自动整理到 `latest/`。").append('\n');
+        builder.append("`jdk/`：固定存放 JDK 21。").append('\n');
+        builder.append("`ndk/`：固定存放 NDK r27。").append('\n');
+        builder.append("`gradle/`：固定存放 Gradle 8.7 的离线运行目录。").append('\n');
+        builder.append("`projects/`：你在首页新建出来的项目。").append('\n');
+        builder.append("`android/data/`：导入进来的现有 Android 项目。").append('\n');
+        builder.append("`import_temp/`：导入压缩包时的临时解压区，识别完工程根目录后再正式导入。");
         return builder.toString();
     }
 
@@ -549,23 +501,12 @@ public class SettingsActivity extends Activity {
             && environmentManager.isSelectedJdkInstalled(selectedJdkIndex, environmentState)
             && environmentManager.isSelectedNdkInstalled(selectedNdkIndex, environmentState)
             && buildManager.isOfflineGradlePrepared();
-        return allReady ? "重新检测 4 个环境" : "自动检测并准备 4 个环境";
+        return allReady ? "重新检测环境" : "自动检测并准备环境";
     }
 
-    private String buildRegisteredToolSummary(Map<String, String> tools) {
-        if (tools == null || tools.isEmpty()) {
-            return "未登记";
-        }
-        StringBuilder builder = new StringBuilder();
-        boolean first = true;
-        for (Map.Entry<String, String> entry : tools.entrySet()) {
-            if (!first) {
-                builder.append("；");
-            }
-            builder.append(entry.getKey());
-            first = false;
-        }
-        return builder.toString();
+    private int blendProgress(int startPercent, int weightPercent, int stagePercent) {
+        int safeStage = Math.max(0, Math.min(100, stagePercent));
+        return Math.max(0, Math.min(100, startPercent + ((safeStage * weightPercent) / 100)));
     }
 
     private String safeText(String value, String fallback) {

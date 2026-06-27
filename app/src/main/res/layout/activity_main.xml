@@ -309,7 +309,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
                             android:layout_marginBottom="8dp"
-                            android:text="左滑收起，右滑展开。根目录直接展开；点文件夹进入新页面，点文件直接打开。"
+                            android:text="右滑直接展开完整项目结构。点文件夹进入目录页，点文件直接打开。"
                             android:textSize="12sp"
                             android:tag="muted" />
 
@@ -403,7 +403,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layout_marginRight="18dp"
-        android:layout_marginBottom="154dp"
+        android:layout_marginBottom="176dp"
         android:orientation="vertical"
         android:visibility="gone">
 
@@ -434,7 +434,7 @@
         android:layout_height="56dp"
         android:layout_gravity="bottom|end"
         android:layout_marginRight="18dp"
-        android:layout_marginBottom="84dp"
+        android:layout_marginBottom="108dp"
         android:text="+"
         android:textSize="26sp"
         android:tag="primaryButton primary" />

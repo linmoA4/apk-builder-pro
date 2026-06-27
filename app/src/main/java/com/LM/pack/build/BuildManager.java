@@ -16,7 +16,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Enumeration;
-import java.util.LinkedHashSet;
 import java.util.Properties;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipEntry;
@@ -32,7 +31,7 @@ public class BuildManager {
     }
 
     private static final String OFFLINE_GRADLE_ASSET_PATH = "toolchains/gradle/gradle-8.7-bin.zip";
-    private static final String[] OFFLINE_GRADLE_URLS = EnvironmentManager.GRADLE_87_DOWNLOAD_URLS;
+    private static final String[] OFFLINE_GRADLE_URLS = EnvironmentManager.GRADLE_VERIFIED_DIRECT_URLS;
 
     private final Context context;
     private final EnvironmentManager environmentManager;
@@ -45,6 +44,18 @@ public class BuildManager {
     public interface BuildListener {
         void onLogLine(String line);
         void onFinished(BuildResult result);
+    }
+
+    private static class ProjectRequirements {
+        final int compileSdk;
+        final String buildToolsVersion;
+        final String ndkVersion;
+
+        ProjectRequirements(int compileSdk, String buildToolsVersion, String ndkVersion) {
+            this.compileSdk = compileSdk;
+            this.buildToolsVersion = buildToolsVersion == null ? "" : buildToolsVersion.trim();
+            this.ndkVersion = ndkVersion == null ? "" : ndkVersion.trim();
+        }
     }
 
     public void runGradleBuild(
@@ -123,7 +134,10 @@ public class BuildManager {
         try {
             File projectRoot = new File(projectDir);
             File gradlew = new File(projectRoot, "gradlew");
+            ProjectRequirements requirements = inspectProjectRequirements(projectRoot);
+            logResolvedEnvironment(requirements, selectedJdkName, jdkDir, sdkDir, ndkDir, listener);
             syncProjectLocalProperties(projectRoot, sdkDir, ndkDir, listener);
+            prepareRequiredSdkPackages(projectRoot, jdkDir, sdkDir, listener, requirements);
             File offlineGradleExecutable = prepareOfflineGradle(null, listener);
             ProcessBuilder processBuilder;
             if (offlineGradleExecutable != null) {
@@ -212,6 +226,225 @@ public class BuildManager {
 
     private interface ProgressCallback {
         void onProgress(String message, int percent, boolean indeterminate);
+    }
+
+    private ProjectRequirements inspectProjectRequirements(File projectRoot) {
+        File appGradle = new File(projectRoot, "app/build.gradle");
+        if (!appGradle.exists()) {
+            appGradle = new File(projectRoot, "app/build.gradle.kts");
+        }
+        if (!appGradle.exists()) {
+            return new ProjectRequirements(-1, "", "");
+        }
+        try {
+            String content = readText(appGradle);
+            int compileSdk = extractInt(content, "compileSdk(?:Version)?\\s*(?:=\\s*)?(\\d+)");
+            String buildToolsVersion = extractString(content, "buildToolsVersion\\s*(?:=\\s*)?[\"']([^\"']+)[\"']");
+            String ndkVersion = extractString(content, "ndkVersion\\s*(?:=\\s*)?[\"']([^\"']+)[\"']");
+            return new ProjectRequirements(compileSdk, buildToolsVersion, ndkVersion);
+        } catch (Exception e) {
+            return new ProjectRequirements(-1, "", "");
+        }
+    }
+
+    private void logResolvedEnvironment(
+        ProjectRequirements requirements,
+        String selectedJdkName,
+        String jdkDir,
+        String sdkDir,
+        String ndkDir,
+        BuildListener listener
+    ) {
+        if (listener == null) {
+            return;
+        }
+        listener.onLogLine("正在分析项目所需环境并进行智能分配。");
+        listener.onLogLine("JDK 环境: " + selectedJdkName + "  ->  " + jdkDir);
+        listener.onLogLine("NDK 环境: NDK r27  ->  " + ndkDir);
+        listener.onLogLine("Gradle 环境: 内置 Gradle 8.7");
+        if (requirements.compileSdk > 0) {
+            listener.onLogLine("项目 compileSdk: android-" + requirements.compileSdk);
+        }
+        if (requirements.buildToolsVersion.length() > 0) {
+            listener.onLogLine("项目 buildToolsVersion: " + requirements.buildToolsVersion);
+        }
+        if (requirements.ndkVersion.length() > 0) {
+            listener.onLogLine("项目 ndkVersion: " + requirements.ndkVersion);
+        }
+        if (sdkDir != null && sdkDir.length() > 0) {
+            listener.onLogLine("Android SDK: " + sdkDir);
+        }
+    }
+
+    private void prepareRequiredSdkPackages(
+        File projectRoot,
+        String jdkDir,
+        String sdkDir,
+        BuildListener listener,
+        ProjectRequirements requirements
+    ) throws Exception {
+        if (sdkDir == null || sdkDir.trim().length() == 0) {
+            if (listener != null) {
+                listener.onLogLine("Android SDK 尚未登记，跳过自动补齐 SDK 组件。");
+            }
+            return;
+        }
+        File sdkRoot = new File(sdkDir);
+        if (!sdkRoot.exists() || !sdkRoot.isDirectory()) {
+            if (listener != null) {
+                listener.onLogLine("Android SDK 目录不存在，跳过自动补齐 SDK 组件。");
+            }
+            return;
+        }
+        File sdkManager = new File(environmentManager.getSdkManagerPath());
+        if (!sdkManager.exists()) {
+            if (listener != null) {
+                listener.onLogLine("未找到 sdkmanager，当前只使用已存在的 SDK 组件。");
+            }
+            return;
+        }
+        ArrayList<String> missingPackages = collectMissingSdkPackages(sdkRoot, requirements);
+        if (missingPackages.isEmpty()) {
+            if (listener != null) {
+                listener.onLogLine("Android SDK 组件已齐全，无需额外安装。");
+            }
+            return;
+        }
+        ensureSdkLicenses(sdkRoot);
+        sdkManager.setExecutable(true);
+        if (listener != null) {
+            listener.onLogLine("检测到缺失的 SDK 组件，正在自动补齐：");
+            for (int i = 0; i < missingPackages.size(); i++) {
+                listener.onLogLine("  - " + missingPackages.get(i));
+            }
+        }
+        ArrayList<String> command = new ArrayList<String>();
+        command.add(sdkManager.getAbsolutePath());
+        command.add("--sdk_root=" + sdkRoot.getAbsolutePath());
+        for (int i = 0; i < missingPackages.size(); i++) {
+            command.add(missingPackages.get(i));
+        }
+        runLoggedProcess(command, sdkRoot, jdkDir, sdkRoot.getAbsolutePath(), "", listener, "SDK 自动补齐");
+    }
+
+    private ArrayList<String> collectMissingSdkPackages(File sdkRoot, ProjectRequirements requirements) {
+        ArrayList<String> missingPackages = new ArrayList<String>();
+        if (!isSdkPackageInstalled(sdkRoot, "platform-tools")) {
+            missingPackages.add("platform-tools");
+        }
+        if (requirements.compileSdk > 0) {
+            String platformPackage = "platforms;android-" + requirements.compileSdk;
+            if (!isSdkPackageInstalled(sdkRoot, platformPackage)) {
+                missingPackages.add(platformPackage);
+            }
+        }
+        String desiredBuildTools = requirements.buildToolsVersion;
+        if (desiredBuildTools.length() == 0 && !hasAnyBuildToolsInstalled(sdkRoot)) {
+            desiredBuildTools = guessBuildToolsVersion(requirements.compileSdk);
+        }
+        if (desiredBuildTools.length() > 0) {
+            String buildToolsPackage = "build-tools;" + desiredBuildTools;
+            if (!isSdkPackageInstalled(sdkRoot, buildToolsPackage)) {
+                missingPackages.add(buildToolsPackage);
+            }
+        }
+        return missingPackages;
+    }
+
+    private boolean isSdkPackageInstalled(File sdkRoot, String packageName) {
+        if (sdkRoot == null || packageName == null || packageName.length() == 0) {
+            return false;
+        }
+        if ("platform-tools".equals(packageName)) {
+            return new File(sdkRoot, "platform-tools").isDirectory();
+        }
+        if (packageName.startsWith("platforms;android-")) {
+            return new File(new File(sdkRoot, "platforms"), packageName.substring("platforms;".length())).isDirectory();
+        }
+        if (packageName.startsWith("build-tools;")) {
+            return new File(new File(sdkRoot, "build-tools"), packageName.substring("build-tools;".length())).isDirectory();
+        }
+        return false;
+    }
+
+    private boolean hasAnyBuildToolsInstalled(File sdkRoot) {
+        File buildToolsRoot = new File(sdkRoot, "build-tools");
+        File[] children = buildToolsRoot.listFiles();
+        return children != null && children.length > 0;
+    }
+
+    private String guessBuildToolsVersion(int compileSdk) {
+        if (compileSdk <= 0) {
+            return "";
+        }
+        return compileSdk + ".0.0";
+    }
+
+    private void ensureSdkLicenses(File sdkRoot) throws Exception {
+        File licensesDir = new File(sdkRoot, "licenses");
+        ensureDir(licensesDir);
+        writeText(
+            new File(licensesDir, "android-sdk-license"),
+            "24333f8a63b6825ea9c5514f83c2829b004d1fee\n"
+                + "d56f5187479451eabf01fb78af6dfcb131a6481e\n"
+        );
+        writeText(new File(licensesDir, "android-sdk-preview-license"), "84831b9409646a918e30573bab4c9c91346d8abd\n");
+    }
+
+    private void runLoggedProcess(
+        ArrayList<String> command,
+        File workingDir,
+        String jdkDir,
+        String sdkDir,
+        String ndkDir,
+        BuildListener listener,
+        String title
+    ) throws Exception {
+        Process process = null;
+        BufferedReader reader = null;
+        try {
+            ProcessBuilder processBuilder = new ProcessBuilder(command);
+            processBuilder.directory(workingDir);
+            processBuilder.redirectErrorStream(true);
+            if (jdkDir != null && jdkDir.length() > 0) {
+                processBuilder.environment().put("JAVA_HOME", jdkDir);
+                String currentPath = processBuilder.environment().get("PATH");
+                processBuilder.environment().put("PATH", jdkDir + "/bin:" + (currentPath == null ? "" : currentPath));
+            }
+            if (sdkDir != null && sdkDir.length() > 0) {
+                processBuilder.environment().put("ANDROID_HOME", sdkDir);
+                processBuilder.environment().put("ANDROID_SDK_ROOT", sdkDir);
+            }
+            if (ndkDir != null && ndkDir.length() > 0) {
+                processBuilder.environment().put("ANDROID_NDK_HOME", ndkDir);
+                processBuilder.environment().put("ANDROID_NDK_ROOT", ndkDir);
+            }
+            if (listener != null) {
+                listener.onLogLine(title + " 开始执行。");
+            }
+            process = processBuilder.start();
+            reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (listener != null) {
+                    listener.onLogLine(line);
+                }
+            }
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                throw new IllegalStateException(title + " 失败，退出码：" + exitCode);
+            }
+            if (listener != null) {
+                listener.onLogLine(title + " 完成。");
+            }
+        } finally {
+            if (reader != null) {
+                reader.close();
+            }
+            if (process != null) {
+                process.destroy();
+            }
+        }
     }
 
     private File prepareOfflineGradle(ProgressCallback progressCallback, BuildListener listener) {
@@ -533,23 +766,53 @@ public class BuildManager {
         if (line == null) {
             return;
         }
-        Matcher lineErrorMatcher = Pattern.compile("^(.+?):(\\d+):\\s*(?:error:)?\\s*(.+)$").matcher(line.trim());
+        String trimmed = line.trim();
+        Matcher kotlinMatcher = Pattern.compile("^e:\\s+(.+?):\\s*\\((\\d+),\\s*(\\d+)\\):\\s*(.+)$").matcher(trimmed);
+        if (kotlinMatcher.find()) {
+            addIssueIfAbsent(
+                issues,
+                new BuildIssue(
+                    kotlinMatcher.group(1).trim(),
+                    parseIntSafe(kotlinMatcher.group(2)),
+                    kotlinMatcher.group(4).trim(),
+                    suggestFix(kotlinMatcher.group(4), "")
+                )
+            );
+            return;
+        }
+        Matcher lineColumnMatcher = Pattern.compile("^(.+?):(\\d+):(\\d+):\\s*(?:error:)?\\s*(.+)$").matcher(trimmed);
+        if (lineColumnMatcher.find()) {
+            addIssueIfAbsent(
+                issues,
+                new BuildIssue(
+                    lineColumnMatcher.group(1).trim(),
+                    parseIntSafe(lineColumnMatcher.group(2)),
+                    lineColumnMatcher.group(4).trim(),
+                    suggestFix(lineColumnMatcher.group(4), "")
+                )
+            );
+            return;
+        }
+        Matcher lineErrorMatcher = Pattern.compile("^(.+?):(\\d+):\\s*(?:error:)?\\s*(.+)$").matcher(trimmed);
         if (lineErrorMatcher.find()) {
             String filePath = lineErrorMatcher.group(1).trim();
             int lineNumber = parseIntSafe(lineErrorMatcher.group(2));
             String message = lineErrorMatcher.group(3).trim();
-            issues.add(new BuildIssue(filePath, lineNumber, message, suggestFix(message, "")));
+            addIssueIfAbsent(issues, new BuildIssue(filePath, lineNumber, message, suggestFix(message, "")));
             return;
         }
 
-        Matcher javaStyleMatcher = Pattern.compile("^(.*\\.(?:java|kt|xml|gradle)):\\s*(.+)$").matcher(line.trim());
+        Matcher javaStyleMatcher = Pattern.compile("^(.*\\.(?:java|kt|xml|gradle|kts|properties)):\\s*(.+)$").matcher(trimmed);
         if (javaStyleMatcher.find() && line.toLowerCase().indexOf("error") >= 0) {
             addIssueIfAbsent(issues, new BuildIssue(javaStyleMatcher.group(1).trim(), -1, javaStyleMatcher.group(2).trim(), suggestFix(line, "")));
             return;
         }
-        String trimmed = line.trim();
         if (trimmed.startsWith("* What went wrong:") || trimmed.startsWith("Execution failed for task")
             || trimmed.startsWith("A problem occurred") || trimmed.startsWith("FAILURE: Build failed")) {
+            addIssueIfAbsent(issues, new BuildIssue("Gradle", -1, trimmed, suggestFix(trimmed, "")));
+            return;
+        }
+        if (trimmed.startsWith("Caused by:") || trimmed.startsWith("> ")) {
             addIssueIfAbsent(issues, new BuildIssue("Gradle", -1, trimmed, suggestFix(trimmed, "")));
         }
     }
@@ -608,6 +871,54 @@ public class BuildManager {
             return "先修正当前高亮行的语法，再重新打包验证。";
         }
         return "先根据错误行号检查代码，再重新执行打包。";
+    }
+
+    private int extractInt(String content, String regex) {
+        String value = extractString(content, regex);
+        return parseIntSafe(value);
+    }
+
+    private String extractString(String content, String regex) {
+        if (content == null || content.length() == 0) {
+            return "";
+        }
+        Matcher matcher = Pattern.compile(regex).matcher(content);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        return "";
+    }
+
+    private String readText(File file) throws Exception {
+        InputStream inputStream = null;
+        try {
+            inputStream = new FileInputStream(file);
+            byte[] buffer = new byte[4096];
+            java.io.ByteArrayOutputStream outputStream = new java.io.ByteArrayOutputStream();
+            int len;
+            while ((len = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, len);
+            }
+            return new String(outputStream.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+        } finally {
+            if (inputStream != null) {
+                inputStream.close();
+            }
+        }
+    }
+
+    private void writeText(File file, String content) throws Exception {
+        ensureDir(file.getParentFile());
+        FileOutputStream outputStream = null;
+        try {
+            outputStream = new FileOutputStream(file);
+            outputStream.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            outputStream.flush();
+        } finally {
+            if (outputStream != null) {
+                outputStream.close();
+            }
+        }
     }
 
     private void copyStreamWithProgress(

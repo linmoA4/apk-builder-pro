@@ -124,8 +124,8 @@ public class FileBrowserActivity extends Activity {
         if (title == null || title.length() == 0) {
             title = currentProject.getProjectName();
         }
-        tvTitle.setText("..  " + title);
-        tvPath.setText(projectFileService.buildDisplayPath(currentProject, currentDir));
+        tvTitle.setText(title);
+        tvPath.setText("·· 返回上一级  ·  " + projectFileService.buildDisplayPath(currentProject, currentDir));
         adapter.notifyDataSetChanged();
     }
 
@@ -174,7 +174,7 @@ public class FileBrowserActivity extends Activity {
             convertView.setBackground(themeManager.createPanelDrawable(palette, false));
             holder.title.setText((item.isDirectory() ? "📁  " : "📄  ") + item.getFile().getName());
             holder.title.setTextColor(item.isDirectory() ? palette.textPrimary : palette.textSecondary);
-            holder.sub.setText(item.isDirectory() ? "点击进入下一级目录" : "点击打开到编辑器");
+            holder.sub.setText(item.isDirectory() ? "点击进入这个目录页" : "点击打开到编辑器");
             holder.sub.setTextColor(palette.textMuted);
             return convertView;
         }

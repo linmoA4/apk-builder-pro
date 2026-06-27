@@ -36,8 +36,8 @@ public class EnvironmentManager {
     };
     public static final String[] SDK_VERIFIED_DIRECT_URLS = {
         "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip",
-        "https://dl.google.com/android/repository/commandlinetools-win-14742923_latest.zip",
-        "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+        "https://redirector.gvt1.com/edgedl/android/repository/commandlinetools-linux-13114758_latest.zip",
+        "https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
     };
     public static final int EMBEDDED_JDK_INDEX = 3;
     public static final int EMBEDDED_NDK_INDEX = 0;
@@ -95,10 +95,9 @@ public class EnvironmentManager {
     };
 
     public static final String[] GRADLE_VERIFIED_DIRECT_URLS = {
-        "https://mirrors.cloud.tencent.com/gradle/gradle-9.4.1-bin.zip",
-        "https://mirrors.cloud.tencent.com/gradle/gradle-9.1.0-bin.zip",
-        "https://mirrors.cloud.tencent.com/gradle/gradle-8.13-bin.zip",
-        "https://mirrors.cloud.tencent.com/gradle/gradle-8.11.1-bin.zip"
+        "https://services.gradle.org/distributions/gradle-8.7-bin.zip",
+        "https://downloads.gradle.org/distributions/gradle-8.7-bin.zip",
+        "https://mirrors.cloud.tencent.com/gradle/gradle-8.7-bin.zip"
     };
 
     public static final String[][] NDK_FALLBACK_URLS = {
@@ -336,6 +335,10 @@ public class EnvironmentManager {
 
     public String getEmbeddedSdkCmdlineToolsDir() {
         return new File(new File(getEmbeddedSdkInstallDir(), "cmdline-tools"), "latest").getAbsolutePath();
+    }
+
+    public String getSdkManagerPath() {
+        return new File(new File(getEmbeddedSdkCmdlineToolsDir(), "bin"), "sdkmanager").getAbsolutePath();
     }
 
     public String getGradleInstallDir() {

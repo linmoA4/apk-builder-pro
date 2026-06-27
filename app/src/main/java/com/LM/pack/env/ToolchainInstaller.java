@@ -46,7 +46,7 @@ public class ToolchainInstaller {
                     prepareArchive(
                         EnvironmentManager.JDK_ASSET_ARCHIVES[index],
                         EnvironmentManager.JDK_URLS[index],
-                        EnvironmentManager.JDK_FALLBACK_URLS[index],
+                        mergeUrls(EnvironmentManager.JDK_FALLBACK_URLS[index], new String[] {EnvironmentManager.JDK_VERIFIED_DIRECT_URLS[index]}),
                         archiveFile,
                         "JDK 安装包",
                         listener
@@ -109,7 +109,7 @@ public class ToolchainInstaller {
                     prepareArchive(
                         EnvironmentManager.SDK_ASSET_ARCHIVE,
                         EnvironmentManager.SDK_PRIMARY_URL,
-                        EnvironmentManager.SDK_FALLBACK_URLS,
+                        mergeUrls(EnvironmentManager.SDK_FALLBACK_URLS, EnvironmentManager.SDK_VERIFIED_DIRECT_URLS),
                         archiveFile,
                         "Android SDK 命令行工具",
                         listener
@@ -175,6 +175,24 @@ public class ToolchainInstaller {
             }
         }
         throw new IllegalStateException(displayName + " 所有下载链路都不可用");
+    }
+
+    private String[] mergeUrls(String[] first, String[] second) {
+        java.util.LinkedHashSet<String> values = new java.util.LinkedHashSet<String>();
+        appendUrls(values, first);
+        appendUrls(values, second);
+        return values.toArray(new String[0]);
+    }
+
+    private void appendUrls(java.util.LinkedHashSet<String> values, String[] candidates) {
+        if (candidates == null) {
+            return;
+        }
+        for (int i = 0; i < candidates.length; i++) {
+            if (candidates[i] != null && candidates[i].trim().length() > 0) {
+                values.add(candidates[i].trim());
+            }
+        }
     }
 
     private boolean isUrlReachable(String urlString, int redirectCount) {

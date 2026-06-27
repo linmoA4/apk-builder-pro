@@ -28,7 +28,7 @@
                 android:id="@+id/btnBack"
                 android:layout_width="44dp"
                 android:layout_height="40dp"
-                android:text=".."
+                android:text="··"
                 android:textStyle="bold"
                 android:tag="ghostButton primary" />
 
@@ -43,7 +43,7 @@
                     android:id="@+id/tvTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text=".."
+                    android:text="项目结构"
                     android:textSize="17sp"
                     android:textStyle="bold"
                     android:tag="primary" />

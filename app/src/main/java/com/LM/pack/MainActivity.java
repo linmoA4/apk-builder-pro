@@ -213,7 +213,7 @@ public class MainActivity extends Activity {
         logManager = new LogManager(tvLogs, logScrollView);
 
         ViewGroup.LayoutParams layoutParams = fileDrawer.getLayoutParams();
-        layoutParams.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.72f);
+        layoutParams.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.88f);
         fileDrawer.setLayoutParams(layoutParams);
     }
 
@@ -428,7 +428,7 @@ public class MainActivity extends Activity {
         editorPane.setVisibility(View.GONE);
         btnBackHome.setVisibility(View.GONE);
         btnFabAdd.setVisibility(View.VISIBLE);
-        btnToggleFiles.setText("文件");
+        btnToggleFiles.setText("目录");
         tvToolbarTitle.setText("APK Builder Pro");
         suggestionCard.setVisibility(View.GONE);
         hideFileDrawer();
@@ -456,7 +456,7 @@ public class MainActivity extends Activity {
         editorTabManager.clear();
         loadProjectFiles();
         fileDrawer.setVisibility(View.VISIBLE);
-        btnToggleFiles.setText("收起");
+        btnToggleFiles.setText("目录");
         openDefaultEditorFile(entry);
         logManager.appendKeyValue("INFO", "已打开项目", entry.getProjectDir());
     }
@@ -486,7 +486,6 @@ public class MainActivity extends Activity {
     }
 
     private void showImportPicker() {
-        toast("点 zip 文件立即导入；点文件夹继续进入，长按文件夹可直接导入。");
         showStoragePicker("导入项目", true, false, new PathPickListener() {
             @Override
             public void onPicked(File path) {
@@ -790,7 +789,7 @@ public class MainActivity extends Activity {
     }
 
     private void importZipProject(final File zipFile) {
-        showProgressDialog("导入项目", "正在分析压缩包...", 2, false);
+        showProgressDialog("导入项目", "正在分析压缩包...", 0, false);
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -837,7 +836,7 @@ public class MainActivity extends Activity {
     }
 
     private void importFolderProject(final File folder) {
-        showProgressDialog("导入项目", "正在深度检查目录结构...", 2, false);
+        showProgressDialog("导入项目", "正在深度检查目录结构...", 0, false);
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -1003,13 +1002,13 @@ public class MainActivity extends Activity {
             hideFileDrawer();
         } else {
             fileDrawer.setVisibility(View.VISIBLE);
-            btnToggleFiles.setText("收起");
+            btnToggleFiles.setText("目录");
         }
     }
 
     private void hideFileDrawer() {
         fileDrawer.setVisibility(View.GONE);
-        btnToggleFiles.setText("文件");
+        btnToggleFiles.setText("目录");
     }
 
     private void detectAndBuild() {
@@ -1112,7 +1111,7 @@ public class MainActivity extends Activity {
         listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, items));
         listView.setOnItemClickListener((parent, view, which, id) -> openIssue(issues.get(which)));
         new AlertDialog.Builder(this)
-            .setTitle(title)
+            .setTitle(title + "（" + issues.size() + "条）")
             .setView(listView)
             .setPositiveButton("一键提取全部错误", (dialog, which) -> {
                 ClipboardManager clipboardManager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
@@ -1430,7 +1429,7 @@ public class MainActivity extends Activity {
             if (relative.length() == 0) {
                 relative = "/";
             }
-            return (item.isDirectory() ? "目录 · 点击进入" : "文件 · ") + relative;
+            return (item.isDirectory() ? "目录 · 点进后进入新页面" : "文件 · ") + relative;
         }
         return item.isDirectory() ? "目录" : "文件";
     }
@@ -1461,10 +1460,10 @@ public class MainActivity extends Activity {
                     if (!swipeHandled) {
                         float dx = event.getX() - gestureStartX;
                         float dy = event.getY() - gestureStartY;
-                        if (Math.abs(dx) > dp(72) && Math.abs(dx) > Math.abs(dy) * 1.2f) {
+                        if (Math.abs(dx) > dp(56) && Math.abs(dx) > Math.abs(dy) * 1.2f) {
                             if (dx > 0 && fileDrawer.getVisibility() != View.VISIBLE) {
                                 fileDrawer.setVisibility(View.VISIBLE);
-                                btnToggleFiles.setText("收起");
+                                btnToggleFiles.setText("目录");
                                 swipeHandled = true;
                             } else if (dx < 0 && fileDrawer.getVisibility() == View.VISIBLE) {
                                 hideFileDrawer();
