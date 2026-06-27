@@ -39,11 +39,14 @@ import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.viewpager2.widget.ViewPager2;
+import androidx.recyclerview.widget.RecyclerView;
 import com.LM.pack.build.BuildManager;
 import com.LM.pack.build.ProjectPreflightChecker;
 import com.LM.pack.editor.CodeEditorView;
 import com.LM.pack.editor.EditorTabManager;
 import com.LM.pack.env.EnvironmentManager;
+import com.LM.pack.env.ToolchainInstaller;
 import com.LM.pack.log.LogManager;
 import com.LM.pack.model.BuildIssue;
 import com.LM.pack.model.BuildResult;
@@ -91,6 +94,7 @@ public class MainActivity extends Activity {
     private BuildWorkflowService buildWorkflowService;
     private EnvironmentState environmentState;
 
+    private ViewPager2 viewPager;
     private LinearLayout homePane;
     private LinearLayout editorPane;
     private LinearLayout emptyState;
@@ -136,8 +140,8 @@ public class MainActivity extends Activity {
     private File currentOpenFile;
     private boolean projectPrepared = false;
     private boolean isBuildRunning = false;
-    private int selectedJdkIndex = 3;
-    private int selectedNdkIndex = 0;
+    private int selectedJdkIndex = 4;
+    private int selectedNdkIndex = 4;
     private String currentCopiedFix = "";
     private String lastSavedText = "";
     private boolean suppressEditorWriteback = false;
@@ -192,32 +196,49 @@ public class MainActivity extends Activity {
     }
 
     private void bindViews() {
-        homePane = (LinearLayout) findViewById(R.id.homePane);
-        editorPane = (LinearLayout) findViewById(R.id.editorPane);
-        emptyState = (LinearLayout) findViewById(R.id.emptyState);
-        fileDrawer = (LinearLayout) findViewById(R.id.fileDrawer);
-        suggestionCard = (LinearLayout) findViewById(R.id.suggestionCard);
-        editorTabContainer = (LinearLayout) findViewById(R.id.editorTabContainer);
+        viewPager = (ViewPager2) findViewById(R.id.viewPager);
+        android.view.LayoutInflater inflater = getLayoutInflater();
+        homePane = (LinearLayout) inflater.inflate(R.layout.page_home, null);
+        editorPane = (LinearLayout) inflater.inflate(R.layout.page_editor, null);
+
+        java.util.List<View> pages = new java.util.ArrayList<>();
+        pages.add(homePane);
+        pages.add(editorPane);
+        viewPager.setAdapter(new ViewPager2Adapter(pages));
+        viewPager.setUserInputEnabled(true);
+        viewPager.setCurrentItem(0, false);
+        viewPager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
+            @Override
+            public void onPageSelected(int position) {
+                if (position == 0) {
+                    onSwipeToHome();
+                }
+            }
+        });
+        emptyState = (LinearLayout) homePane.findViewById(R.id.emptyState);
+        fileDrawer = (LinearLayout) editorPane.findViewById(R.id.fileDrawer);
+        suggestionCard = (LinearLayout) editorPane.findViewById(R.id.suggestionCard);
+        editorTabContainer = (LinearLayout) editorPane.findViewById(R.id.editorTabContainer);
         addActionOverlay = (LinearLayout) findViewById(R.id.addActionOverlay);
         bgSceneView = (LiquidGlassBackgroundView) findViewById(R.id.bgSceneView);
         tvToolbarTitle = (TextView) findViewById(R.id.tvToolbarTitle);
-        tvEditorProject = (TextView) findViewById(R.id.tvEditorProject);
-        tvCurrentFilePath = (TextView) findViewById(R.id.tvCurrentFilePath);
-        tvIssueTitle = (TextView) findViewById(R.id.tvIssueTitle);
-        tvIssueFix = (TextView) findViewById(R.id.tvIssueFix);
+        tvEditorProject = (TextView) editorPane.findViewById(R.id.tvEditorProject);
+        tvCurrentFilePath = (TextView) editorPane.findViewById(R.id.tvCurrentFilePath);
+        tvIssueTitle = (TextView) editorPane.findViewById(R.id.tvIssueTitle);
+        tvIssueFix = (TextView) editorPane.findViewById(R.id.tvIssueFix);
         btnBackHome = (Button) findViewById(R.id.btnBackHome);
         btnSettings = (Button) findViewById(R.id.btnSettings);
         btnFabAdd = (Button) findViewById(R.id.btnFabAdd);
         btnCreateAction = (Button) findViewById(R.id.btnCreateAction);
         btnImportAction = (Button) findViewById(R.id.btnImportAction);
-        btnToggleFiles = (Button) findViewById(R.id.btnToggleFiles);
-        btnBug = (Button) findViewById(R.id.btnBug);
-        btnSaveFile = (Button) findViewById(R.id.btnSaveFile);
-        btnBuild = (Button) findViewById(R.id.btnBuild);
-        btnCopyFix = (Button) findViewById(R.id.btnCopyFix);
-        lvProjects = (ListView) findViewById(R.id.lvProjects);
-        lvFiles = (ListView) findViewById(R.id.lvFiles);
-        etEditor = (CodeEditorView) findViewById(R.id.etEditor);
+        btnToggleFiles = (Button) editorPane.findViewById(R.id.btnToggleFiles);
+        btnBug = (Button) editorPane.findViewById(R.id.btnBug);
+        btnSaveFile = (Button) editorPane.findViewById(R.id.btnSaveFile);
+        btnBuild = (Button) editorPane.findViewById(R.id.btnBuild);
+        btnCopyFix = (Button) editorPane.findViewById(R.id.btnCopyFix);
+        lvProjects = (ListView) homePane.findViewById(R.id.lvProjects);
+        lvFiles = (ListView) editorPane.findViewById(R.id.lvFiles);
+        etEditor = (CodeEditorView) editorPane.findViewById(R.id.etEditor);
         progressOverlay = findViewById(R.id.progressOverlay);
         progressCard = findViewById(R.id.progressCard);
         tvProgressTitle = (TextView) findViewById(R.id.tvProgressTitle);
@@ -266,7 +287,6 @@ public class MainActivity extends Activity {
         btnBackHome.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                flushPendingAutoSave();
                 showHome();
             }
         });
@@ -441,9 +461,8 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void showHome() {
-        homePane.setVisibility(View.VISIBLE);
-        editorPane.setVisibility(View.GONE);
+    private void onSwipeToHome() {
+        flushPendingAutoSave();
         btnBackHome.setVisibility(View.GONE);
         btnFabAdd.setVisibility(View.VISIBLE);
         btnToggleFiles.setText("目录");
@@ -457,11 +476,15 @@ public class MainActivity extends Activity {
         clearEditor();
     }
 
+    private void showHome() {
+        flushPendingAutoSave();
+        viewPager.setCurrentItem(0, true);
+    }
+
     private void openProject(ProjectEntry entry) {
         currentProject = entry;
         projectPrepared = true;
-        homePane.setVisibility(View.GONE);
-        editorPane.setVisibility(View.VISIBLE);
+        viewPager.setCurrentItem(1, true);
         btnBackHome.setVisibility(View.VISIBLE);
         btnFabAdd.setVisibility(View.GONE);
         hideAddActionOverlay(false);
@@ -618,30 +641,30 @@ public class MainActivity extends Activity {
         final EditText etVersionName = createDialogField("版本号", "1.0.0", "1.0.0");
         final EditText etVersionCode = createDialogField("版本代码", "1", "1");
         etVersionCode.setInputType(InputType.TYPE_CLASS_NUMBER);
-        final String[] minLabels = {"安卓 10", "安卓 9", "安卓 8.1"};
-        final int[] minValues = {29, 28, 27};
-        final String[] targetLabels = {"安卓 11", "安卓 12", "安卓 13", "安卓 14", "安卓 15", "安卓 16"};
-        final int[] targetValues = {30, 31, 33, 34, 35, 36};
-        final int[] minSelection = {0};
-        final int[] targetSelection = {5};
-        final Button btnMinSdk = createDialogSelectButton("安卓版本：安卓 10（最低）");
+        final String[] minLabels = {"安卓 16", "安卓 15", "安卓 14", "安卓 13", "安卓 12L", "安卓 12", "安卓 11", "安卓 10", "安卓 9", "安卓 8.1"};
+        final int[] minValues = {36, 35, 34, 33, 32, 31, 30, 29, 28, 27};
+        final String[] targetLabels = {"安卓 16", "安卓 15", "安卓 14", "安卓 13", "安卓 12L", "安卓 12", "安卓 11"};
+        final int[] targetValues = {36, 35, 34, 33, 32, 31, 30};
+        final int[] minSelection = {8};
+        final int[] targetSelection = {0};
+        final Button btnMinSdk = createDialogSelectButton("最低版本：安卓 8.1");
         final Button btnTargetSdk = createDialogSelectButton("最高版本：安卓 16");
         final ImagePickerTarget iconTarget = buildImagePickerCard("应用图标", "建议使用方形 png / webp，选中后会直接显示预览");
         final ImagePickerTarget splashTarget = buildImagePickerCard("启动图", "支持 png / jpg / webp，创建项目时会自动使用缓存文件");
 
         btnMinSdk.setOnClickListener(v -> showOptionListDialog(
-            "安卓版本",
-            "这里只保留安卓 10 到安卓 8.1，直接选最低兼容版本。",
+            "最低版本",
+            "选择应用兼容的最低 Android 版本（安卓 8.1 到安卓 16）。",
             minLabels,
             minSelection[0],
             which -> {
                 minSelection[0] = which;
-                btnMinSdk.setText("安卓版本：" + minLabels[which] + "（最低）");
+                btnMinSdk.setText("最低版本：" + minLabels[which]);
             }
         ));
         btnTargetSdk.setOnClickListener(v -> showOptionListDialog(
             "最高版本",
-            "这里是当前生成项目的最高支持版本，范围固定为安卓 11 到安卓 16。",
+            "选择目标编译版本（安卓 11 到安卓 16）。",
             targetLabels,
             targetSelection[0],
             which -> {
@@ -1812,7 +1835,7 @@ public class MainActivity extends Activity {
             environmentManager.saveSelectedNdkIndex(recommendedNdk);
             selectedJdkIndex = recommendedJdk;
             selectedNdkIndex = recommendedNdk;
-            executeDetectAndBuild();
+            ensureToolchainAndBuild(recommendedJdk, recommendedNdk);
         });
         btnNeutral.setOnClickListener(v -> {
             dialog.dismiss();
@@ -1836,11 +1859,74 @@ public class MainActivity extends Activity {
                         environmentManager.saveDownloadRoute(routeValues[routeIndex]);
                         selectedJdkIndex = jdkIndex;
                         selectedNdkIndex = ndkIndex;
-                        executeDetectAndBuild();
+                        ensureToolchainAndBuild(jdkIndex, ndkIndex);
                     }
                 )
             )
         );
+    }
+
+    private void ensureToolchainAndBuild(final int jdkIndex, final int ndkIndex) {
+        environmentState = environmentManager.loadState();
+        final boolean jdkInstalled = environmentManager.isSelectedJdkInstalled(jdkIndex, environmentState);
+        final boolean ndkInstalled = environmentManager.isSelectedNdkInstalled(ndkIndex, environmentState);
+        if (jdkInstalled && ndkInstalled) {
+            executeDetectAndBuild();
+            return;
+        }
+        final ToolchainInstaller installer = new ToolchainInstaller(this, environmentManager);
+        final ToolchainInstaller.InstallListener jdkListener = new ToolchainInstaller.InstallListener() {
+            @Override
+            public void onProgress(String message, int percent, boolean indeterminate) {
+                updateProgressDialog(message);
+            }
+            @Override
+            public void onSuccess(String installedDir) {
+                environmentState = environmentManager.loadState();
+                if (ndkInstalled) {
+                    dismissProgressDialog();
+                    executeDetectAndBuild();
+                }
+            }
+            @Override
+            public void onError(String message) {
+                dismissProgressDialog();
+                logManager.appendLogLine("ERROR", message);
+                toast("JDK 自动下载失败，请前往设置手动安装");
+            }
+        };
+        final ToolchainInstaller.InstallListener ndkListener = new ToolchainInstaller.InstallListener() {
+            @Override
+            public void onProgress(String message, int percent, boolean indeterminate) {
+                updateProgressDialog(message);
+            }
+            @Override
+            public void onSuccess(String installedDir) {
+                environmentState = environmentManager.loadState();
+                if (jdkInstalled) {
+                    dismissProgressDialog();
+                    executeDetectAndBuild();
+                }
+            }
+            @Override
+            public void onError(String message) {
+                dismissProgressDialog();
+                logManager.appendLogLine("ERROR", message);
+                toast("NDK 自动下载失败，请前往设置手动安装");
+            }
+        };
+        if (!jdkInstalled) {
+            showProgressDialog("自动下载 JDK", "正在下载 " + EnvironmentManager.JDK_NAMES[jdkIndex] + " ...");
+            installer.installJdk(jdkIndex, jdkListener);
+        }
+        if (!ndkInstalled) {
+            if (!jdkInstalled) {
+                updateProgressDialog("正在准备 NDK 下载...");
+            } else {
+                showProgressDialog("自动下载 NDK", "正在下载 " + EnvironmentManager.NDK_NAMES[ndkIndex] + " ...");
+            }
+            installer.installNdk(ndkIndex, ndkListener);
+        }
     }
 
     private void executeDetectAndBuild() {
@@ -2451,7 +2537,7 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
-        if (editorPane != null && editorPane.getVisibility() == View.VISIBLE && event != null) {
+        if (editorPane != null && viewPager.getCurrentItem() == 1 && event != null) {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     gestureStartX = event.getX();
@@ -2655,6 +2741,40 @@ public class MainActivity extends Activity {
         @Override
         public int compare(File a, File b) {
             return a.getName().compareToIgnoreCase(b.getName());
+        }
+    }
+
+    private static class ViewPager2Adapter extends RecyclerView.Adapter<ViewPager2Adapter.PageHolder> {
+
+        private final List<View> pages;
+
+        ViewPager2Adapter(List<View> pages) {
+            this.pages = pages;
+        }
+
+        @Override
+        public PageHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            return new PageHolder(pages.get(viewType));
+        }
+
+        @Override
+        public void onBindViewHolder(PageHolder holder, int position) {
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            return position;
+        }
+
+        @Override
+        public int getItemCount() {
+            return pages.size();
+        }
+
+        static class PageHolder extends RecyclerView.ViewHolder {
+            PageHolder(View itemView) {
+                super(itemView);
+            }
         }
     }
 

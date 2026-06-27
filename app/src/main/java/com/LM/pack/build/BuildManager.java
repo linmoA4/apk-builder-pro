@@ -1029,14 +1029,14 @@ public class BuildManager {
         ProgressCallback progressCallback,
         String label
     ) throws Exception {
-        byte[] buffer = new byte[8192];
+        byte[] buffer = new byte[65536];
         int len;
         long copiedBytes = 0L;
         int lastPercent = -1;
         while ((len = inputStream.read(buffer)) != -1) {
             outputStream.write(buffer, 0, len);
             copiedBytes += len;
-            if (progressCallback != null) {
+            if (progressCallback != null && copiedBytes % 262144 == 0) {
                 if (totalBytes > 0L) {
                     int percent = (int) Math.min(100L, (copiedBytes * 100L) / totalBytes);
                     if (percent != lastPercent) {
@@ -1052,6 +1052,9 @@ public class BuildManager {
                 }
             }
         }
+        if (progressCallback != null && totalBytes > 0L) {
+            progressCallback.onProgress(label + "  完成 " + formatSize(copiedBytes), 100, false);
+        }
         outputStream.flush();
     }
 
@@ -1063,13 +1066,13 @@ public class BuildManager {
         ProgressCallback progressCallback,
         String label
     ) throws Exception {
-        byte[] buffer = new byte[8192];
+        byte[] buffer = new byte[65536];
         int len;
         int lastPercent = -1;
         while ((len = inputStream.read(buffer)) != -1) {
             outputStream.write(buffer, 0, len);
             extractedBytes[0] += len;
-            if (progressCallback != null) {
+            if (progressCallback != null && extractedBytes[0] % 262144 == 0) {
                 if (totalBytes > 0L) {
                     int percent = (int) Math.min(100L, (extractedBytes[0] * 100L) / totalBytes);
                     if (percent != lastPercent) {

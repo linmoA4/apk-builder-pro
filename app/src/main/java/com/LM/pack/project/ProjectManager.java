@@ -153,9 +153,9 @@ public class ProjectManager {
         try {
             zip = new ZipFile(zipFile);
             long totalBytes = calculateZipTotalBytes(zip);
-            long copiedBytes = 0L;
-            int processedEntries = 0;
+            long[] copiedBytesArr = {0L};
             int totalEntries = Math.max(1, zip.size());
+            int[] processedCounter = {0};
             if (listener != null) {
                 listener.onProgress("正在分析压缩包结构...", 2);
             }
@@ -176,8 +176,8 @@ public class ProjectManager {
                     InputStream entryInputStream = null;
                     try {
                         outputStream = new FileOutputStream(outputFile);
-                        entryInputStream = new BufferedInputStream(zip.getInputStream(entry));
-                        copiedBytes += copyStreamWithCount(entryInputStream, outputStream);
+                        entryInputStream = new BufferedInputStream(zip.getInputStream(entry), 65536);
+                        copiedBytesArr[0] += copyStreamFast(entryInputStream, outputStream);
                     } finally {
                         if (entryInputStream != null) {
                             entryInputStream.close();
@@ -187,10 +187,11 @@ public class ProjectManager {
                         }
                     }
                 }
-                processedEntries++;
-                if (listener != null) {
-                    int percent = computeZipProgress(totalBytes, copiedBytes, processedEntries, totalEntries);
-                    listener.onProgress("正在解压：" + simplifyZipEntryName(entry.getName()), percent);
+                processedCounter[0]++;
+                if (listener != null && processedCounter[0] % 5 == 0) {
+                    int percent = computeZipProgress(totalBytes, copiedBytesArr[0], processedCounter[0], totalEntries);
+                    String entryName = simplifyZipEntryName(entry.getName());
+                    listener.onProgress("正在解压：" + entryName, percent);
                 }
             }
             if (listener != null) {
@@ -722,6 +723,7 @@ public class ProjectManager {
             + "    }\n"
             + "}\n\n"
             + "dependencies {\n"
+            + "    implementation 'com.github.bumptech.glide:glide:4.16.0'\n"
             + "}\n";
     }
 
@@ -729,7 +731,8 @@ public class ProjectManager {
         return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
             + "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"\n"
             + "    package=\"" + escapeXml(config.getPackageName()) + "\">\n\n"
-            + "    <uses-permission android:name=\"android.permission.INTERNET\" />\n\n"
+            + "    <uses-permission android:name=\"android.permission.INTERNET\" />\n"
+            + "    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" />\n\n"
             + "    <application\n"
             + "        android:allowBackup=\"true\"\n"
             + "        android:icon=\"@mipmap/ic_launcher\"\n"
@@ -753,12 +756,20 @@ public class ProjectManager {
         return "package " + config.getPackageName() + ";\n\n"
             + "import android.app.Activity;\n"
             + "import android.os.Bundle;\n"
-            + "import android.widget.TextView;\n\n"
+            + "import android.widget.ImageView;\n"
+            + "import android.widget.TextView;\n"
+            + "import com.bumptech.glide.Glide;\n\n"
             + "public class MainActivity extends Activity {\n\n"
             + "    @Override\n"
             + "    protected void onCreate(Bundle savedInstanceState) {\n"
             + "        super.onCreate(savedInstanceState);\n"
             + "        setContentView(R.layout.activity_main);\n"
+            + "        ImageView logoImage = (ImageView) findViewById(R.id.ivLogo);\n"
+            + "        Glide.with(this)\n"
+            + "            .load(\"https://picsum.photos/400\")\n"
+            + "            .placeholder(android.R.color.darker_gray)\n"
+            + "            .error(R.drawable.sample_logo)\n"
+            + "            .into(logoImage);\n"
             + "        TextView textView = (TextView) findViewById(R.id.tvHello);\n"
             + "        textView.setText(\"欢迎使用 " + escapeJava(config.getAppName()) + "\");\n"
             + "    }\n"
@@ -875,7 +886,7 @@ public class ProjectManager {
     }
 
     private void copyStream(InputStream inputStream, FileOutputStream outputStream) throws IOException {
-        byte[] buffer = new byte[8192];
+        byte[] buffer = new byte[65536];
         int len;
         while ((len = inputStream.read(buffer)) != -1) {
             outputStream.write(buffer, 0, len);
@@ -883,8 +894,8 @@ public class ProjectManager {
         outputStream.flush();
     }
 
-    private long copyStreamWithCount(InputStream inputStream, FileOutputStream outputStream) throws IOException {
-        byte[] buffer = new byte[8192];
+    private long copyStreamFast(InputStream inputStream, FileOutputStream outputStream) throws IOException {
+        byte[] buffer = new byte[65536];
         int len;
         long copied = 0L;
         while ((len = inputStream.read(buffer)) != -1) {
@@ -893,6 +904,10 @@ public class ProjectManager {
         }
         outputStream.flush();
         return copied;
+    }
+
+    private long copyStreamWithCount(InputStream inputStream, FileOutputStream outputStream) throws IOException {
+        return copyStreamFast(inputStream, outputStream);
     }
 
     private long calculateZipTotalBytes(ZipFile zipFile) {
