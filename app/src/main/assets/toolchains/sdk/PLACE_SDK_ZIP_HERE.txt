@@ -1,8 +1,0 @@
-将 Android SDK 命令行工具压缩包放到这里，并命名为：
-
-commandlinetools-linux-latest.zip
-
-当前代码会按以下路径读取：
-toolchains/sdk/commandlinetools-linux-latest.zip
-
-内置后，设置页会自动解压到应用工作目录下的 `sdk/`，并登记为当前 Android SDK。
