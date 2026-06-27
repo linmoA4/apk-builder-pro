@@ -605,6 +605,7 @@ public class ProjectManager {
         String updated = content;
         updated = updated.replaceAll("namespace\\s+'[^']+'", "namespace '" + Matcher.quoteReplacement(config.getPackageName()) + "'");
         updated = updated.replaceAll("applicationId\\s+\"[^\"]+\"", "applicationId \"" + Matcher.quoteReplacement(config.getPackageName()) + "\"");
+        updated = updated.replaceAll("compileSdkVersion\\s+\\d+", "compileSdkVersion " + config.getTargetSdk());
         updated = updated.replaceAll("minSdkVersion\\s+\\d+", "minSdkVersion " + config.getMinSdk());
         updated = updated.replaceAll("targetSdkVersion\\s+\\d+", "targetSdkVersion " + config.getTargetSdk());
         updated = updated.replaceAll("versionCode\\s+\\d+", "versionCode " + config.getVersionCode());
@@ -688,7 +689,7 @@ public class ProjectManager {
         return "apply plugin: 'com.android.application'\n\n"
             + "android {\n"
             + "    namespace '" + escapeGradle(config.getPackageName()) + "'\n"
-            + "    compileSdkVersion 36\n"
+            + "    compileSdkVersion " + config.getTargetSdk() + "\n"
             + "    ndkVersion \"27.2.12479018\"\n\n"
             + "    defaultConfig {\n"
             + "        applicationId \"" + escapeGradle(config.getPackageName()) + "\"\n"

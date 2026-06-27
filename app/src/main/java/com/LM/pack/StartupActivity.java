@@ -2,11 +2,16 @@ package com.LM.pack;
 
 import android.animation.ObjectAnimator;
 import android.animation.PropertyValuesHolder;
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.Build;
+import android.os.Environment;
 import android.os.Handler;
+import android.provider.Settings;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
@@ -21,12 +26,15 @@ import com.LM.pack.theme.ThemeManager;
 
 public class StartupActivity extends Activity {
 
+    private static final int REQUEST_STORAGE_PERMISSION = 7001;
+
     private Handler handler;
     private EnvironmentManager environmentManager;
     private ThemeManager themeManager;
     private EnvironmentState environmentState;
     private AppThemePalette palette;
     private boolean bootInProgress;
+    private boolean waitingForStoragePermission;
 
     private LiquidGlassBackgroundView bgSceneView;
     private ImageView ivAvatar;
@@ -52,7 +60,7 @@ public class StartupActivity extends Activity {
         applyThemeUi();
         bindEvents();
         startAvatarAnimation();
-        beginBootFlow();
+        ensureStorageAccessThenBoot();
     }
 
     private void bindViews() {
@@ -117,6 +125,20 @@ public class StartupActivity extends Activity {
         }, 420L);
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (!waitingForStoragePermission) {
+            return;
+        }
+        if (hasStorageAccess()) {
+            waitingForStoragePermission = false;
+            beginBootFlow();
+            return;
+        }
+        updateStatus("等待文件访问权限", "未授予完整文件访问权限时，导入项目和内部储存浏览会受限。", 12);
+    }
+
     private void runEnvironmentCheck() {
         environmentState = environmentManager.loadState();
         updateStatus("正在检查已登记环境", "启动不再阻塞下载，缺失环境可在设置页或打包时按推荐补齐。", 58);
@@ -162,6 +184,66 @@ public class StartupActivity extends Activity {
                 finish();
             }
         }, 260L);
+    }
+
+    private void ensureStorageAccessThenBoot() {
+        if (hasStorageAccess()) {
+            waitingForStoragePermission = false;
+            beginBootFlow();
+            return;
+        }
+        waitingForStoragePermission = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            updateStatus("正在申请文件访问权限", "首次进入会跳到设置页开启“管理所有文件”，返回后会自动继续。", 8);
+            openAllFilesAccessPage();
+            return;
+        }
+        updateStatus("正在申请储存权限", "安卓 10 及以下会直接申请储存权限，允许后自动进入工作台。", 8);
+        requestPermissions(
+            new String[] {
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            },
+            REQUEST_STORAGE_PERMISSION
+        );
+    }
+
+    private boolean hasStorageAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return Environment.isExternalStorageManager();
+        }
+        return checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void openAllFilesAccessPage() {
+        try {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+            intent.setData(android.net.Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+            } catch (Exception ignored) {
+                updateStatus("无法自动打开设置", "请手动到系统设置里开启文件访问权限后再返回。", 8);
+                btnRetry.setVisibility(View.VISIBLE);
+            }
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQUEST_STORAGE_PERMISSION) {
+            return;
+        }
+        if (hasStorageAccess()) {
+            waitingForStoragePermission = false;
+            beginBootFlow();
+            return;
+        }
+        updateStatus("储存权限未开启", "请允许储存权限后再继续使用项目导入和环境目录功能。", 8);
+        btnRetry.setVisibility(View.VISIBLE);
     }
 
     private String safeText(String value, String fallback) {

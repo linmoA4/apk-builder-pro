@@ -13,8 +13,8 @@ import android.view.View;
 
 public class LiquidGlassBackgroundView extends View {
 
-    private static final int NOISE_POINT_COUNT = 72;
-    private static final long FRAME_DELAY_MS = 48L;
+    private static final int NOISE_POINT_COUNT = 42;
+    private static final long FRAME_DELAY_MS = 56L;
 
     private final Paint basePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint orbPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -79,14 +79,14 @@ public class LiquidGlassBackgroundView extends View {
         canvas.drawRect(tempRect, basePaint);
 
         long now = SystemClock.uptimeMillis();
-        float t = now / 5000f;
-        drawOrb(canvas, width * (0.18f + 0.03f * (float) Math.sin(t)), height * 0.20f, width * 0.42f, palette.orbPrimary);
-        drawOrb(canvas, width * 0.82f, height * (0.30f + 0.04f * (float) Math.cos(t * 0.8f)), width * 0.38f, palette.orbSecondary);
-        drawOrb(canvas, width * (0.48f + 0.05f * (float) Math.sin(t * 0.65f)), height * 0.82f, width * 0.50f, palette.orbTertiary);
+        float t = now / 6800f;
+        drawOrb(canvas, width * (0.16f + 0.02f * (float) Math.sin(t)), height * 0.18f, width * 0.34f, palette.orbPrimary);
+        drawOrb(canvas, width * 0.84f, height * (0.28f + 0.03f * (float) Math.cos(t * 0.8f)), width * 0.31f, palette.orbSecondary);
+        drawOrb(canvas, width * (0.50f + 0.03f * (float) Math.sin(t * 0.65f)), height * 0.84f, width * 0.40f, palette.orbTertiary);
 
         if (palette.liquid) {
-            drawOrb(canvas, width * 0.52f, height * 0.42f, width * 0.26f, palette.orbSecondary);
-            drawNoise(canvas, width, height, 1.4f);
+            drawOrb(canvas, width * 0.52f, height * 0.42f, width * 0.18f, palette.orbSecondary);
+            drawNoise(canvas, width, height, 1.0f);
             if (getWindowVisibility() == VISIBLE) {
                 long delta = now - lastFrameTime;
                 if (delta >= FRAME_DELAY_MS) {
@@ -97,7 +97,7 @@ public class LiquidGlassBackgroundView extends View {
                 }
             }
         } else {
-            drawNoise(canvas, width, height, 0.8f);
+            drawNoise(canvas, width, height, 0.6f);
         }
     }
 

@@ -306,22 +306,22 @@ public class ThemeManager {
 
     public Drawable createPanelDrawable(AppThemePalette palette, boolean raised) {
         int fill = raised ? palette.surfaceRaised : palette.surface;
-        float radius = palette.liquid ? (raised ? 32f : 28f) : (raised ? 16f : 14f);
+        float radius = palette.liquid ? (raised ? 22f : 16f) : (raised ? 14f : 11f);
         return createSurfaceDrawable(fill, palette, radius);
     }
 
     public Drawable createEditorDrawable(AppThemePalette palette) {
-        float radius = palette.liquid ? 30f : 14f;
+        float radius = palette.liquid ? 18f : 12f;
         return createSurfaceDrawable(palette.surfaceMuted, palette, radius);
     }
 
     public Drawable createChipDrawable(AppThemePalette palette) {
-        float radius = palette.liquid ? 22f : 12f;
+        float radius = palette.liquid ? 14f : 10f;
         return createSurfaceDrawable(palette.chipSurface, palette, radius);
     }
 
     public Drawable createGhostButtonDrawable(AppThemePalette palette) {
-        float radius = palette.liquid ? 24f : 12f;
+        float radius = palette.liquid ? 14f : 10f;
         return createSurfaceDrawable(palette.chipSurface, palette, radius);
     }
 
@@ -338,12 +338,12 @@ public class ThemeManager {
     }
 
     public Drawable createWarningCardDrawable(AppThemePalette palette) {
-        float radius = palette.liquid ? 30f : 14f;
+        float radius = palette.liquid ? 18f : 12f;
         return createSurfaceDrawable(palette.warningSurface, palette, radius);
     }
 
     private Drawable createSolidButtonDrawable(AppThemePalette palette, int fill, int stroke) {
-        float radius = palette.liquid ? 26f : 12f;
+        float radius = palette.liquid ? 16f : 10f;
         GradientDrawable base = new GradientDrawable();
         base.setCornerRadius(dp(radius));
         base.setColor(fill);
@@ -370,8 +370,8 @@ public class ThemeManager {
         GradientDrawable gloss = new GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
             new int[] {
-                withAlpha(Color.WHITE, 42),
-                withAlpha(Color.WHITE, 10),
+                withAlpha(Color.WHITE, 28),
+                withAlpha(Color.WHITE, 7),
                 withAlpha(Color.WHITE, 0)
             }
         );

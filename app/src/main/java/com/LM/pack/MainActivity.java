@@ -496,20 +496,23 @@ public class MainActivity extends Activity {
     }
 
     private void showImportPicker() {
-        new AlertDialog.Builder(this)
-            .setTitle("导入项目")
-            .setItems(new CharSequence[] {"导入 zip 压缩包", "导入项目目录"}, new android.content.DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(android.content.DialogInterface dialog, int which) {
-                    if (which == 0) {
-                        launchZipImportPicker();
-                    } else if (which == 1) {
-                        launchFolderImportPicker();
-                    }
+        showStoragePicker("导入项目", true, false, new PathPickListener() {
+            @Override
+            public void onPicked(File path) {
+                if (path == null) {
+                    return;
                 }
-            })
-            .setNegativeButton("取消", null)
-            .show();
+                if (path.isDirectory()) {
+                    importFolderProject(path);
+                    return;
+                }
+                if (projectWorkspaceService.isZipFile(path)) {
+                    importZipProject(path);
+                    return;
+                }
+                toast("这里只支持导入文件夹或 zip 压缩包");
+            }
+        });
     }
 
     private void showCreateProjectDialog() {
@@ -519,21 +522,46 @@ public class MainActivity extends Activity {
         final EditText etVersionName = createDialogField("版本号", "1.0.0", "1.0.0");
         final EditText etVersionCode = createDialogField("版本代码", "1", "1");
         etVersionCode.setInputType(InputType.TYPE_CLASS_NUMBER);
-        final EditText etMinSdk = createDialogField("最低 SDK", "29", "29");
-        etMinSdk.setInputType(InputType.TYPE_CLASS_NUMBER);
-        final EditText etTargetSdk = createDialogField("目标 SDK", "36", "36");
-        etTargetSdk.setInputType(InputType.TYPE_CLASS_NUMBER);
+        final String[] minLabels = {"安卓 10", "安卓 9", "安卓 8.1"};
+        final int[] minValues = {29, 28, 27};
+        final String[] targetLabels = {"安卓 11", "安卓 12", "安卓 13", "安卓 14", "安卓 15", "安卓 16"};
+        final int[] targetValues = {30, 31, 33, 34, 35, 36};
+        final int[] minSelection = {0};
+        final int[] targetSelection = {5};
+        final Button btnMinSdk = createDialogSelectButton("安卓版本：安卓 10（最低）");
+        final Button btnTargetSdk = createDialogSelectButton("最高版本：安卓 16");
         final ImagePickerTarget iconTarget = buildImagePickerCard("应用图标", "建议使用方形 png / webp，选中后会直接显示预览");
         final ImagePickerTarget splashTarget = buildImagePickerCard("启动图", "支持 png / jpg / webp，创建项目时会自动使用缓存文件");
 
+        btnMinSdk.setOnClickListener(v -> showOptionListDialog(
+            "安卓版本",
+            "这里只保留安卓 10 到安卓 8.1，直接选最低兼容版本。",
+            minLabels,
+            minSelection[0],
+            which -> {
+                minSelection[0] = which;
+                btnMinSdk.setText("安卓版本：" + minLabels[which] + "（最低）");
+            }
+        ));
+        btnTargetSdk.setOnClickListener(v -> showOptionListDialog(
+            "最高版本",
+            "这里是当前生成项目的最高支持版本，范围固定为安卓 11 到安卓 16。",
+            targetLabels,
+            targetSelection[0],
+            which -> {
+                targetSelection[0] = which;
+                btnTargetSdk.setText("最高版本：" + targetLabels[which]);
+            }
+        ));
+
         container.addView(buildFieldLabel("创建一个可直接打包的 Android 空壳工程"));
+        container.addView(iconTarget.cardView);
         container.addView(etAppName);
         container.addView(etPackageName);
         container.addView(etVersionName);
         container.addView(etVersionCode);
-        container.addView(etMinSdk);
-        container.addView(etTargetSdk);
-        container.addView(iconTarget.cardView);
+        container.addView(btnMinSdk);
+        container.addView(btnTargetSdk);
         container.addView(splashTarget.cardView);
 
         new AlertDialog.Builder(this)
@@ -544,8 +572,8 @@ public class MainActivity extends Activity {
                 String packageName = etPackageName.getText().toString().trim();
                 String versionName = etVersionName.getText().toString().trim();
                 int versionCode = parseInt(etVersionCode.getText().toString().trim(), 1);
-                int minSdk = parseInt(etMinSdk.getText().toString().trim(), 29);
-                int targetSdk = parseInt(etTargetSdk.getText().toString().trim(), 36);
+                int minSdk = minValues[minSelection[0]];
+                int targetSdk = targetValues[targetSelection[0]];
 
                 if (appName.length() == 0) {
                     toast("应用名称不能为空");
@@ -669,13 +697,21 @@ public class MainActivity extends Activity {
         target.clearButton = clearButton;
         updateImagePickerCard(target, null);
 
-        pickButton.setOnClickListener(new View.OnClickListener() {
+        final Runnable openPicker = new Runnable() {
             @Override
-            public void onClick(View v) {
+            public void run() {
                 pendingImagePickerTarget = target;
                 launchImagePicker();
             }
+        };
+        pickButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openPicker.run();
+            }
         });
+        preview.setOnClickListener(v -> openPicker.run());
+        card.setOnClickListener(v -> openPicker.run());
         clearButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -699,10 +735,16 @@ public class MainActivity extends Activity {
     }
 
     private void launchImagePicker() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("image/*");
-        startActivityForResult(intent, REQUEST_PICK_IMAGE);
+        try {
+            Intent intent = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+            intent.setType("image/*");
+            startActivityForResult(intent, REQUEST_PICK_IMAGE);
+        } catch (Exception e) {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("image/*");
+            startActivityForResult(intent, REQUEST_PICK_IMAGE);
+        }
     }
 
     private void importZipProjectFromUri(final Uri uri) {
@@ -1011,6 +1053,47 @@ public class MainActivity extends Activity {
         return editText;
     }
 
+    private Button createDialogSelectButton(String text) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setAllCaps(false);
+        button.setPadding(dp(16), dp(14), dp(16), dp(14));
+        if (palette != null) {
+            button.setTextColor(palette.textPrimary);
+            button.setBackground(themeManager.createGhostButtonDrawable(palette));
+        } else {
+            button.setTextColor(Color.WHITE);
+            button.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        }
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(12);
+        button.setLayoutParams(params);
+        return button;
+    }
+
+    private void showOptionListDialog(String title, String subtitle, String[] labels, int checkedIndex, final OptionSelectListener listener) {
+        final Dialog dialog = createAppDialog(title, subtitle);
+        ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
+        Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
+        Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
+        Button btnNeutral = (Button) dialog.findViewById(R.id.btnDialogNeutral);
+        listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels));
+        if (checkedIndex >= 0 && checkedIndex < labels.length) {
+            listView.setSelection(checkedIndex);
+        }
+        listView.setOnItemClickListener((parent, view, which, id) -> {
+            dialog.dismiss();
+            if (listener != null) {
+                listener.onSelected(which);
+            }
+        });
+        btnPrimary.setVisibility(View.GONE);
+        btnNeutral.setVisibility(View.GONE);
+        btnSecondary.setText("关闭");
+        btnSecondary.setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
+    }
+
     private void showStoragePicker(final String title, final boolean folderSelect, final boolean zipOnly, final PathPickListener listener) {
         final LinearLayout container = buildDialogContainer();
         final TextView tvPath = buildFieldLabel("");
@@ -1024,12 +1107,12 @@ public class MainActivity extends Activity {
         container.addView(tvPath);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-            TextView tip = buildFieldLabel("提示：当前未授予“管理所有文件”权限，可能无法浏览下载目录或根目录。你可以先授权，再回来继续导入。");
+            TextView tip = buildFieldLabel("提示：当前还没有完整文件访问权限。开启后才能直接读取内部储存、文件夹和压缩包。");
             tip.setTextColor(palette == null ? Color.parseColor("#8FA3BF") : palette.textSecondary);
             container.addView(tip);
 
             Button btnGrant = new Button(this);
-            btnGrant.setText("去授权文件访问");
+                btnGrant.setText("去开启文件访问");
             if (palette != null) {
                 btnGrant.setTextColor(palette.textPrimary);
                 btnGrant.setBackground(themeManager.createPrimaryButtonDrawable(palette));
@@ -1070,7 +1153,7 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 populateFileBrowser(currentDir[0], visibleFiles, labels);
-                String suffix = folderSelect ? "  · 点文件夹继续进入，长按文件夹可直接导入" : "";
+                String suffix = folderSelect ? "  · 点文件夹进入，长按文件夹导入，点 zip 自动解压导入" : "";
                 tvPath.setText("当前位置：" + currentDir[0].getAbsolutePath() + suffix);
                 adapter.notifyDataSetChanged();
             }
@@ -1094,6 +1177,10 @@ public class MainActivity extends Activity {
                     return;
                 }
                 if (zipOnly && !projectWorkspaceService.isZipFile(clicked)) {
+                    toast("这里只能选择 zip 压缩包");
+                    return;
+                }
+                if (!folderSelect && !projectWorkspaceService.isZipFile(clicked)) {
                     toast("这里只能选择 zip 压缩包");
                     return;
                 }
@@ -1386,6 +1473,67 @@ public class MainActivity extends Activity {
             toast("已有打包任务正在执行");
             return;
         }
+        File projectDir = new File(currentProject.getProjectDir());
+        showBuildPreparationDialog(projectDir);
+    }
+
+    private void showBuildPreparationDialog(final File projectDir) {
+        final int recommendedJdk = environmentManager.recommendJdkIndex(projectDir);
+        final int recommendedNdk = environmentManager.recommendNdkIndex(projectDir);
+        final Dialog dialog = createAppDialog("打包环境推荐", buildProjectBuildSummary(projectDir));
+        ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
+        Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
+        Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
+        Button btnNeutral = (Button) dialog.findViewById(R.id.btnDialogNeutral);
+        String[] items = new String[] {
+            environmentManager.buildToolchainRecommendationSummary(projectDir),
+            "推荐架构：" + readAbiSummary(projectDir),
+            "当前路线：" + environmentManager.getDownloadRouteDisplayName()
+        };
+        listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, items));
+        btnPrimary.setText("推荐路线");
+        btnSecondary.setText("取消");
+        btnNeutral.setVisibility(View.VISIBLE);
+        btnNeutral.setText("自选路线");
+        btnSecondary.setOnClickListener(v -> dialog.dismiss());
+        btnPrimary.setOnClickListener(v -> {
+            dialog.dismiss();
+            environmentManager.saveSelectedJdkIndex(recommendedJdk);
+            environmentManager.saveSelectedNdkIndex(recommendedNdk);
+            selectedJdkIndex = recommendedJdk;
+            selectedNdkIndex = recommendedNdk;
+            executeDetectAndBuild();
+        });
+        btnNeutral.setOnClickListener(v -> {
+            dialog.dismiss();
+            showCustomBuildChoiceFlow(projectDir, recommendedJdk, recommendedNdk);
+        });
+        dialog.show();
+    }
+
+    private void showCustomBuildChoiceFlow(final File projectDir, final int recommendedJdk, final int recommendedNdk) {
+        final String[] jdkLabels = withRecommendation(EnvironmentManager.JDK_NAMES, recommendedJdk);
+        final String[] ndkLabels = withRecommendation(EnvironmentManager.NDK_NAMES, recommendedNdk);
+        final String[] routeLabels = {"国内路线（镜像优先）", "国外路线（官方优先）"};
+        final String[] routeValues = {EnvironmentManager.DOWNLOAD_ROUTE_CHINA, EnvironmentManager.DOWNLOAD_ROUTE_GLOBAL};
+        showOptionListDialog("自选 JDK", "打包前会先检查项目底层文件，再按你的选择继续。", jdkLabels, selectedJdkIndex, jdkIndex ->
+            showOptionListDialog("自选 NDK", "这里可以切换你偏好的 NDK 版本。", ndkLabels, selectedNdkIndex, ndkIndex ->
+                showOptionListDialog("下载路线", "安装环境和后续补齐文件时可走国内或国外路线。", routeLabels,
+                    EnvironmentManager.DOWNLOAD_ROUTE_GLOBAL.equals(environmentManager.loadDownloadRoute()) ? 1 : 0,
+                    routeIndex -> {
+                        environmentManager.saveSelectedJdkIndex(jdkIndex);
+                        environmentManager.saveSelectedNdkIndex(ndkIndex);
+                        environmentManager.saveDownloadRoute(routeValues[routeIndex]);
+                        selectedJdkIndex = jdkIndex;
+                        selectedNdkIndex = ndkIndex;
+                        executeDetectAndBuild();
+                    }
+                )
+            )
+        );
+    }
+
+    private void executeDetectAndBuild() {
         flushPendingAutoSave();
         showProgressDialog("检查错误代码", "正在进行打包前检查...");
         buildWorkflowService.checkAndBuild(
@@ -1446,6 +1594,53 @@ public class MainActivity extends Activity {
                 }
             }
         );
+    }
+
+    private String[] withRecommendation(String[] source, int recommendedIndex) {
+        String[] labels = new String[source.length];
+        for (int i = 0; i < source.length; i++) {
+            labels[i] = source[i] + (i == recommendedIndex ? "  · 推荐" : "");
+        }
+        return labels;
+    }
+
+    private String buildProjectBuildSummary(File projectDir) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("打包前会自动检查架构、Gradle Wrapper、Manifest、构建脚本和环境匹配。\n");
+        builder.append("当前检测到的架构：").append(readAbiSummary(projectDir)).append('\n');
+        builder.append("底层文件：").append(readProjectStructureSummary(projectDir)).append('\n');
+        builder.append("你可以直接走推荐路线，也可以改成自选路线。");
+        return builder.toString();
+    }
+
+    private String readAbiSummary(File projectDir) {
+        File appGradle = new File(projectDir, "app/build.gradle");
+        if (!appGradle.exists()) {
+            appGradle = new File(projectDir, "app/build.gradle.kts");
+        }
+        if (!appGradle.exists()) {
+            return "未识别";
+        }
+        try {
+            String content = projectWorkspaceService.readText(appGradle);
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("abiFilters\\s+([^\\n\\r]+)").matcher(content);
+            if (matcher.find()) {
+                String raw = matcher.group(1).replace("'", "").replace("\"", "").trim();
+                raw = raw.replace(",", " / ");
+                return raw.length() == 0 ? "未限制架构" : raw;
+            }
+        } catch (Exception e) {
+        }
+        return "未限制架构";
+    }
+
+    private String readProjectStructureSummary(File projectDir) {
+        ArrayList<String> parts = new ArrayList<String>();
+        parts.add(new File(projectDir, "app/src/main/AndroidManifest.xml").exists() ? "Manifest 已识别" : "Manifest 缺失");
+        parts.add((new File(projectDir, "app/build.gradle").exists() || new File(projectDir, "app/build.gradle.kts").exists()) ? "构建脚本已识别" : "构建脚本缺失");
+        parts.add(new File(projectDir, "gradle/wrapper/gradle-wrapper.properties").exists() ? "Wrapper 配置已识别" : "Wrapper 配置缺失");
+        parts.add(new File(projectDir, "gradle/wrapper/gradle-wrapper.jar").exists() ? "Wrapper Jar 已识别" : "Wrapper Jar 缺失");
+        return android.text.TextUtils.join(" / ", parts);
     }
 
     private void showIssueChooser() {
@@ -2157,5 +2352,9 @@ public class MainActivity extends Activity {
 
     private interface PathPickListener {
         void onPicked(File path);
+    }
+
+    private interface OptionSelectListener {
+        void onSelected(int which);
     }
 }

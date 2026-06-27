@@ -2,14 +2,21 @@ package com.LM.pack;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -40,7 +47,10 @@ public class SettingsActivity extends Activity {
     private LiquidGlassBackgroundView bgSceneView;
     private Button btnBackSettings;
     private Button btnPrepareEmbedded;
+    private Button btnEnvironmentDetect;
     private Button btnDownloadRoute;
+    private Button btnJdkPreference;
+    private Button btnNdkPreference;
     private Button btnAppearanceMode;
     private Button btnSurfaceStyle;
     private TextView tvEnvironmentSummary;
@@ -90,7 +100,10 @@ public class SettingsActivity extends Activity {
         bgSceneView = (LiquidGlassBackgroundView) findViewById(R.id.bgSceneView);
         btnBackSettings = (Button) findViewById(R.id.btnBackSettings);
         btnPrepareEmbedded = (Button) findViewById(R.id.btnPrepareEmbedded);
+        btnEnvironmentDetect = (Button) findViewById(R.id.btnEnvironmentDetect);
         btnDownloadRoute = (Button) findViewById(R.id.btnDownloadRoute);
+        btnJdkPreference = (Button) findViewById(R.id.btnJdkPreference);
+        btnNdkPreference = (Button) findViewById(R.id.btnNdkPreference);
         btnAppearanceMode = (Button) findViewById(R.id.btnAppearanceMode);
         btnSurfaceStyle = (Button) findViewById(R.id.btnSurfaceStyle);
         tvEnvironmentSummary = (TextView) findViewById(R.id.tvEnvironmentSummary);
@@ -109,7 +122,10 @@ public class SettingsActivity extends Activity {
     private void bindEvents() {
         btnBackSettings.setOnClickListener(v -> finish());
         btnPrepareEmbedded.setOnClickListener(v -> maybePrepareExternalTools(true));
+        btnEnvironmentDetect.setOnClickListener(v -> showEnvironmentDetectDialog());
         btnDownloadRoute.setOnClickListener(v -> showDownloadRouteDialog());
+        btnJdkPreference.setOnClickListener(v -> showJdkPreferenceDialog());
+        btnNdkPreference.setOnClickListener(v -> showNdkPreferenceDialog());
         btnAppearanceMode.setOnClickListener(v -> showAppearanceModeDialog());
         btnSurfaceStyle.setOnClickListener(v -> showSurfaceStyleDialog());
     }
@@ -139,6 +155,8 @@ public class SettingsActivity extends Activity {
         tvDirectoryPlan.setText(buildDirectoryPlan());
         btnPrepareEmbedded.setText(buildPrepareButtonText());
         btnDownloadRoute.setText("下载路线：" + environmentManager.getDownloadRouteDisplayName());
+        btnJdkPreference.setText("JDK 偏好：" + simplifyToolLabel(environmentManager.getSelectedJdkName(selectedJdkIndex)));
+        btnNdkPreference.setText("NDK 偏好：" + simplifyToolLabel(environmentManager.getSelectedNdkName(selectedNdkIndex)));
     }
 
     private void maybePrepareExternalTools(boolean userTriggered) {
@@ -309,16 +327,11 @@ public class SettingsActivity extends Activity {
                 break;
             }
         }
-        new AlertDialog.Builder(this)
-            .setTitle("选择亮暗模式")
-            .setSingleChoiceItems(labels, checked, (dialog, which) -> {
-                themeManager.setAppearanceMode(values[which]);
-                applyThemeUi();
-                refreshUi();
-                dialog.dismiss();
-            })
-            .setNegativeButton("取消", null)
-            .show();
+        showOptionListDialog("亮暗模式", "不再用系统原生选择框，直接在应用里切换。", labels, checked, which -> {
+            themeManager.setAppearanceMode(values[which]);
+            applyThemeUi();
+            refreshUi();
+        });
     }
 
     private void showDownloadRouteDialog() {
@@ -326,32 +339,156 @@ public class SettingsActivity extends Activity {
         final String[] values = {EnvironmentManager.DOWNLOAD_ROUTE_CHINA, EnvironmentManager.DOWNLOAD_ROUTE_GLOBAL};
         String currentRoute = environmentManager.loadDownloadRoute();
         int checked = EnvironmentManager.DOWNLOAD_ROUTE_GLOBAL.equals(currentRoute) ? 1 : 0;
-        new AlertDialog.Builder(this)
-            .setTitle("选择下载路线")
-            .setSingleChoiceItems(labels, checked, (dialog, which) -> {
-                environmentManager.saveDownloadRoute(values[which]);
-                refreshUi();
-                toast("已切换为" + labels[which]);
-                dialog.dismiss();
-            })
-            .setNegativeButton("取消", null)
-            .show();
+        showOptionListDialog("下载路线", "安装环境时可以按国内或国外线路走直链。", labels, checked, which -> {
+            environmentManager.saveDownloadRoute(values[which]);
+            refreshUi();
+            toast("已切换为" + labels[which]);
+        });
     }
 
     private void showSurfaceStyleDialog() {
         final String[] labels = {"正常主题", "液态玻璃主题"};
         final String[] values = {ThemeManager.STYLE_NORMAL, ThemeManager.STYLE_LIQUID};
         int checked = ThemeManager.STYLE_LIQUID.equals(themeManager.getSurfaceStyle()) ? 1 : 0;
-        new AlertDialog.Builder(this)
-            .setTitle("选择主题材质")
-            .setSingleChoiceItems(labels, checked, (dialog, which) -> {
-                themeManager.setSurfaceStyle(values[which]);
-                applyThemeUi();
-                refreshUi();
-                dialog.dismiss();
-            })
-            .setNegativeButton("取消", null)
-            .show();
+        showOptionListDialog("主题材质", "液态玻璃已经改成更克制的圆角和更稳定的背景层次。", labels, checked, which -> {
+            themeManager.setSurfaceStyle(values[which]);
+            applyThemeUi();
+            refreshUi();
+        });
+    }
+
+    private void showJdkPreferenceDialog() {
+        String[] labels = new String[EnvironmentManager.JDK_NAMES.length];
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = simplifyToolLabel(EnvironmentManager.JDK_NAMES[i]);
+        }
+        showOptionListDialog("JDK 偏好", "这里保存你平时优先使用的 JDK 版本。", labels, selectedJdkIndex, which -> {
+            environmentManager.saveSelectedJdkIndex(which);
+            selectedJdkIndex = which;
+            refreshUi();
+        });
+    }
+
+    private void showNdkPreferenceDialog() {
+        String[] labels = new String[EnvironmentManager.NDK_NAMES.length];
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = simplifyToolLabel(EnvironmentManager.NDK_NAMES[i]);
+        }
+        showOptionListDialog("NDK 偏好", "这里保存你平时优先使用的 NDK 版本。", labels, selectedNdkIndex, which -> {
+            environmentManager.saveSelectedNdkIndex(which);
+            selectedNdkIndex = which;
+            refreshUi();
+        });
+    }
+
+    private void showEnvironmentDetectDialog() {
+        final Dialog dialog = createAppDialog("环境检测结果", "这里会把全部环境的已装版本一次性列出来。");
+        ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
+        Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
+        Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
+        Button btnNeutral = (Button) dialog.findViewById(R.id.btnDialogNeutral);
+        btnPrimary.setVisibility(View.GONE);
+        btnNeutral.setVisibility(View.GONE);
+        btnSecondary.setText("关闭");
+        btnSecondary.setOnClickListener(v -> dialog.dismiss());
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(2), dp(2), dp(2), dp(2));
+        panel.addView(buildEnvironmentRow("Android SDK", environmentManager.isAndroidSdkRegistered(environmentState)
+            ? "已准备：" + safeText(environmentState.getAndroidSdkDir(), "未登记")
+            : "未准备"));
+        panel.addView(buildEnvironmentRow("JDK", buildInstalledJdkSummary()));
+        panel.addView(buildEnvironmentRow("NDK", buildInstalledNdkSummary()));
+        panel.addView(buildEnvironmentRow("Gradle", buildManager.isOfflineGradlePrepared() ? "8.7" : "未准备"));
+        panel.addView(buildEnvironmentRow("下载路线", environmentManager.getDownloadRouteDisplayName()));
+        panel.addView(buildEnvironmentRow("当前偏好", simplifyToolLabel(environmentManager.getSelectedJdkName(selectedJdkIndex))
+            + " / " + simplifyToolLabel(environmentManager.getSelectedNdkName(selectedNdkIndex))));
+
+        listView.addHeaderView(panel, null, false);
+        listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, new String[] {
+            "点上面的“自动检测环境”可以直接补齐缺失环境。"
+        }));
+        dialog.show();
+    }
+
+    private LinearLayout buildEnvironmentRow(String title, String value) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(12), dp(12), dp(12));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(8);
+        row.setLayoutParams(params);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(14));
+        bg.setColor(palette == null ? Color.parseColor("#182231") : palette.surface);
+        bg.setStroke(dp(1), palette == null ? Color.parseColor("#2D3C56") : palette.stroke);
+        row.setBackground(bg);
+
+        ImageView icon = new ImageView(this);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(18), dp(18));
+        iconParams.rightMargin = dp(10);
+        icon.setLayoutParams(iconParams);
+        icon.setImageResource(R.drawable.ic_small_check);
+        row.addView(icon);
+
+        LinearLayout textColumn = new LinearLayout(this);
+        textColumn.setOrientation(LinearLayout.VERTICAL);
+        textColumn.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText(title);
+        tvTitle.setTextColor(palette == null ? Color.WHITE : palette.textPrimary);
+        tvTitle.setTextSize(14f);
+        textColumn.addView(tvTitle);
+
+        TextView tvValue = new TextView(this);
+        tvValue.setText(value);
+        tvValue.setTextColor(palette == null ? Color.parseColor("#A2B0C3") : palette.textSecondary);
+        tvValue.setTextSize(12f);
+        tvValue.setPadding(0, dp(4), 0, 0);
+        textColumn.addView(tvValue);
+
+        row.addView(textColumn);
+        return row;
+    }
+
+    private void showOptionListDialog(String title, String subtitle, String[] labels, int checkedIndex, final OptionSelectListener listener) {
+        final Dialog dialog = createAppDialog(title, subtitle);
+        ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
+        Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
+        Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
+        Button btnNeutral = (Button) dialog.findViewById(R.id.btnDialogNeutral);
+        listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels));
+        if (checkedIndex >= 0 && checkedIndex < labels.length) {
+            listView.setSelection(checkedIndex);
+        }
+        listView.setOnItemClickListener((parent, view, which, id) -> {
+            dialog.dismiss();
+            if (listener != null) {
+                listener.onSelected(which);
+            }
+        });
+        btnPrimary.setVisibility(View.GONE);
+        btnNeutral.setVisibility(View.GONE);
+        btnSecondary.setText("关闭");
+        btnSecondary.setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
+    }
+
+    private Dialog createAppDialog(String title, String subtitle) {
+        Dialog dialog = new Dialog(this);
+        dialog.setContentView(R.layout.dialog_issue_center);
+        View content = dialog.findViewById(R.id.tvDialogTitle).getRootView();
+        if (palette != null) {
+            themeManager.applyTaggedStyles(content, palette);
+        }
+        ((TextView) dialog.findViewById(R.id.tvDialogTitle)).setText(title);
+        ((TextView) dialog.findViewById(R.id.tvDialogSubtitle)).setText(subtitle);
+        dialog.setCancelable(true);
+        return dialog;
     }
 
     private void showDirectoryDialog(final String title, File initialDir) {
@@ -459,14 +596,12 @@ public class SettingsActivity extends Activity {
     private String buildEnvironmentSummary() {
         StringBuilder builder = new StringBuilder();
         builder.append("Android SDK：").append(environmentManager.isAndroidSdkRegistered(environmentState) ? "已准备" : "未准备").append('\n');
-        builder.append("JDK 21：").append(environmentManager.isSelectedJdkInstalled(selectedJdkIndex, environmentState) ? "已准备" : "未准备").append('\n');
-        builder.append("NDK r27：").append(environmentManager.isSelectedNdkInstalled(selectedNdkIndex, environmentState) ? "已准备" : "未准备").append('\n');
-        builder.append("Gradle 8.7：").append(buildManager.isOfflineGradlePrepared() ? "已准备" : "未准备").append('\n');
-        builder.append("下载策略：").append(environmentManager.getDownloadRegionLabel()).append('\n');
-        builder.append("SDK 目录：").append(safeText(environmentState.getAndroidSdkDir(), "未登记")).append('\n');
-        builder.append("JDK 目录：").append(safeText(environmentManager.getSelectedJdkDir(selectedJdkIndex, environmentState), "未登记")).append('\n');
-        builder.append("NDK 目录：").append(safeText(environmentManager.getSelectedNdkDir(selectedNdkIndex, environmentState), "未登记")).append('\n');
-        builder.append("Gradle 目录：").append(environmentManager.getGradleInstallDir());
+        builder.append("JDK：").append(buildInstalledJdkSummary()).append('\n');
+        builder.append("NDK：").append(buildInstalledNdkSummary()).append('\n');
+        builder.append("Gradle：").append(buildManager.isOfflineGradlePrepared() ? "8.7 已准备" : "8.7 未准备").append('\n');
+        builder.append("当前路线：").append(environmentManager.getDownloadRegionLabel()).append('\n');
+        builder.append("当前偏好：").append(simplifyToolLabel(environmentManager.getSelectedJdkName(selectedJdkIndex))).append(" / ")
+            .append(simplifyToolLabel(environmentManager.getSelectedNdkName(selectedNdkIndex)));
         return builder.toString();
     }
 
@@ -477,16 +612,15 @@ public class SettingsActivity extends Activity {
         String jdkStatus = embeddedJdk >= 0 && environmentManager.isSelectedJdkInstalled(embeddedJdk, environmentState) ? "已准备" : "未准备";
         String ndkStatus = embeddedNdk >= 0 && environmentManager.isSelectedNdkInstalled(embeddedNdk, environmentState) ? "已准备" : "未准备";
         String gradleStatus = buildManager.isOfflineGradlePrepared() ? "已准备" : "未准备";
-        return "APP 不再内嵌工具链。这里只保留一个按钮，用外置下载链路准备 4 个核心环境。"
+        return "环境不是只有一个版本。这里会统一检查 Android SDK、JDK、NDK、Gradle。"
             + "\n当前路线：" + environmentManager.getDownloadRouteDisplayName()
-            + "\n当前状态：SDK " + sdkStatus + "；JDK 21 " + jdkStatus + "；NDK r27 " + ndkStatus + "；Gradle 8.7 " + gradleStatus + "。";
+            + "\n当前状态：SDK " + sdkStatus + "；JDK " + buildInstalledJdkSummary() + "；NDK " + buildInstalledNdkSummary() + "；Gradle " + gradleStatus + "。";
     }
 
     private String buildConfigSummary() {
-        return "当前按你手动选择的下载路线准备 Android SDK、JDK 21、NDK r27、Gradle 8.7。"
-            + "\n国内路线会优先走 `googledownloads.cn`、腾讯云等镜像；国外路线会优先走 `dl.google.com`、Adoptium、Gradle 官方源。"
-            + "\nJDK 按验真文档统一改为 Adoptium 稳定直链；国内路线下 JDK 仍会回落到这条稳定源。"
-            + "\n打包时会再结合项目的 `compileSdk`、`buildToolsVersion`、`ndkVersion`、Gradle Wrapper 自动推荐更合适的环境。";
+        return "你可以分别切换 JDK、NDK 和下载路线。"
+            + "\n国内路线优先镜像，国外路线优先官方源。"
+            + "\n打包前应用还会根据 `compileSdk`、`ndkVersion`、Gradle Wrapper 和架构做推荐。";
     }
 
     private String buildGradleSummary() {
@@ -504,7 +638,7 @@ public class SettingsActivity extends Activity {
         }
         String surfaceLabel = ThemeManager.STYLE_LIQUID.equals(themeManager.getSurfaceStyle()) ? "液态玻璃主题" : "正常主题";
         return "亮暗模式：" + appearanceLabel + "；材质主题：" + surfaceLabel
-            + "。液态玻璃会启用高斯感背景、冷色菲涅尔边缘和高透明大圆角容器。";
+            + "。液态玻璃已经改成更克制的圆角、边框和背景漂浮感。";
     }
 
     private String buildDirectoryPlan() {
@@ -528,12 +662,61 @@ public class SettingsActivity extends Activity {
             && environmentManager.isSelectedJdkInstalled(selectedJdkIndex, environmentState)
             && environmentManager.isSelectedNdkInstalled(selectedNdkIndex, environmentState)
             && buildManager.isOfflineGradlePrepared();
-        return allReady ? "重新检测外置环境" : "自动检测并准备外置环境";
+        return allReady ? "重新检测环境" : "自动检测环境";
     }
 
     private int blendProgress(int startPercent, int weightPercent, int stagePercent) {
         int safeStage = Math.max(0, Math.min(100, stagePercent));
         return Math.max(0, Math.min(100, startPercent + ((safeStage * weightPercent) / 100)));
+    }
+
+    private String buildInstalledJdkSummary() {
+        ArrayList<String> versions = new ArrayList<String>();
+        for (String name : environmentState.getInstalledJdks().keySet()) {
+            versions.add(extractVersionTag(name).replace("JDK ", ""));
+        }
+        if (versions.isEmpty()) {
+            return "未准备";
+        }
+        return android.text.TextUtils.join("、", versions);
+    }
+
+    private String buildInstalledNdkSummary() {
+        ArrayList<String> versions = new ArrayList<String>();
+        for (String name : environmentState.getInstalledNdks().keySet()) {
+            versions.add(extractVersionTag(name).replace("NDK ", "").replace(" ", ""));
+        }
+        if (versions.isEmpty()) {
+            return "未准备";
+        }
+        return android.text.TextUtils.join("、", versions);
+    }
+
+    private String simplifyToolLabel(String name) {
+        String value = safeText(name, "未选择");
+        return value.replace(" (长期支持版)", "")
+            .replace(" (当前推荐版)", "")
+            .replace(" (前沿版本)", "")
+            .replace(" (实验版本)", "")
+            .replace("稳定版，推荐", "推荐")
+            .trim();
+    }
+
+    private String extractVersionTag(String name) {
+        String clean = simplifyToolLabel(name);
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(JDK\\s*\\d+|NDK\\s*r\\d+[A-Za-z0-9]*)").matcher(clean);
+        if (matcher.find()) {
+            return matcher.group(1).replaceAll("\\s+", " ");
+        }
+        matcher = java.util.regex.Pattern.compile("(\\d+(?:\\.\\d+)?)").matcher(clean);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return clean;
+    }
+
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density);
     }
 
     private String safeText(String value, String fallback) {
@@ -545,5 +728,9 @@ public class SettingsActivity extends Activity {
 
     private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+
+    private interface OptionSelectListener {
+        void onSelected(int which);
     }
 }
