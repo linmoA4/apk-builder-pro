@@ -1,6 +1,9 @@
 package com.LM.pack.env;
 
+import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Build;
+import android.os.Environment;
 import com.LM.pack.model.EnvironmentState;
 import java.io.File;
 
@@ -13,6 +16,7 @@ public class EnvironmentManager {
     private static final String KEY_NDK_DIR = "installed_ndk_dir";
 
     private final SharedPreferences sharedPreferences;
+    private final File baseDir;
 
     public static final String[] JDK_NAMES = {
         "JDK 8 (长期支持版)",
@@ -59,8 +63,25 @@ public class EnvironmentManager {
         ""
     };
 
-    public EnvironmentManager(SharedPreferences sharedPreferences) {
+    public EnvironmentManager(Context context, SharedPreferences sharedPreferences) {
         this.sharedPreferences = sharedPreferences;
+        this.baseDir = resolveBaseDir(context);
+    }
+
+    private File resolveBaseDir(Context context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                if (Environment.isExternalStorageManager()) {
+                    return new File(Environment.getExternalStorageDirectory(), "LMBuildTools");
+                }
+            } catch (Throwable t) {
+            }
+        }
+        File external = context.getExternalFilesDir(null);
+        if (external == null) {
+            external = context.getFilesDir();
+        }
+        return new File(external, "LMBuildTools");
     }
 
     public EnvironmentState loadState() {
@@ -107,31 +128,47 @@ public class EnvironmentManager {
     }
 
     public String getJdkInstallDir(String jdkName) {
-        return "/storage/emulated/0/LMBuildTools/jdk/" + sanitizeDirName(jdkName);
+        return new File(new File(baseDir, "jdk"), sanitizeDirName(jdkName)).getAbsolutePath();
     }
 
     public String getNdkInstallDir(String ndkName) {
-        return "/storage/emulated/0/LMBuildTools/ndk/" + sanitizeDirName(ndkName);
+        return new File(new File(baseDir, "ndk"), sanitizeDirName(ndkName)).getAbsolutePath();
     }
 
     public String getProjectRootDir(String appName) {
-        return "/storage/emulated/0/LMBuildTools/projects/" + sanitizeDirName(appName);
+        return new File(new File(baseDir, "projects"), sanitizeDirName(appName)).getAbsolutePath();
     }
 
     public String getManagedProjectRootDir() {
-        return "/storage/emulated/0/LMBuildTools/projects";
+        return new File(baseDir, "projects").getAbsolutePath();
     }
 
     public String getImportedProjectRootDir() {
-        return "/storage/emulated/0/LMBuildTools/android/data";
+        return new File(new File(baseDir, "android"), "data").getAbsolutePath();
     }
 
     public String getImportTempDir() {
-        return "/storage/emulated/0/LMBuildTools/import_temp";
+        return new File(baseDir, "import_temp").getAbsolutePath();
     }
 
     public String getPackageCacheDir() {
-        return "/storage/emulated/0/LMBuildTools/packages";
+        return new File(baseDir, "packages").getAbsolutePath();
+    }
+
+    public String getBaseDir() {
+        return baseDir.getAbsolutePath();
+    }
+
+    public File getDefaultBrowseRootDir() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                if (Environment.isExternalStorageManager()) {
+                    return Environment.getExternalStorageDirectory();
+                }
+            } catch (Throwable t) {
+            }
+        }
+        return baseDir;
     }
 
     public String getJdkPackageArchivePath(int index) {

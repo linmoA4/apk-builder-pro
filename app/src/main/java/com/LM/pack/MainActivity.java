@@ -7,13 +7,18 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
+import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -137,7 +142,7 @@ public class MainActivity extends Activity {
 
         handler = new Handler(getMainLooper());
         SharedPreferences sharedPreferences = getSharedPreferences(EnvironmentManager.PREFS_NAME, MODE_PRIVATE);
-        environmentManager = new EnvironmentManager(sharedPreferences);
+        environmentManager = new EnvironmentManager(this, sharedPreferences);
         projectManager = new ProjectManager();
         buildManager = new BuildManager();
         toolchainInstaller = new ToolchainInstaller(this, environmentManager);
@@ -322,6 +327,7 @@ public class MainActivity extends Activity {
         editorPane.setVisibility(View.GONE);
         btnBackHome.setVisibility(View.GONE);
         btnFabAdd.setVisibility(View.VISIBLE);
+        btnToggleFiles.setText("文件");
         tvToolbarTitle.setText("APK Builder Pro");
         hideFileDrawer();
     }
@@ -334,13 +340,15 @@ public class MainActivity extends Activity {
         editorPane.setVisibility(View.VISIBLE);
         btnBackHome.setVisibility(View.VISIBLE);
         btnFabAdd.setVisibility(View.GONE);
-        tvToolbarTitle.setText(entry.getProjectName());
+        tvToolbarTitle.setText("编辑器");
         tvEditorProject.setText(entry.getProjectName() + "  ·  " + safeText(entry.getPackageName(), "未识别包名"));
         tvCurrentFilePath.setText(entry.getProjectDir());
         suggestionCard.setVisibility(View.GONE);
         lastBuildIssues.clear();
         updateBugButtonState();
         loadProjectFiles();
+        fileDrawer.setVisibility(View.VISIBLE);
+        btnToggleFiles.setText("隐藏");
         openDefaultEditorFile(entry);
         logManager.appendKeyValue("INFO", "已打开项目", entry.getProjectDir());
     }
@@ -461,7 +469,9 @@ public class MainActivity extends Activity {
                         refreshProjectList();
                         openProject(projectManager.readProjectEntry(rootDir));
                     } catch (Exception e) {
-                        logManager.appendLogLine("ERROR", "创建项目失败：" + e.getMessage());
+                        logManager.appendLogLine("ERROR", "创建项目失败：" + e.toString());
+                        logManager.appendKeyValue("ERROR", "目标目录", environmentManager.getProjectRootDir(appName));
+                        appendExceptionDetailToLogs(e);
                         toast("创建项目失败");
                     }
                 }
@@ -538,10 +548,41 @@ public class MainActivity extends Activity {
         final ArrayList<File> visibleFiles = new ArrayList<File>();
         final ArrayList<String> labels = new ArrayList<String>();
         final ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels);
-        final File[] currentDir = {new File("/storage/emulated/0")};
+        final File[] currentDir = {environmentManager.getDefaultBrowseRootDir()};
 
         listView.setAdapter(adapter);
         container.addView(tvPath);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            TextView tip = buildFieldLabel("提示：当前未授予“管理所有文件”权限，可能无法浏览下载目录/根目录。可以先授权，或把文件放到应用目录再导入。");
+            tip.setTextColor(Color.parseColor("#8FA3BF"));
+            container.addView(tip);
+
+            Button btnGrant = new Button(this);
+            btnGrant.setText("去授权文件访问");
+            btnGrant.setTextColor(Color.WHITE);
+            btnGrant.setBackgroundColor(Color.parseColor("#2563EB"));
+            btnGrant.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                        intent.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                        toast("请在设置里开启文件访问权限，然后返回继续导入");
+                    } catch (Exception e) {
+                        try {
+                            Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                            startActivity(intent);
+                        } catch (Exception ignored) {
+                            toast("无法打开授权页面，请到系统设置中手动开启文件访问权限");
+                        }
+                    }
+                }
+            });
+            container.addView(btnGrant);
+        }
+
         container.addView(listView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 900));
 
         final AlertDialog dialog = new AlertDialog.Builder(this)
@@ -654,7 +695,7 @@ public class MainActivity extends Activity {
                         @Override
                         public void run() {
                             dismissProgressDialog();
-                            logManager.appendLogLine("INFO", "压缩包已解压并导入到 android/data 目录。");
+                            logManager.appendLogLine("INFO", "压缩包已解压并导入到管理目录。");
                             logManager.appendKeyValue("INFO", "原压缩包保留", zipFile.getAbsolutePath());
                             logManager.appendKeyValue("INFO", "导入目录", importedRoot.getAbsolutePath());
                             refreshProjectList();
@@ -666,7 +707,8 @@ public class MainActivity extends Activity {
                         @Override
                         public void run() {
                             dismissProgressDialog();
-                            logManager.appendLogLine("ERROR", "导入压缩包失败：" + e.getMessage());
+                            logManager.appendLogLine("ERROR", "导入压缩包失败：" + e.toString());
+                            appendExceptionDetailToLogs(e);
                             toast("导入压缩包失败");
                         }
                     });
@@ -690,7 +732,7 @@ public class MainActivity extends Activity {
                         @Override
                         public void run() {
                             dismissProgressDialog();
-                            logManager.appendLogLine("INFO", "文件夹已导入到 android/data 目录。");
+                            logManager.appendLogLine("INFO", "文件夹已导入到管理目录。");
                             logManager.appendKeyValue("INFO", "源目录", folder.getAbsolutePath());
                             logManager.appendKeyValue("INFO", "实际导入目录", importedRoot.getAbsolutePath());
                             refreshProjectList();
@@ -702,7 +744,8 @@ public class MainActivity extends Activity {
                         @Override
                         public void run() {
                             dismissProgressDialog();
-                            logManager.appendLogLine("ERROR", "导入文件夹失败：" + e.getMessage());
+                            logManager.appendLogLine("ERROR", "导入文件夹失败：" + e.toString());
+                            appendExceptionDetailToLogs(e);
                             toast("导入文件夹失败");
                         }
                     });
@@ -830,11 +873,13 @@ public class MainActivity extends Activity {
             hideFileDrawer();
         } else {
             fileDrawer.setVisibility(View.VISIBLE);
+            btnToggleFiles.setText("隐藏");
         }
     }
 
     private void hideFileDrawer() {
         fileDrawer.setVisibility(View.GONE);
+        btnToggleFiles.setText("文件");
     }
 
     private void detectAndBuild() {
@@ -861,6 +906,7 @@ public class MainActivity extends Activity {
                             lastBuildIssues.addAll(issues);
                             updateBugButtonState();
                             logManager.appendLogLine("ERROR", "打包前检查未通过，已停止构建。");
+                            appendIssueListToLogs("预检查发现的问题", lastBuildIssues);
                             showIssueDialog("检查发现错误", lastBuildIssues);
                             return;
                         }
@@ -1024,6 +1070,7 @@ public class MainActivity extends Activity {
                             } else {
                                 logManager.appendLogLine("ERROR", result.getMessage());
                                 if (!lastBuildIssues.isEmpty()) {
+                                    appendIssueListToLogs("构建失败的问题列表", lastBuildIssues);
                                     showIssueDialog("构建失败，可点击定位错误", lastBuildIssues);
                                 } else {
                                     toast("打包失败");
@@ -1042,6 +1089,22 @@ public class MainActivity extends Activity {
             return;
         }
         showIssueDialog("错误列表", lastBuildIssues);
+    }
+
+    private void appendIssueListToLogs(String title, ArrayList<BuildIssue> issues) {
+        if (issues == null || issues.isEmpty()) {
+            return;
+        }
+        logManager.appendLogLine("ERROR", "---- " + title + "（" + issues.size() + "条）----");
+        for (int i = 0; i < issues.size(); i++) {
+            BuildIssue issue = issues.get(i);
+            logManager.appendLogLine("ERROR", issue.getDisplayText());
+            String suggestion = issue.getSuggestion();
+            if (suggestion != null && suggestion.length() > 0) {
+                logManager.appendLogLine("WARN", "建议: " + suggestion);
+            }
+        }
+        logManager.appendLogLine("ERROR", "---- 结束 ----");
     }
 
     private void showIssueDialog(String title, final ArrayList<BuildIssue> issues) {
@@ -1430,11 +1493,26 @@ public class MainActivity extends Activity {
         logManager.appendLogLine("INFO", "正在输出工具链目录规划。");
         logManager.appendKeyValue("INFO", "安装策略", "默认内嵌 JDK 21 + NDK r27c，其余版本联网下载");
         logManager.appendKeyValue("INFO", "安装包缓存目录", environmentManager.getPackageCacheDir());
-        logManager.appendKeyValue("INFO", "JDK 根目录", "/storage/emulated/0/LMBuildTools/jdk/");
-        logManager.appendKeyValue("INFO", "NDK 根目录", "/storage/emulated/0/LMBuildTools/ndk/");
-        logManager.appendKeyValue("INFO", "项目根目录", "/storage/emulated/0/LMBuildTools/projects/");
+        logManager.appendKeyValue("INFO", "工作目录", environmentManager.getBaseDir());
+        logManager.appendKeyValue("INFO", "JDK 根目录", new java.io.File(environmentManager.getBaseDir(), "jdk").getAbsolutePath());
+        logManager.appendKeyValue("INFO", "NDK 根目录", new java.io.File(environmentManager.getBaseDir(), "ndk").getAbsolutePath());
+        logManager.appendKeyValue("INFO", "项目根目录", environmentManager.getManagedProjectRootDir());
         logManager.appendKeyValue("INFO", "当前 JDK 目录", environmentManager.getJdkInstallDir(EnvironmentManager.JDK_NAMES[selectedJdkIndex]));
         logManager.appendKeyValue("INFO", "当前 NDK 目录", environmentManager.getNdkInstallDir(EnvironmentManager.NDK_NAMES[selectedNdkIndex]));
+    }
+
+    private void appendExceptionDetailToLogs(Exception e) {
+        if (e == null) {
+            return;
+        }
+        Throwable t = e;
+        int depth = 0;
+        while (t != null && depth < 4) {
+            logManager.appendLogLine("ERROR", "原因: " + t.getClass().getSimpleName() + " - " + safeText(t.getMessage(), ""));
+            t = t.getCause();
+            depth++;
+        }
+        logManager.appendLogLine("WARN", "提示: 如果报权限/无法创建目录，通常是 Android 11+ 的存储权限限制。建议把工程目录放到应用可写目录或改用系统文件选择器(SAF)。");
     }
 
     private void dumpAllToolResources() {
@@ -1550,15 +1628,17 @@ public class MainActivity extends Activity {
             if (convertView == null) {
                 LinearLayout card = new LinearLayout(MainActivity.this);
                 card.setOrientation(LinearLayout.HORIZONTAL);
-                card.setPadding(24, 24, 24, 24);
+                card.setGravity(Gravity.CENTER_VERTICAL);
+                card.setPadding(18, 18, 18, 18);
                 GradientDrawable drawable = new GradientDrawable();
-                drawable.setColor(Color.parseColor("#171C26"));
-                drawable.setCornerRadius(28f);
+                drawable.setColor(Color.parseColor("#162131"));
+                drawable.setCornerRadius(12f);
+                drawable.setStroke(1, Color.parseColor("#22324B"));
                 card.setBackground(drawable);
 
                 ImageView iconView = new ImageView(MainActivity.this);
-                LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(96, 96);
-                iconParams.rightMargin = 24;
+                LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(72, 72);
+                iconParams.rightMargin = 18;
                 iconView.setLayoutParams(iconParams);
                 iconView.setScaleType(ImageView.ScaleType.CENTER_CROP);
                 card.addView(iconView);
@@ -1569,16 +1649,18 @@ public class MainActivity extends Activity {
 
                 TextView title = new TextView(MainActivity.this);
                 title.setTextColor(Color.WHITE);
-                title.setTextSize(18f);
+                title.setTextSize(15f);
                 title.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
                 textColumn.addView(title);
 
                 TextView sub = new TextView(MainActivity.this);
                 sub.setTextColor(Color.parseColor("#95A1B6"));
+                sub.setTextSize(12f);
                 textColumn.addView(sub);
 
                 TextView meta = new TextView(MainActivity.this);
-                meta.setTextColor(Color.parseColor("#6EE7B7"));
+                meta.setTextColor(Color.parseColor("#78A8FF"));
+                meta.setTextSize(11f);
                 textColumn.addView(meta);
 
                 card.addView(textColumn);
@@ -1628,16 +1710,17 @@ public class MainActivity extends Activity {
             if (convertView == null) {
                 textView = new TextView(MainActivity.this);
                 textView.setTextColor(Color.WHITE);
-                textView.setPadding(12, 16, 12, 16);
+                textView.setPadding(12, 14, 12, 14);
+                textView.setTextSize(13f);
                 convertView = textView;
             } else {
                 textView = (TextView) convertView;
             }
             FileTreeItem item = fileTreeItems.get(position);
-            String prefix = item.isDirectory ? (expandedDirs.contains(item.file.getAbsolutePath()) ? "▾ " : "▸ ") : "• ";
-            textView.setPadding(20 + item.depth * 28, 16, 12, 16);
+            String prefix = item.isDirectory ? (expandedDirs.contains(item.file.getAbsolutePath()) ? "▾  " : "▸  ") : "·  ";
+            textView.setPadding(18 + item.depth * 26, 14, 12, 14);
             textView.setText(prefix + item.file.getName());
-            textView.setTextColor(item.isDirectory ? Color.WHITE : Color.parseColor("#C9D7EA"));
+            textView.setTextColor(item.isDirectory ? Color.parseColor("#F5F8FF") : Color.parseColor("#BFD1EA"));
             return convertView;
         }
     }
