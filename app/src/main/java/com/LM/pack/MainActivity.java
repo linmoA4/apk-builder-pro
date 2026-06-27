@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
         preflightChecker = new ProjectPreflightChecker(projectManager, environmentManager);
         projectWorkspaceService = new ProjectWorkspaceService(projectManager, environmentManager);
         projectFileService = new ProjectFileService();
-        buildWorkflowService = new BuildWorkflowService(buildManager, preflightChecker, handler);
+        buildWorkflowService = new BuildWorkflowService(buildManager, preflightChecker, environmentManager, handler);
         environmentState = environmentManager.loadState();
         selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
         selectedNdkIndex = environmentManager.loadSelectedNdkIndex();

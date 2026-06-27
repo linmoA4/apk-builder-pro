@@ -6,10 +6,16 @@ import android.os.Build;
 import android.os.Environment;
 import com.LM.pack.model.EnvironmentState;
 import java.io.File;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import org.json.JSONObject;
 
 public class EnvironmentManager {
 
     public static final String PREFS_NAME = "lm_pack_tool_state";
+    private static final String KEY_JDK_REGISTRY = "installed_jdk_registry";
+    private static final String KEY_NDK_REGISTRY = "installed_ndk_registry";
     private static final String KEY_JDK_NAME = "installed_jdk_name";
     private static final String KEY_JDK_DIR = "installed_jdk_dir";
     private static final String KEY_ANDROID_SDK_DIR = "android_sdk_dir";
@@ -88,27 +94,64 @@ public class EnvironmentManager {
     }
 
     public EnvironmentState loadState() {
+        LinkedHashMap<String, String> jdkRegistry = readRegistry(KEY_JDK_REGISTRY);
+        LinkedHashMap<String, String> ndkRegistry = readRegistry(KEY_NDK_REGISTRY);
+
+        boolean migrated = false;
+        String legacyJdkName = safeText(sharedPreferences.getString(KEY_JDK_NAME, ""));
+        String legacyJdkDir = safeText(sharedPreferences.getString(KEY_JDK_DIR, ""));
+        if (jdkRegistry.isEmpty() && legacyJdkName.length() > 0 && legacyJdkDir.length() > 0) {
+            jdkRegistry.put(legacyJdkName, legacyJdkDir);
+            migrated = true;
+        }
+
+        String legacyNdkName = safeText(sharedPreferences.getString(KEY_NDK_NAME, ""));
+        String legacyNdkDir = safeText(sharedPreferences.getString(KEY_NDK_DIR, ""));
+        if (ndkRegistry.isEmpty() && legacyNdkName.length() > 0 && legacyNdkDir.length() > 0) {
+            ndkRegistry.put(legacyNdkName, legacyNdkDir);
+            migrated = true;
+        }
+
+        if (migrated) {
+            sharedPreferences.edit()
+                .putString(KEY_JDK_REGISTRY, encodeRegistry(jdkRegistry))
+                .putString(KEY_NDK_REGISTRY, encodeRegistry(ndkRegistry))
+                .apply();
+        }
+
         return new EnvironmentState(
-            sharedPreferences.getString(KEY_JDK_NAME, ""),
-            sharedPreferences.getString(KEY_JDK_DIR, ""),
+            jdkRegistry,
             sharedPreferences.getString(KEY_ANDROID_SDK_DIR, ""),
-            sharedPreferences.getString(KEY_NDK_NAME, ""),
-            sharedPreferences.getString(KEY_NDK_DIR, "")
+            ndkRegistry
         );
     }
 
     public EnvironmentState saveInstalledJdk(String name, String dir) {
+        LinkedHashMap<String, String> registry = readRegistry(KEY_JDK_REGISTRY);
+        String cleanName = safeText(name);
+        String cleanDir = safeText(dir);
+        if (cleanName.length() > 0 && cleanDir.length() > 0) {
+            registry.put(cleanName, cleanDir);
+        }
         sharedPreferences.edit()
-            .putString(KEY_JDK_NAME, name)
-            .putString(KEY_JDK_DIR, dir)
+            .putString(KEY_JDK_REGISTRY, encodeRegistry(registry))
+            .putString(KEY_JDK_NAME, cleanName)
+            .putString(KEY_JDK_DIR, cleanDir)
             .apply();
         return loadState();
     }
 
     public EnvironmentState saveInstalledNdk(String name, String dir) {
+        LinkedHashMap<String, String> registry = readRegistry(KEY_NDK_REGISTRY);
+        String cleanName = safeText(name);
+        String cleanDir = safeText(dir);
+        if (cleanName.length() > 0 && cleanDir.length() > 0) {
+            registry.put(cleanName, cleanDir);
+        }
         sharedPreferences.edit()
-            .putString(KEY_NDK_NAME, name)
-            .putString(KEY_NDK_DIR, dir)
+            .putString(KEY_NDK_REGISTRY, encodeRegistry(registry))
+            .putString(KEY_NDK_NAME, cleanName)
+            .putString(KEY_NDK_DIR, cleanDir)
             .apply();
         return loadState();
     }
@@ -151,13 +194,11 @@ public class EnvironmentManager {
     }
 
     public boolean isSelectedJdkInstalled(int selectedJdkIndex, EnvironmentState state) {
-        return JDK_NAMES[selectedJdkIndex].equals(state.getInstalledJdkName())
-            && isExistingDirectory(state.getInstalledJdkDir());
+        return isExistingDirectory(getSelectedJdkDir(selectedJdkIndex, state));
     }
 
     public boolean isSelectedNdkInstalled(int selectedNdkIndex, EnvironmentState state) {
-        return NDK_NAMES[selectedNdkIndex].equals(state.getInstalledNdkName())
-            && isExistingDirectory(state.getInstalledNdkDir());
+        return isExistingDirectory(getSelectedNdkDir(selectedNdkIndex, state));
     }
 
     public boolean isAndroidSdkRegistered(EnvironmentState state) {
@@ -170,6 +211,28 @@ public class EnvironmentManager {
         }
         File file = new File(path);
         return file.exists() && file.isDirectory();
+    }
+
+    public String getSelectedJdkName(int selectedJdkIndex) {
+        return JDK_NAMES[normalizeJdkIndex(selectedJdkIndex)];
+    }
+
+    public String getSelectedNdkName(int selectedNdkIndex) {
+        return NDK_NAMES[normalizeNdkIndex(selectedNdkIndex)];
+    }
+
+    public String getSelectedJdkDir(int selectedJdkIndex, EnvironmentState state) {
+        if (state == null) {
+            return "";
+        }
+        return safeText(state.getInstalledJdkDir(getSelectedJdkName(selectedJdkIndex)));
+    }
+
+    public String getSelectedNdkDir(int selectedNdkIndex, EnvironmentState state) {
+        if (state == null) {
+            return "";
+        }
+        return safeText(state.getInstalledNdkDir(getSelectedNdkName(selectedNdkIndex)));
     }
 
     public String getJdkInstallDir(String jdkName) {
@@ -238,5 +301,63 @@ public class EnvironmentManager {
             .replace(")", "")
             .replace("，", "_")
             .replace("/", "_");
+    }
+
+    private int normalizeJdkIndex(int index) {
+        if (index < 0 || index >= JDK_NAMES.length) {
+            return 3;
+        }
+        return index;
+    }
+
+    private int normalizeNdkIndex(int index) {
+        if (index < 0 || index >= NDK_NAMES.length) {
+            return 0;
+        }
+        return index;
+    }
+
+    private LinkedHashMap<String, String> readRegistry(String key) {
+        LinkedHashMap<String, String> registry = new LinkedHashMap<String, String>();
+        String raw = sharedPreferences.getString(key, "");
+        if (raw == null || raw.trim().length() == 0) {
+            return registry;
+        }
+        try {
+            JSONObject jsonObject = new JSONObject(raw);
+            Iterator<String> iterator = jsonObject.keys();
+            while (iterator.hasNext()) {
+                String name = safeText(iterator.next());
+                String dir = safeText(jsonObject.optString(name, ""));
+                if (name.length() == 0 || dir.length() == 0) {
+                    continue;
+                }
+                registry.put(name, dir);
+            }
+        } catch (Exception e) {
+        }
+        return registry;
+    }
+
+    private String encodeRegistry(Map<String, String> registry) {
+        JSONObject jsonObject = new JSONObject();
+        if (registry != null) {
+            for (Map.Entry<String, String> entry : registry.entrySet()) {
+                String name = safeText(entry.getKey());
+                String dir = safeText(entry.getValue());
+                if (name.length() == 0 || dir.length() == 0) {
+                    continue;
+                }
+                try {
+                    jsonObject.put(name, dir);
+                } catch (Exception e) {
+                }
+            }
+        }
+        return jsonObject.toString();
+    }
+
+    private String safeText(String value) {
+        return value == null ? "" : value.trim();
     }
 }

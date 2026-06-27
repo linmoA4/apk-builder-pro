@@ -28,9 +28,10 @@
 - 真实打包逻辑已经从 `MainActivity` 移到了 `BuildManager`
 - 真实构建改为 `ProcessBuilder("./gradlew", "assembleDebug", "--stacktrace")`
 - 当前版本仍然保留了原有的老式 UI 和 `ProgressDialog`，这是为了先保证功能落地，再做第二轮界面和兼容性升级
+- 后续重构已补上 4 个核心修复：JDK/NDK 改为多版本登记、导入同名项目自动改名保护、包名识别支持 `namespace/applicationId/Manifest`、预检查改为只读模式
 
 已知限制：
 
-- `安装 JDK/NDK` 目前仍是“安装计划 + 已存在目录登记”，还没有自动下载和解压
+- `安装 JDK/NDK` 已具备下载与解压能力，但缓存完整性校验和失败恢复仍有继续加强空间
 - 对“导入项目”的包名修改属于轻量更新，复杂项目不保证自动完成全量包重命名
 - 本地验证时，Gradle Wrapper 下载 `gradle-8.7-bin.zip` 因连接超时未完成，所以没有跑完整构建

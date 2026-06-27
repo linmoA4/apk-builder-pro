@@ -18,6 +18,7 @@ import android.widget.Toast;
 import com.LM.pack.env.EnvironmentManager;
 import com.LM.pack.env.ToolchainInstaller;
 import com.LM.pack.model.EnvironmentState;
+import java.util.Map;
 
 public class SettingsActivity extends Activity {
 
@@ -263,8 +264,8 @@ public class SettingsActivity extends Activity {
     private void refreshUi() {
         environmentState = environmentManager.loadState();
         etSdkPath.setText(environmentState.getAndroidSdkDir());
-        etJdkPath.setText(environmentState.getInstalledJdkDir());
-        etNdkPath.setText(environmentState.getInstalledNdkDir());
+        etJdkPath.setText(environmentManager.getSelectedJdkDir(selectedJdkIndex, environmentState));
+        etNdkPath.setText(environmentManager.getSelectedNdkDir(selectedNdkIndex, environmentState));
         tvEnvironmentSummary.setText(buildEnvironmentSummary());
         tvSdkHint.setText(buildSdkHint());
         tvJdkSourceHint.setText("当前选择：" + EnvironmentManager.JDK_NAMES[selectedJdkIndex] + "  ·  " + describeJdkSource(selectedJdkIndex));
@@ -408,12 +409,16 @@ public class SettingsActivity extends Activity {
 
     private String buildEnvironmentSummary() {
         StringBuilder builder = new StringBuilder();
+        String selectedJdkName = environmentManager.getSelectedJdkName(selectedJdkIndex);
+        String selectedNdkName = environmentManager.getSelectedNdkName(selectedNdkIndex);
         builder.append("Android SDK 路径：").append(safeText(environmentState.getAndroidSdkDir(), "未登记")).append('\n');
         builder.append("Android SDK 可用：").append(environmentManager.isAndroidSdkRegistered(environmentState) ? "是" : "否").append('\n');
-        builder.append("已登记 JDK：").append(safeText(environmentState.getInstalledJdkName(), "未登记")).append('\n');
-        builder.append("JDK 路径：").append(safeText(environmentState.getInstalledJdkDir(), "未登记")).append('\n');
-        builder.append("已登记 NDK：").append(safeText(environmentState.getInstalledNdkName(), "未登记")).append('\n');
-        builder.append("NDK 路径：").append(safeText(environmentState.getInstalledNdkDir(), "未登记")).append('\n');
+        builder.append("当前选择 JDK：").append(selectedJdkName).append('\n');
+        builder.append("当前 JDK 路径：").append(safeText(environmentManager.getSelectedJdkDir(selectedJdkIndex, environmentState), "未登记")).append('\n');
+        builder.append("已登记 JDK 列表：").append(buildRegisteredToolSummary(environmentState.getInstalledJdks())).append('\n');
+        builder.append("当前选择 NDK：").append(selectedNdkName).append('\n');
+        builder.append("当前 NDK 路径：").append(safeText(environmentManager.getSelectedNdkDir(selectedNdkIndex, environmentState), "未登记")).append('\n');
+        builder.append("已登记 NDK 列表：").append(buildRegisteredToolSummary(environmentState.getInstalledNdks())).append('\n');
         builder.append("当前选择的 JDK 是否可用：")
             .append(environmentManager.isSelectedJdkInstalled(selectedJdkIndex, environmentState) ? "是" : "否")
             .append('\n');
@@ -424,15 +429,15 @@ public class SettingsActivity extends Activity {
 
     private String buildSdkHint() {
         if (environmentManager.isAndroidSdkRegistered(environmentState)) {
-            return "已登记有效 SDK。构建前会校验 `platforms/android-<compileSdk>`、`build-tools`、`platform-tools`，缺少 `local.properties` 时也会自动生成。";
+            return "已登记有效 SDK。构建前会校验 `platforms/android-<compileSdk>`、`build-tools`、`platform-tools`；预检查现在只读，不会再自动改写 `local.properties`。";
         }
-        return "请先登记 Android SDK 根目录。后续会用它写入 `local.properties` 的 `sdk.dir`，并检查平台包与 build-tools。";
+        return "请先登记 Android SDK 根目录。后续会用它做只读校验，并提示你手动补充 `local.properties` 的 `sdk.dir`。";
     }
 
     private String buildDirectoryPlan() {
         StringBuilder builder = new StringBuilder();
         builder.append("安装策略：默认优先使用内置 assets 中的 JDK 21 和 NDK r27c，其余版本联网下载。\n");
-        builder.append("Android SDK：这里只登记系统中已有的 SDK 根目录，不负责安装；构建前会优先复用这里的路径自动生成或修复项目 `local.properties`。\n");
+        builder.append("Android SDK：这里只登记系统中已有的 SDK 根目录，不负责安装；构建前会复用这里的路径做只读校验，不会再自动修改项目 `local.properties`。\n");
         builder.append("工作目录：").append(environmentManager.getBaseDir()).append('\n');
         builder.append("安装包缓存目录：").append(environmentManager.getPackageCacheDir()).append('\n');
         builder.append("已登记 SDK：").append(safeText(environmentState.getAndroidSdkDir(), "未登记")).append('\n');
@@ -465,6 +470,22 @@ public class SettingsActivity extends Activity {
             return "优先使用应用内置 assets 安装包";
         }
         return "联网下载并缓存到本地";
+    }
+
+    private String buildRegisteredToolSummary(Map<String, String> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return "未登记";
+        }
+        StringBuilder builder = new StringBuilder();
+        boolean first = true;
+        for (Map.Entry<String, String> entry : tools.entrySet()) {
+            if (!first) {
+                builder.append("；");
+            }
+            builder.append(entry.getKey());
+            first = false;
+        }
+        return builder.toString();
     }
 
     private GradientDrawable roundedDrawable(String fillColor, String strokeColor, int radiusDp) {

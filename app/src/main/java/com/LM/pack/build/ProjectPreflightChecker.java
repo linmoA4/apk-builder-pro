@@ -49,7 +49,7 @@ public class ProjectPreflightChecker {
 
         File appGradleFile = resolveAppGradleFile(projectDir);
         int compileSdk = readCompileSdk(projectDir, appGradleFile, issues);
-        String sdkDir = ensureAndReadSdkDir(projectDir, environmentState, issues);
+        String sdkDir = readSdkDirForValidation(projectDir, environmentState, issues);
         validateAndroidSdkPackages(projectDir, appGradleFile, sdkDir, compileSdk, issues);
 
         validateXmlFile(new File(projectDir, "app/src/main/AndroidManifest.xml"), issues);
@@ -114,16 +114,21 @@ public class ProjectPreflightChecker {
         return -1;
     }
 
-    private String ensureAndReadSdkDir(File projectDir, EnvironmentState environmentState, ArrayList<BuildIssue> issues) {
+    private String readSdkDirForValidation(File projectDir, EnvironmentState environmentState, ArrayList<BuildIssue> issues) {
         File localProperties = new File(projectDir, "local.properties");
         String preferredSdkDir = environmentState == null ? "" : safeText(environmentState.getAndroidSdkDir());
         try {
             if (!localProperties.exists()) {
-                if (!environmentManager.isExistingDirectory(preferredSdkDir)) {
-                    issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "缺少 local.properties。", "先在设置页登记有效的 Android SDK 路径，这样打包前才能自动生成 `sdk.dir`。"));
-                    return "";
-                }
-                writeLocalProperties(localProperties, preferredSdkDir);
+                issues.add(
+                    new BuildIssue(
+                        localProperties.getAbsolutePath(),
+                        -1,
+                        "缺少 local.properties。",
+                        environmentManager.isExistingDirectory(preferredSdkDir)
+                            ? "当前预检查只做只读检查，不会自动改写项目。请手动补充 `sdk.dir=`，或在单独修复流程里生成该文件。"
+                            : "先在设置页登记有效的 Android SDK 路径，再手动补充 `sdk.dir=`。"
+                    )
+                );
                 return preferredSdkDir;
             }
 
@@ -138,12 +143,19 @@ public class ProjectPreflightChecker {
             }
 
             if (environmentManager.isExistingDirectory(preferredSdkDir)) {
-                writeLocalProperties(localProperties, preferredSdkDir);
+                issues.add(
+                    new BuildIssue(
+                        localProperties.getAbsolutePath(),
+                        -1,
+                        "local.properties 中没有 sdk.dir。",
+                        "当前预检查不会自动修改项目。请手动补充 `sdk.dir=`，或在后续修复流程中生成该配置。"
+                    )
+                );
                 return preferredSdkDir;
             }
             issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "local.properties 中没有 sdk.dir。", "先在设置页登记 Android SDK 路径，或手动补充 `sdk.dir=`。"));
         } catch (Exception e) {
-            issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "读取或写入 local.properties 失败。", "检查文件编码、目录权限和可写性。"));
+            issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "读取 local.properties 失败。", "检查文件编码、目录权限和可读性。"));
         }
         return "";
     }
@@ -201,14 +213,6 @@ public class ProjectPreflightChecker {
         } catch (Exception e) {
         }
         return "";
-    }
-
-    private void writeLocalProperties(File localProperties, String sdkDir) throws Exception {
-        projectManager.writeText(localProperties, "sdk.dir=" + escapeLocalPropertiesPath(sdkDir) + "\n");
-    }
-
-    private String escapeLocalPropertiesPath(String value) {
-        return value.replace("\\", "\\\\").replace(":", "\\:");
     }
 
     private String unescapeLocalPropertiesPath(String value) {
@@ -279,28 +283,15 @@ public class ProjectPreflightChecker {
     private void validateTextFile(File file, ArrayList<BuildIssue> issues) {
         try {
             String content = projectManager.readText(file);
-            if (countChar(content, '{') != countChar(content, '}')) {
-                issues.add(new BuildIssue(file.getAbsolutePath(), -1, "大括号数量不匹配。", "检查是否有未闭合的代码块或多余的 `}`。"));
-            }
-            if (countChar(content, '(') != countChar(content, ')')) {
-                issues.add(new BuildIssue(file.getAbsolutePath(), -1, "小括号数量不匹配。", "检查方法调用和条件语句是否缺少括号。"));
-            }
             if (content.indexOf('\u0000') >= 0) {
                 issues.add(new BuildIssue(file.getAbsolutePath(), -1, "文件内容异常。", "重新保存该文件为 UTF-8 文本。"));
+            }
+            if (content.contains("<<<<<<<") || content.contains("=======") || content.contains(">>>>>>>")) {
+                issues.add(new BuildIssue(file.getAbsolutePath(), -1, "发现未解决的合并冲突标记。", "先处理 Git 合并冲突标记，再继续构建或编辑。"));
             }
         } catch (Exception e) {
             issues.add(new BuildIssue(file.getAbsolutePath(), -1, "读取文件失败：" + e.getMessage(), "确认文件可读且不是二进制格式。"));
         }
-    }
-
-    private int countChar(String content, char target) {
-        int count = 0;
-        for (int i = 0; i < content.length(); i++) {
-            if (content.charAt(i) == target) {
-                count++;
-            }
-        }
-        return count;
     }
 
     private int parseIntSafe(String value) {

@@ -205,8 +205,7 @@ public class ProjectManager {
         if (!looksLikeAndroidProject(detectedProjectDir)) {
             throw new IOException("目录结构不是有效的 Android 工程。");
         }
-        File targetDir = new File(destinationRootDir, sanitizeName(projectName));
-        clearDirectory(targetDir);
+        File targetDir = resolveImportTargetDir(new File(destinationRootDir), projectName);
         copyDirectory(detectedProjectDir, targetDir);
         ProjectEntry entry = readProjectEntry(targetDir);
         saveProjectMeta(
@@ -222,12 +221,13 @@ public class ProjectManager {
 
     public ProjectEntry readProjectEntry(File projectRoot) {
         Properties meta = loadProjectMeta(projectRoot);
+        String detectedPackageName = readPackageName(projectRoot);
         String projectName = firstNonEmpty(
             meta.getProperty("projectName"),
             readAppName(projectRoot),
             projectRoot.getName()
         );
-        String packageName = firstNonEmpty(meta.getProperty("packageName"), readPackageName(projectRoot), "");
+        String packageName = firstNonEmpty(detectedPackageName, meta.getProperty("packageName"), "");
         String versionName = firstNonEmpty(meta.getProperty("versionName"), readVersionName(projectRoot), "1.0");
         String iconPath = firstNonEmpty(meta.getProperty("iconPath"), findProjectIcon(projectRoot), "");
         String mode = firstNonEmpty(meta.getProperty("mode"), "项目");
@@ -250,18 +250,34 @@ public class ProjectManager {
     }
 
     public String readPackageName(File projectRoot) {
+        ArrayList<String> candidates = readPackageCandidates(projectRoot);
+        return candidates.isEmpty() ? "" : candidates.get(0);
+    }
+
+    public ArrayList<String> readPackageCandidates(File projectRoot) {
+        ArrayList<String> candidates = new ArrayList<String>();
         try {
-            File manifestFile = new File(projectRoot, "app/src/main/AndroidManifest.xml");
-            if (!manifestFile.exists()) {
-                return "";
+            File appGradle = new File(projectRoot, "app/build.gradle");
+            if (!appGradle.exists()) {
+                appGradle = new File(projectRoot, "app/build.gradle.kts");
             }
-            Matcher matcher = java.util.regex.Pattern.compile("package=\"([^\"]+)\"").matcher(readText(manifestFile));
-            if (matcher.find()) {
-                return matcher.group(1).trim();
+            if (appGradle.exists()) {
+                String gradleContent = readText(appGradle);
+                addUniqueNonEmpty(candidates, extractFirst(gradleContent, "namespace\\s*(?:=\\s*)?[\"']([^\"']+)[\"']"));
+                addUniqueNonEmpty(candidates, extractFirst(gradleContent, "applicationId\\s*(?:=\\s*)?[\"']([^\"']+)[\"']"));
             }
         } catch (Exception e) {
         }
-        return "";
+
+        try {
+            File manifestFile = new File(projectRoot, "app/src/main/AndroidManifest.xml");
+            if (manifestFile.exists()) {
+                String manifestContent = readText(manifestFile);
+                addUniqueNonEmpty(candidates, extractFirst(manifestContent, "package=\"([^\"]+)\""));
+            }
+        } catch (Exception e) {
+        }
+        return candidates;
     }
 
     public String readVersionName(File projectRoot) {
@@ -593,7 +609,8 @@ public class ProjectManager {
 
     private String buildGradleProperties() {
         return "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\n"
-            + "android.useAndroidX=false\n"
+            + "android.useAndroidX=true\n"
+            + "android.enableJetifier=true\n"
             + "android.nonTransitiveRClass=false\n"
             + "android.nonFinalResIds=false\n";
     }
@@ -642,16 +659,12 @@ public class ProjectManager {
         return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
             + "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"\n"
             + "    package=\"" + escapeXml(config.getPackageName()) + "\">\n\n"
-            + "    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" />\n"
-            + "    <uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\" />\n"
-            + "    <uses-permission android:name=\"android.permission.MANAGE_EXTERNAL_STORAGE\" />\n"
             + "    <uses-permission android:name=\"android.permission.INTERNET\" />\n\n"
             + "    <application\n"
             + "        android:allowBackup=\"true\"\n"
             + "        android:icon=\"@mipmap/ic_launcher\"\n"
             + "        android:roundIcon=\"@mipmap/ic_launcher\"\n"
             + "        android:label=\"@string/app_name\"\n"
-            + "        android:requestLegacyExternalStorage=\"true\"\n"
             + "        android:supportsRtl=\"true\"\n"
             + "        android:theme=\"@style/AppTheme\">\n\n"
             + "        <activity\n"
@@ -887,7 +900,63 @@ public class ProjectManager {
         }
     }
 
+    private File resolveImportTargetDir(File destinationRootDir, String projectName) throws IOException {
+        ensureDir(destinationRootDir);
+        String safeProjectName = sanitizeName(projectName);
+        if (safeProjectName.length() == 0) {
+            safeProjectName = "imported_project";
+        }
+        File preferred = new File(destinationRootDir, safeProjectName);
+        if (!preferred.exists()) {
+            return preferred;
+        }
+        if (preferred.isDirectory() && isDirectoryEmpty(preferred)) {
+            return preferred;
+        }
+        int suffix = 2;
+        while (true) {
+            File candidate = new File(destinationRootDir, safeProjectName + "-" + suffix);
+            if (!candidate.exists()) {
+                return candidate;
+            }
+            suffix++;
+        }
+    }
+
+    private boolean isDirectoryEmpty(File dir) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) {
+            return false;
+        }
+        File[] files = dir.listFiles();
+        return files == null || files.length == 0;
+    }
+
+    private void addUniqueNonEmpty(ArrayList<String> values, String candidate) {
+        if (candidate == null) {
+            return;
+        }
+        String value = candidate.trim();
+        if (value.length() == 0 || values.contains(value)) {
+            return;
+        }
+        values.add(value);
+    }
+
+    private String extractFirst(String content, String regex) {
+        if (content == null || content.length() == 0) {
+            return "";
+        }
+        Matcher matcher = java.util.regex.Pattern.compile(regex).matcher(content);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        return "";
+    }
+
     private String sanitizeName(String value) {
+        if (value == null) {
+            return "";
+        }
         return value.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
     }
 

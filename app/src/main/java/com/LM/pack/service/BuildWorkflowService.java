@@ -21,11 +21,18 @@ public class BuildWorkflowService {
 
     private final BuildManager buildManager;
     private final ProjectPreflightChecker preflightChecker;
+    private final EnvironmentManager environmentManager;
     private final Handler mainHandler;
 
-    public BuildWorkflowService(BuildManager buildManager, ProjectPreflightChecker preflightChecker, Handler mainHandler) {
+    public BuildWorkflowService(
+        BuildManager buildManager,
+        ProjectPreflightChecker preflightChecker,
+        EnvironmentManager environmentManager,
+        Handler mainHandler
+    ) {
         this.buildManager = buildManager;
         this.preflightChecker = preflightChecker;
+        this.environmentManager = environmentManager;
         this.mainHandler = mainHandler;
     }
 
@@ -55,7 +62,7 @@ public class BuildWorkflowService {
                             return;
                         }
                         listener.onBuildStarted();
-                        startRealBuild(currentProject, environmentState, selectedJdkIndex, listener);
+                        startRealBuild(currentProject, environmentState, selectedJdkIndex, selectedNdkIndex, listener);
                     }
                 });
             }
@@ -66,14 +73,17 @@ public class BuildWorkflowService {
         final ProjectEntry currentProject,
         final EnvironmentState environmentState,
         final int selectedJdkIndex,
+        final int selectedNdkIndex,
         final Listener listener
     ) {
+        String selectedJdkDir = environmentManager.getSelectedJdkDir(selectedJdkIndex, environmentState);
+        String selectedNdkDir = environmentManager.getSelectedNdkDir(selectedNdkIndex, environmentState);
         buildManager.runGradleBuild(
             currentProject.getProjectDir(),
-            environmentState.getInstalledJdkDir(),
+            selectedJdkDir,
             environmentState.getAndroidSdkDir(),
-            environmentState.getInstalledNdkDir(),
-            EnvironmentManager.JDK_NAMES[selectedJdkIndex],
+            selectedNdkDir,
+            environmentManager.getSelectedJdkName(selectedJdkIndex),
             new BuildManager.BuildListener() {
                 @Override
                 public void onLogLine(final String line) {

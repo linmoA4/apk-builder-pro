@@ -104,14 +104,21 @@ public class ProjectWorkspaceService {
         File manifestFile = new File(projectDir, "app/src/main/AndroidManifest.xml");
         File buildGradle = new File(projectDir, "app/build.gradle");
         File buildGradleKts = new File(projectDir, "app/build.gradle.kts");
-        String packageName = safeText(entry.getPackageName());
-        File mainJava = new File(projectDir, "app/src/main/java/" + packageName.replace('.', '/') + "/MainActivity.java");
-        File mainKt = new File(projectDir, "app/src/main/kotlin/" + packageName.replace('.', '/') + "/MainActivity.kt");
-        if (mainJava.exists()) {
-            return mainJava;
+        ArrayList<String> packageCandidates = projectManager.readPackageCandidates(projectDir);
+        String entryPackage = safeText(entry.getPackageName());
+        if (entryPackage.length() > 0 && !packageCandidates.contains(entryPackage)) {
+            packageCandidates.add(entryPackage);
         }
-        if (mainKt.exists()) {
-            return mainKt;
+        for (int i = 0; i < packageCandidates.size(); i++) {
+            String packageName = packageCandidates.get(i);
+            File mainJava = new File(projectDir, "app/src/main/java/" + packageName.replace('.', '/') + "/MainActivity.java");
+            File mainKt = new File(projectDir, "app/src/main/kotlin/" + packageName.replace('.', '/') + "/MainActivity.kt");
+            if (mainJava.exists()) {
+                return mainJava;
+            }
+            if (mainKt.exists()) {
+                return mainKt;
+            }
         }
         if (manifestFile.exists()) {
             return manifestFile;
