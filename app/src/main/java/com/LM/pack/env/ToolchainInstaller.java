@@ -45,18 +45,27 @@ public class ToolchainInstaller {
                         environmentManager.getJdkDownloadCandidates(index),
                         archiveFile,
                         "JDK 安装包",
-                        listener
+                        remapListener(listener, 0, 56)
                     );
 
                     File installRoot = new File(environmentManager.getJdkInstallDir(EnvironmentManager.JDK_NAMES[index]));
                     clearDirectory(installRoot);
                     ensureDir(installRoot);
-                    listener.onProgress("正在解压 JDK 到本地目录...", 0, false);
-                    extractTarGz(archiveFile, installRoot, listener, "正在解压 JDK");
+                    if (listener != null) {
+                        listener.onProgress("正在整理 JDK 安装目录...", 58, false);
+                    }
+                    extractTarGz(archiveFile, installRoot, remapListener(listener, 56, 44), "正在解压 JDK");
                     File actualDir = resolveInstalledHome(installRoot);
-                    listener.onSuccess(actualDir.getAbsolutePath());
+                    if (listener != null) {
+                        listener.onProgress("JDK 已准备完成", 100, false);
+                    }
+                    if (listener != null) {
+                        listener.onSuccess(actualDir.getAbsolutePath());
+                    }
                 } catch (Exception e) {
-                    listener.onError("JDK 安装失败：" + e.getMessage());
+                    if (listener != null) {
+                        listener.onError("JDK 安装失败：" + e.getMessage());
+                    }
                 }
             }
         }).start();
@@ -75,18 +84,27 @@ public class ToolchainInstaller {
                         environmentManager.getNdkDownloadCandidates(index),
                         archiveFile,
                         "NDK 安装包",
-                        listener
+                        remapListener(listener, 0, 56)
                     );
 
                     File installRoot = new File(environmentManager.getNdkInstallDir(EnvironmentManager.NDK_NAMES[index]));
                     clearDirectory(installRoot);
                     ensureDir(installRoot);
-                    listener.onProgress("正在解压 NDK 到本地目录...", 0, false);
-                    extractZip(archiveFile, installRoot, listener, "正在解压 NDK");
+                    if (listener != null) {
+                        listener.onProgress("正在整理 NDK 安装目录...", 58, false);
+                    }
+                    extractZip(archiveFile, installRoot, remapListener(listener, 56, 44), "正在解压 NDK");
                     File actualDir = resolveInstalledHome(installRoot);
-                    listener.onSuccess(actualDir.getAbsolutePath());
+                    if (listener != null) {
+                        listener.onProgress("NDK 已准备完成", 100, false);
+                    }
+                    if (listener != null) {
+                        listener.onSuccess(actualDir.getAbsolutePath());
+                    }
                 } catch (Exception e) {
-                    listener.onError("NDK 安装失败：" + e.getMessage());
+                    if (listener != null) {
+                        listener.onError("NDK 安装失败：" + e.getMessage());
+                    }
                 }
             }
         }).start();
@@ -104,18 +122,30 @@ public class ToolchainInstaller {
                         environmentManager.getSdkDownloadCandidates(),
                         archiveFile,
                         "Android SDK 命令行工具",
-                        listener
+                        remapListener(listener, 0, 54)
                     );
 
                     File installRoot = new File(environmentManager.getEmbeddedSdkInstallDir());
                     clearDirectory(installRoot);
                     ensureDir(installRoot);
-                    listener.onProgress("正在解压 Android SDK 命令行工具...", 0, false);
-                    extractZip(archiveFile, installRoot, listener, "正在解压 Android SDK");
+                    if (listener != null) {
+                        listener.onProgress("正在整理 Android SDK 目录...", 56, false);
+                    }
+                    extractZip(archiveFile, installRoot, remapListener(listener, 54, 42), "正在解压 Android SDK");
+                    if (listener != null) {
+                        listener.onProgress("正在整理命令行工具结构...", 97, false);
+                    }
                     normalizeEmbeddedSdkLayout(installRoot);
-                    listener.onSuccess(installRoot.getAbsolutePath());
+                    if (listener != null) {
+                        listener.onProgress("Android SDK 命令行工具已准备完成", 100, false);
+                    }
+                    if (listener != null) {
+                        listener.onSuccess(installRoot.getAbsolutePath());
+                    }
                 } catch (Exception e) {
-                    listener.onError("Android SDK 解压失败：" + e.getMessage());
+                    if (listener != null) {
+                        listener.onError("Android SDK 解压失败：" + e.getMessage());
+                    }
                 }
             }
         }).start();
@@ -128,11 +158,15 @@ public class ToolchainInstaller {
         InstallListener listener
     ) throws Exception {
         if (targetFile.exists() && targetFile.length() > 0) {
-            listener.onProgress("已找到本地缓存，跳过下载。", 100, false);
+            if (listener != null) {
+                listener.onProgress("已找到本地缓存，跳过下载。", 55, false);
+            }
             return;
         }
         String resolvedUrl = resolveDownloadUrl(candidateUrls, displayName, listener);
-        listener.onProgress("正在下载" + displayName + "...", 0, false);
+        if (listener != null) {
+            listener.onProgress("正在下载" + displayName + "...", 8, false);
+        }
         downloadToFile(resolvedUrl, targetFile, listener, "正在下载" + displayName);
     }
 
@@ -142,7 +176,9 @@ public class ToolchainInstaller {
         if (candidates.isEmpty()) {
             throw new IllegalStateException(displayName + " 没有可用下载地址");
         }
-        listener.onProgress("正在校验 " + displayName + " 下载链路...", 0, true);
+        if (listener != null) {
+            listener.onProgress("正在校验 " + displayName + " 下载链路...", 4, false);
+        }
         java.util.Iterator<String> iterator = candidates.iterator();
         while (iterator.hasNext()) {
             String candidate = iterator.next();
@@ -520,6 +556,38 @@ public class ToolchainInstaller {
             }
         }
         outputStream.flush();
+    }
+
+    private InstallListener remapListener(final InstallListener listener, final int startPercent, final int weightPercent) {
+        if (listener == null) {
+            return null;
+        }
+        return new InstallListener() {
+            @Override
+            public void onProgress(String message, int percent, boolean indeterminate) {
+                int safePercent = clamp(percent);
+                int mapped = Math.min(100, startPercent + ((safePercent * weightPercent) / 100));
+                listener.onProgress(message, mapped, false);
+            }
+
+            @Override
+            public void onSuccess(String installedDir) {
+            }
+
+            @Override
+            public void onError(String message) {
+            }
+        };
+    }
+
+    private int clamp(int value) {
+        if (value < 0) {
+            return 0;
+        }
+        if (value > 100) {
+            return 100;
+        }
+        return value;
     }
 
     private String simplifyEntryName(String entryName) {

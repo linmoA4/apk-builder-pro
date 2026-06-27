@@ -1,14 +1,16 @@
 package com.LM.pack;
 
+import android.Manifest;
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
 import android.animation.PropertyValuesHolder;
-import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.os.Bundle;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.provider.Settings;
@@ -16,11 +18,11 @@ import android.view.View;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
 import android.widget.ImageView;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import com.LM.pack.env.EnvironmentManager;
 import com.LM.pack.model.EnvironmentState;
 import com.LM.pack.theme.AppThemePalette;
+import com.LM.pack.theme.GlassProgressBarView;
 import com.LM.pack.theme.LiquidGlassBackgroundView;
 import com.LM.pack.theme.ThemeManager;
 
@@ -35,15 +37,20 @@ public class StartupActivity extends Activity {
     private AppThemePalette palette;
     private boolean bootInProgress;
     private boolean waitingForStoragePermission;
+    private boolean splashFinished;
 
     private LiquidGlassBackgroundView bgSceneView;
+    private View loadingContent;
+    private View splashOverlay;
     private ImageView ivAvatar;
+    private ImageView ivSplashAvatar;
     private TextView tvTitle;
     private TextView tvSubtitle;
     private TextView tvStatus;
-    private TextView tvProgress;
-    private ProgressBar progressBoot;
+    private TextView tvStatusHint;
+    private GlassProgressBarView progressBoot;
     private Button btnRetry;
+    private TextView[] stageViews;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,26 +66,38 @@ public class StartupActivity extends Activity {
         bindViews();
         applyThemeUi();
         bindEvents();
-        startAvatarAnimation();
-        ensureStorageAccessThenBoot();
+        prepareLoadingUi();
+        startSplashSequence();
     }
 
     private void bindViews() {
         bgSceneView = (LiquidGlassBackgroundView) findViewById(R.id.bgSceneView);
+        loadingContent = findViewById(R.id.loadingContent);
+        splashOverlay = findViewById(R.id.splashOverlay);
         ivAvatar = (ImageView) findViewById(R.id.ivAvatar);
+        ivSplashAvatar = (ImageView) findViewById(R.id.ivSplashAvatar);
         tvTitle = (TextView) findViewById(R.id.tvTitle);
         tvSubtitle = (TextView) findViewById(R.id.tvSubtitle);
         tvStatus = (TextView) findViewById(R.id.tvStatus);
-        tvProgress = (TextView) findViewById(R.id.tvProgress);
-        progressBoot = (ProgressBar) findViewById(R.id.progressBoot);
+        tvStatusHint = (TextView) findViewById(R.id.tvStatusHint);
+        progressBoot = (GlassProgressBarView) findViewById(R.id.progressBoot);
         btnRetry = (Button) findViewById(R.id.btnRetry);
+        stageViews = new TextView[] {
+            (TextView) findViewById(R.id.tvStageWelcome),
+            (TextView) findViewById(R.id.tvStagePrepare),
+            (TextView) findViewById(R.id.tvStageReady)
+        };
     }
 
     private void bindEvents() {
         btnRetry.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                beginBootFlow();
+                if (!splashFinished) {
+                    startSplashSequence();
+                    return;
+                }
+                ensureStorageAccessThenBoot();
             }
         });
     }
@@ -92,17 +111,86 @@ public class StartupActivity extends Activity {
         }
     }
 
+    private void prepareLoadingUi() {
+        loadingContent.setAlpha(0f);
+        loadingContent.setTranslationY(dp(14f));
+        splashOverlay.setAlpha(1f);
+        splashOverlay.setVisibility(View.VISIBLE);
+        btnRetry.setVisibility(View.GONE);
+        tvTitle.setText("正在进入工作台");
+        tvSubtitle.setText("正在为你恢复项目空间与常用能力");
+        progressBoot.setIndeterminate(true);
+        progressBoot.setProgress(12);
+        updateStatus("正在整理启动所需内容", "整个过程通常只需片刻，请稍等一下。", 10);
+    }
+
+    private void startSplashSequence() {
+        splashFinished = false;
+        splashOverlay.animate().cancel();
+        loadingContent.animate().cancel();
+        ivSplashAvatar.animate().cancel();
+
+        splashOverlay.setVisibility(View.VISIBLE);
+        splashOverlay.setAlpha(1f);
+        ivSplashAvatar.setScaleX(0.84f);
+        ivSplashAvatar.setScaleY(0.84f);
+        ivSplashAvatar.setAlpha(0f);
+        ivSplashAvatar.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(380L)
+            .setInterpolator(new DecelerateInterpolator())
+            .start();
+
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                loadingContent.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(520L)
+                    .setInterpolator(new DecelerateInterpolator())
+                    .start();
+
+                splashOverlay.animate()
+                    .alpha(0f)
+                    .setDuration(520L)
+                    .setInterpolator(new DecelerateInterpolator())
+                    .setListener(new AnimatorListenerAdapter() {
+                        @Override
+                        public void onAnimationEnd(Animator animation) {
+                            splashOverlay.setVisibility(View.GONE);
+                            splashOverlay.animate().setListener(null);
+                            splashFinished = true;
+                            startAvatarAnimation();
+                            ensureStorageAccessThenBoot();
+                        }
+                    })
+                    .start();
+
+                ivSplashAvatar.animate()
+                    .alpha(0f)
+                    .scaleX(1.14f)
+                    .scaleY(1.14f)
+                    .setDuration(520L)
+                    .setInterpolator(new DecelerateInterpolator())
+                    .start();
+            }
+        }, 420L);
+    }
+
     private void startAvatarAnimation() {
-        ivAvatar.setScaleX(1.32f);
-        ivAvatar.setScaleY(1.32f);
-        ivAvatar.setAlpha(0.92f);
+        ivAvatar.setScaleX(1.2f);
+        ivAvatar.setScaleY(1.2f);
+        ivAvatar.setAlpha(0.85f);
         ObjectAnimator animator = ObjectAnimator.ofPropertyValuesHolder(
             ivAvatar,
-            PropertyValuesHolder.ofFloat(View.SCALE_X, 1.32f, 1.0f),
-            PropertyValuesHolder.ofFloat(View.SCALE_Y, 1.32f, 1.0f),
-            PropertyValuesHolder.ofFloat(View.ALPHA, 0.92f, 1.0f)
+            PropertyValuesHolder.ofFloat(View.SCALE_X, 1.2f, 1.0f),
+            PropertyValuesHolder.ofFloat(View.SCALE_Y, 1.2f, 1.0f),
+            PropertyValuesHolder.ofFloat(View.ALPHA, 0.85f, 1.0f)
         );
-        animator.setDuration(950L);
+        animator.setDuration(820L);
         animator.setInterpolator(new DecelerateInterpolator());
         animator.start();
     }
@@ -113,16 +201,15 @@ public class StartupActivity extends Activity {
         }
         bootInProgress = true;
         btnRetry.setVisibility(View.GONE);
-        progressBoot.setMax(100);
-        progressBoot.setProgress(0);
-        updateStatus("正在切换外置环境模式", "不再解压 APK 内嵌工具链，启动时只做轻量检查。", 18);
+        progressBoot.setIndeterminate(true);
+        updateStatus("正在唤醒工作台", "正在同步上次使用状态并整理必要资源。", 18);
         handler.postDelayed(new Runnable() {
             @Override
             public void run() {
                 environmentState = environmentManager.loadState();
                 runEnvironmentCheck();
             }
-        }, 420L);
+        }, 360L);
     }
 
     @Override
@@ -136,12 +223,12 @@ public class StartupActivity extends Activity {
             beginBootFlow();
             return;
         }
-        updateStatus("等待文件访问权限", "未授予完整文件访问权限时，导入项目和内部储存浏览会受限。", 12);
+        updateStatus("等待你完成授权", "回到应用后会自动继续，无需重新开始。", 12);
     }
 
     private void runEnvironmentCheck() {
         environmentState = environmentManager.loadState();
-        updateStatus("正在检查已登记环境", "启动不再阻塞下载，缺失环境可在设置页或打包时按推荐补齐。", 58);
+        updateStatus("正在恢复常用能力", "正在让工作台回到可用状态。", 58);
         handler.postDelayed(new Runnable() {
             @Override
             public void run() {
@@ -149,27 +236,67 @@ public class StartupActivity extends Activity {
                 boolean jdkReady = environmentManager.isSelectedJdkInstalled(environmentManager.loadSelectedJdkIndex(), environmentState);
                 boolean ndkReady = environmentManager.isSelectedNdkInstalled(environmentManager.loadSelectedNdkIndex(), environmentState);
                 if (sdkReady && jdkReady && ndkReady) {
-                    updateStatus("检测到可用环境", "外置环境模式已启用，正在进入工作台。", 100);
+                    updateStatus("准备完成", "马上带你进入主界面。", 100);
                 } else {
-                    updateStatus("未检测到完整环境", "稍后可在设置页查看下载链接，或在打包时按项目自动推荐。", 100);
+                    updateStatus("基础内容已就绪", "缺少的构建能力稍后也能在设置页补齐。", 100);
                 }
                 launchMain();
             }
-        }, 520L);
+        }, 460L);
     }
 
     private void updateStatus(String title, String message, int progress) {
-        tvTitle.setText(title);
-        tvStatus.setText(message);
-        progressBoot.setProgress(Math.max(0, Math.min(100, progress)));
-        tvProgress.setText(Math.max(0, Math.min(100, progress)) + "%");
+        int clamped = clamp(progress);
+        if (clamped >= 100) {
+            tvTitle.setText("欢迎回来");
+        } else if (title != null && title.contains("授权")) {
+            tvTitle.setText("需要授权继续");
+        } else if (clamped >= 40) {
+            tvTitle.setText("正在进入工作台");
+        } else {
+            tvTitle.setText("请稍等一下");
+        }
+        tvStatus.setText(title);
+        tvStatusHint.setText(message);
+        if (clamped >= 100) {
+            progressBoot.setIndeterminate(false);
+            progressBoot.setProgress(100);
+        } else {
+            progressBoot.setIndeterminate(true);
+            progressBoot.setProgress(Math.max(12, clamped));
+        }
+        updateStageViews(clamped >= 100 ? 2 : (clamped >= 40 ? 1 : 0));
+    }
+
+    private void updateStageViews(int stage) {
+        if (stageViews == null) {
+            return;
+        }
+        for (int i = 0; i < stageViews.length; i++) {
+            TextView view = stageViews[i];
+            if (view == null) {
+                continue;
+            }
+            boolean reached = i <= stage;
+            boolean active = i == stage;
+            view.animate()
+                .alpha(reached ? 1f : 0.45f)
+                .scaleX(active ? 1.06f : 1f)
+                .scaleY(active ? 1.06f : 1f)
+                .setDuration(220L)
+                .start();
+        }
     }
 
     private void showBootError(String message) {
         bootInProgress = false;
-        tvTitle.setText("启动准备失败");
-        tvStatus.setText(safeText(message, "外置环境模式启动失败，请重试"));
-        tvProgress.setText(progressBoot.getProgress() + "%");
+        splashFinished = true;
+        tvTitle.setText("暂时没能进入工作台");
+        tvStatus.setText("启动准备失败");
+        tvStatusHint.setText(safeText(message, "这次启动没有顺利完成，可以再试一次。"));
+        progressBoot.setIndeterminate(false);
+        progressBoot.setProgress(22);
+        updateStageViews(0);
         btnRetry.setVisibility(View.VISIBLE);
     }
 
@@ -181,9 +308,10 @@ public class StartupActivity extends Activity {
                 Intent intent = new Intent(StartupActivity.this, MainActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
                 startActivity(intent);
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
                 finish();
             }
-        }, 260L);
+        }, 220L);
     }
 
     private void ensureStorageAccessThenBoot() {
@@ -194,11 +322,11 @@ public class StartupActivity extends Activity {
         }
         waitingForStoragePermission = true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            updateStatus("正在申请文件访问权限", "首次进入会跳到设置页开启“管理所有文件”，返回后会自动继续。", 8);
+            updateStatus("请开启文件访问权限", "允许后即可继续浏览项目与使用本地目录。", 8);
             openAllFilesAccessPage();
             return;
         }
-        updateStatus("正在申请储存权限", "安卓 10 及以下会直接申请储存权限，允许后自动进入工作台。", 8);
+        updateStatus("请允许储存权限", "允许后即可继续使用本地项目与工作目录。", 8);
         requestPermissions(
             new String[] {
                 Manifest.permission.READ_EXTERNAL_STORAGE,
@@ -225,8 +353,7 @@ public class StartupActivity extends Activity {
             try {
                 startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
             } catch (Exception ignored) {
-                updateStatus("无法自动打开设置", "请手动到系统设置里开启文件访问权限后再返回。", 8);
-                btnRetry.setVisibility(View.VISIBLE);
+                showBootError("请到系统设置中开启文件访问权限后再返回应用。");
             }
         }
     }
@@ -242,8 +369,22 @@ public class StartupActivity extends Activity {
             beginBootFlow();
             return;
         }
-        updateStatus("储存权限未开启", "请允许储存权限后再继续使用项目导入和环境目录功能。", 8);
+        updateStatus("还需要文件访问权限", "允许后才能继续使用本地目录与项目导入。", 8);
         btnRetry.setVisibility(View.VISIBLE);
+    }
+
+    private int clamp(int value) {
+        if (value < 0) {
+            return 0;
+        }
+        if (value > 100) {
+            return 100;
+        }
+        return value;
+    }
+
+    private int dp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private String safeText(String value, String fallback) {

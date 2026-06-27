@@ -10,6 +10,7 @@
         android:layout_height="match_parent" />
 
     <LinearLayout
+        android:id="@+id/loadingContent"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center"
@@ -20,10 +21,10 @@
         android:paddingBottom="26dp">
 
         <FrameLayout
-            android:layout_width="176dp"
-            android:layout_height="176dp"
+            android:layout_width="132dp"
+            android:layout_height="132dp"
             android:background="@drawable/bg_startup_avatar"
-            android:padding="18dp"
+            android:padding="16dp"
             android:tag="panelRaised">
 
             <ImageView
@@ -40,9 +41,9 @@
             android:id="@+id/tvTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="26dp"
-            android:text="正在检查启动环境..."
-            android:textSize="22sp"
+            android:layout_marginTop="24dp"
+            android:text="正在进入工作台"
+            android:textSize="24sp"
             android:textStyle="bold"
             android:tag="primary" />
 
@@ -50,41 +51,93 @@
             android:id="@+id/tvSubtitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="10dp"
             android:gravity="center"
-            android:text="首次启动会先解压内置 SDK、JDK 21、NDK 27 和 Gradle 8.7"
-            android:textSize="13sp"
+            android:text="正在为你恢复项目空间与常用能力"
+            android:textSize="14sp"
             android:tag="secondary" />
 
-        <TextView
-            android:id="@+id/tvStatus"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:gravity="center"
-            android:text="准备进入工作台"
-            android:textSize="13sp"
-            android:tag="muted" />
+            android:layout_marginTop="24dp"
+            android:orientation="vertical"
+            android:paddingLeft="18dp"
+            android:paddingTop="18dp"
+            android:paddingRight="18dp"
+            android:paddingBottom="18dp"
+            android:tag="panelRaised">
 
-        <ProgressBar
-            android:id="@+id/progressBoot"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent"
-            android:layout_height="10dp"
-            android:layout_marginTop="18dp"
-            android:max="100"
-            android:progress="0"
-            android:progressDrawable="@android:drawable/progress_horizontal" />
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="正在整理启动所需内容"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                android:tag="primary" />
 
-        <TextView
-            android:id="@+id/tvProgress"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="0%"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:tag="primary" />
+            <TextView
+                android:id="@+id/tvStatusHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="整个过程通常只需片刻，请稍等一下。"
+                android:textSize="13sp"
+                android:tag="secondary" />
+
+            <com.LM.pack.theme.GlassProgressBarView
+                android:id="@+id/progressBoot"
+                android:layout_width="match_parent"
+                android:layout_height="12dp"
+                android:layout_marginTop="16dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tvStageWelcome"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginRight="8dp"
+                    android:paddingLeft="12dp"
+                    android:paddingTop="7dp"
+                    android:paddingRight="12dp"
+                    android:paddingBottom="7dp"
+                    android:text="欢迎"
+                    android:textSize="12sp"
+                    android:tag="chip chipText" />
+
+                <TextView
+                    android:id="@+id/tvStagePrepare"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginRight="8dp"
+                    android:paddingLeft="12dp"
+                    android:paddingTop="7dp"
+                    android:paddingRight="12dp"
+                    android:paddingBottom="7dp"
+                    android:text="准备中"
+                    android:textSize="12sp"
+                    android:tag="chip chipText" />
+
+                <TextView
+                    android:id="@+id/tvStageReady"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingLeft="12dp"
+                    android:paddingTop="7dp"
+                    android:paddingRight="12dp"
+                    android:paddingBottom="7dp"
+                    android:text="就绪"
+                    android:textSize="12sp"
+                    android:tag="chip chipText" />
+            </LinearLayout>
+        </LinearLayout>
 
         <Button
             android:id="@+id/btnRetry"
@@ -96,5 +149,31 @@
             android:visibility="gone"
             android:tag="primaryButton primary" />
     </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/splashOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:focusable="true">
+
+        <FrameLayout
+            android:layout_width="164dp"
+            android:layout_height="164dp"
+            android:layout_gravity="center"
+            android:background="@drawable/bg_startup_avatar"
+            android:padding="18dp"
+            android:tag="panelRaised">
+
+            <ImageView
+                android:id="@+id/ivSplashAvatar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_gravity="center"
+                android:adjustViewBounds="true"
+                android:scaleType="centerCrop"
+                android:src="@drawable/app_brand" />
+        </FrameLayout>
+    </FrameLayout>
 
 </FrameLayout>

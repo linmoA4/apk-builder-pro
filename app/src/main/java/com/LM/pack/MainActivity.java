@@ -21,6 +21,7 @@ import android.os.Environment;
 import android.provider.OpenableColumns;
 import android.os.Handler;
 import android.provider.Settings;
+import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -117,6 +118,7 @@ public class MainActivity extends Activity {
     private ListView lvFiles;
     private CodeEditorView etEditor;
     private View progressOverlay;
+    private View progressCard;
     private TextView tvProgressTitle;
     private TextView tvProgressMessage;
     private TextView tvProgressPercent;
@@ -140,6 +142,10 @@ public class MainActivity extends Activity {
     private String lastSavedText = "";
     private boolean suppressEditorWriteback = false;
     private boolean swipeHandled = false;
+    private boolean addActionAnimating = false;
+    private boolean fileDrawerAnimating = false;
+    private int lastAnimatedProjectPosition = -1;
+    private int lastAnimatedFilePosition = -1;
     private float gestureStartX = 0f;
     private float gestureStartY = 0f;
     private Runnable autoSaveRunnable;
@@ -213,6 +219,7 @@ public class MainActivity extends Activity {
         lvFiles = (ListView) findViewById(R.id.lvFiles);
         etEditor = (CodeEditorView) findViewById(R.id.etEditor);
         progressOverlay = findViewById(R.id.progressOverlay);
+        progressCard = findViewById(R.id.progressCard);
         tvProgressTitle = (TextView) findViewById(R.id.tvProgressTitle);
         tvProgressMessage = (TextView) findViewById(R.id.tvProgressMessage);
         tvProgressPercent = (TextView) findViewById(R.id.tvProgressPercent);
@@ -279,12 +286,12 @@ public class MainActivity extends Activity {
         });
 
         btnCreateAction.setOnClickListener(v -> {
-            hideAddActionOverlay();
+            hideAddActionOverlay(true);
             showCreateProjectDialog();
         });
 
         btnImportAction.setOnClickListener(v -> {
-            hideAddActionOverlay();
+            hideAddActionOverlay(true);
             showImportPicker();
         });
 
@@ -339,8 +346,8 @@ public class MainActivity extends Activity {
         etEditor.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                hideFileDrawer();
-                hideAddActionOverlay();
+                hideFileDrawer(true);
+                hideAddActionOverlay(true);
             }
         });
     }
@@ -398,6 +405,7 @@ public class MainActivity extends Activity {
     private void refreshProjectList() {
         projectEntries.clear();
         projectEntries.addAll(projectWorkspaceService.loadProjects());
+        lastAnimatedProjectPosition = -1;
         projectAdapter.notifyDataSetChanged();
         if (projectEntries.isEmpty()) {
             emptyState.setVisibility(View.VISIBLE);
@@ -440,9 +448,9 @@ public class MainActivity extends Activity {
         btnFabAdd.setVisibility(View.VISIBLE);
         btnToggleFiles.setText("目录");
         tvToolbarTitle.setText("APK Builder Pro");
-        suggestionCard.setVisibility(View.GONE);
-        hideFileDrawer();
-        hideAddActionOverlay();
+        setSuggestionCardVisible(false, false);
+        hideFileDrawer(false);
+        hideAddActionOverlay(false);
         currentProject = null;
         projectPrepared = false;
         editorTabManager.clear();
@@ -456,16 +464,16 @@ public class MainActivity extends Activity {
         editorPane.setVisibility(View.VISIBLE);
         btnBackHome.setVisibility(View.VISIBLE);
         btnFabAdd.setVisibility(View.GONE);
-        hideAddActionOverlay();
+        hideAddActionOverlay(false);
         tvToolbarTitle.setText("编辑器");
         tvEditorProject.setText(entry.getProjectName() + "  ·  " + safeText(entry.getPackageName(), "未识别包名"));
         tvCurrentFilePath.setText(entry.getProjectDir());
-        suggestionCard.setVisibility(View.GONE);
+        setSuggestionCardVisible(false, false);
         lastBuildIssues.clear();
         updateBugButtonState();
         editorTabManager.clear();
         loadProjectFiles();
-        fileDrawer.setVisibility(View.VISIBLE);
+        showFileDrawer(false);
         btnToggleFiles.setText("目录");
         openDefaultEditorFile(entry);
         logManager.appendKeyValue("INFO", "已打开项目", entry.getProjectDir());
@@ -482,17 +490,105 @@ public class MainActivity extends Activity {
     }
 
     private void toggleAddActionOverlay() {
-        if (addActionOverlay.getVisibility() == View.VISIBLE) {
-            hideAddActionOverlay();
+        if (addActionAnimating) {
+            return;
+        }
+        if (addActionOverlay.getVisibility() == View.VISIBLE && addActionOverlay.getAlpha() > 0.01f) {
+            hideAddActionOverlay(true);
         } else {
-            addActionOverlay.setVisibility(View.VISIBLE);
+            showAddActionOverlay();
         }
     }
 
-    private void hideAddActionOverlay() {
-        if (addActionOverlay != null) {
-            addActionOverlay.setVisibility(View.GONE);
+    private void showAddActionOverlay() {
+        if (addActionOverlay == null || btnImportAction == null || btnCreateAction == null) {
+            return;
         }
+        addActionAnimating = true;
+        addActionOverlay.setVisibility(View.VISIBLE);
+        addActionOverlay.setAlpha(1f);
+        btnFabAdd.animate().rotation(45f).setDuration(220L).start();
+        prepareActionButtonForEntrance(btnImportAction, 68, 12);
+        prepareActionButtonForEntrance(btnCreateAction, 96, 20);
+        animateActionButtonIn(btnImportAction, 0L);
+        animateActionButtonIn(btnCreateAction, 82L);
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                addActionAnimating = false;
+            }
+        }, 280L);
+    }
+
+    private void hideAddActionOverlay(boolean animated) {
+        if (addActionOverlay == null) {
+            return;
+        }
+        btnFabAdd.animate().rotation(0f).setDuration(180L).start();
+        if (!animated || addActionOverlay.getVisibility() != View.VISIBLE) {
+            addActionOverlay.animate().cancel();
+            addActionOverlay.setVisibility(View.GONE);
+            addActionOverlay.setAlpha(0f);
+            btnImportAction.setAlpha(0f);
+            btnCreateAction.setAlpha(0f);
+            btnImportAction.setTranslationX(dp(68));
+            btnCreateAction.setTranslationX(dp(96));
+            return;
+        }
+        addActionAnimating = true;
+        animateActionButtonOut(btnCreateAction, 0L);
+        animateActionButtonOut(btnImportAction, 58L);
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                addActionOverlay.setVisibility(View.GONE);
+                addActionOverlay.setAlpha(0f);
+                addActionAnimating = false;
+            }
+        }, 230L);
+    }
+
+    private void prepareActionButtonForEntrance(View button, int translationDp, int translationYDp) {
+        if (button == null) {
+            return;
+        }
+        button.animate().cancel();
+        button.setVisibility(View.VISIBLE);
+        button.setAlpha(0f);
+        button.setTranslationX(dp(translationDp));
+        button.setTranslationY(dp(translationYDp));
+        button.setScaleX(0.92f);
+        button.setScaleY(0.92f);
+    }
+
+    private void animateActionButtonIn(View button, long delayMs) {
+        if (button == null) {
+            return;
+        }
+        button.animate()
+            .alpha(1f)
+            .translationX(0f)
+            .translationY(0f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setStartDelay(delayMs)
+            .setDuration(220L)
+            .start();
+    }
+
+    private void animateActionButtonOut(View button, long delayMs) {
+        if (button == null) {
+            return;
+        }
+        button.animate()
+            .alpha(0f)
+            .translationX(dp(74))
+            .translationY(dp(10))
+            .scaleX(0.92f)
+            .scaleY(0.92f)
+            .setStartDelay(delayMs)
+            .setDuration(170L)
+            .start();
     }
 
     private void showImportPicker() {
@@ -564,7 +660,7 @@ public class MainActivity extends Activity {
         container.addView(btnTargetSdk);
         container.addView(splashTarget.cardView);
 
-        new AlertDialog.Builder(this)
+        AlertDialog createDialog = new AlertDialog.Builder(this)
             .setTitle("创建项目")
             .setView(container)
             .setPositiveButton("创建", (dialog, which) -> {
@@ -607,7 +703,9 @@ public class MainActivity extends Activity {
                 }
             })
             .setNegativeButton("取消", null)
-            .show();
+            .create();
+        createDialog.show();
+        animatePopupCard(createDialog.getWindow() == null ? null : createDialog.getWindow().getDecorView());
     }
 
     private ImagePickerTarget buildImagePickerCard(final String title, String hintText) {
@@ -1092,6 +1190,7 @@ public class MainActivity extends Activity {
         btnSecondary.setText("关闭");
         btnSecondary.setOnClickListener(v -> dialog.dismiss());
         dialog.show();
+        animatePopupCard(dialog.getWindow() == null ? null : dialog.getWindow().getDecorView());
     }
 
     private void showStoragePicker(final String title, final boolean folderSelect, final boolean zipOnly, final PathPickListener listener) {
@@ -1338,11 +1437,13 @@ public class MainActivity extends Activity {
     private void loadProjectFiles() {
         if (currentProject == null) {
             fileTreeItems.clear();
+            lastAnimatedFilePosition = -1;
             fileTreeAdapter.notifyDataSetChanged();
             return;
         }
         fileTreeItems.clear();
         fileTreeItems.addAll(projectFileService.listDirectory(currentProject, new File(currentProject.getProjectDir())));
+        lastAnimatedFilePosition = -1;
         fileTreeAdapter.notifyDataSetChanged();
     }
 
@@ -1356,7 +1457,7 @@ public class MainActivity extends Activity {
             return;
         }
         openTextFile(item.getFile());
-        hideFileDrawer();
+        hideFileDrawer(true);
     }
 
     private void openDirectoryBrowser(File directory) {
@@ -1391,7 +1492,7 @@ public class MainActivity extends Activity {
             etEditor.setText(content);
             suppressEditorWriteback = false;
             tvCurrentFilePath.setText(projectFileService.buildDisplayPath(currentProject, file));
-            suggestionCard.setVisibility(View.GONE);
+            setSuggestionCardVisible(false, true);
             etEditor.clearDiagnosticLines();
             if (trackTab) {
                 editorTabManager.openTab(file);
@@ -1415,7 +1516,7 @@ public class MainActivity extends Activity {
         suppressEditorWriteback = false;
         etEditor.clearDiagnosticLines();
         tvCurrentFilePath.setText("请选择一个文件");
-        suggestionCard.setVisibility(View.GONE);
+        setSuggestionCardVisible(false, false);
     }
 
     private void saveCurrentFile() {
@@ -1451,17 +1552,226 @@ public class MainActivity extends Activity {
     }
 
     private void toggleFileDrawer() {
-        if (fileDrawer.getVisibility() == View.VISIBLE) {
-            hideFileDrawer();
+        if (fileDrawerAnimating) {
+            return;
+        }
+        if (fileDrawer.getVisibility() == View.VISIBLE && fileDrawer.getAlpha() > 0.01f) {
+            hideFileDrawer(true);
         } else {
-            fileDrawer.setVisibility(View.VISIBLE);
-            btnToggleFiles.setText("目录");
+            showFileDrawer(true);
         }
     }
 
-    private void hideFileDrawer() {
-        fileDrawer.setVisibility(View.GONE);
+    private void showFileDrawer(boolean animated) {
+        if (fileDrawer == null) {
+            return;
+        }
         btnToggleFiles.setText("目录");
+        if (!animated) {
+            fileDrawer.animate().cancel();
+            fileDrawer.setVisibility(View.VISIBLE);
+            fileDrawer.setAlpha(1f);
+            fileDrawer.setTranslationX(0f);
+            return;
+        }
+        fileDrawerAnimating = true;
+        fileDrawer.setVisibility(View.VISIBLE);
+        fileDrawer.setAlpha(0f);
+        fileDrawer.setTranslationX(-Math.max(fileDrawer.getWidth(), dp(220)));
+        fileDrawer.animate()
+            .alpha(1f)
+            .translationX(0f)
+            .setDuration(240L)
+            .withEndAction(new Runnable() {
+                @Override
+                public void run() {
+                    fileDrawerAnimating = false;
+                }
+            })
+            .start();
+    }
+
+    private void hideFileDrawer(boolean animated) {
+        if (fileDrawer == null) {
+            return;
+        }
+        btnToggleFiles.setText("目录");
+        if (!animated || fileDrawer.getVisibility() != View.VISIBLE) {
+            fileDrawer.animate().cancel();
+            fileDrawer.setVisibility(View.GONE);
+            fileDrawer.setAlpha(1f);
+            fileDrawer.setTranslationX(0f);
+            fileDrawerAnimating = false;
+            return;
+        }
+        fileDrawerAnimating = true;
+        fileDrawer.animate()
+            .alpha(0f)
+            .translationX(-Math.max(fileDrawer.getWidth(), dp(220)))
+            .setDuration(210L)
+            .withEndAction(new Runnable() {
+                @Override
+                public void run() {
+                    fileDrawer.setVisibility(View.GONE);
+                    fileDrawer.setAlpha(1f);
+                    fileDrawer.setTranslationX(0f);
+                    fileDrawerAnimating = false;
+                }
+            })
+            .start();
+    }
+
+    private void setSuggestionCardVisible(boolean visible, boolean animated) {
+        if (suggestionCard == null) {
+            return;
+        }
+        suggestionCard.animate().cancel();
+        if (!animated) {
+            suggestionCard.setVisibility(visible ? View.VISIBLE : View.GONE);
+            suggestionCard.setAlpha(1f);
+            suggestionCard.setTranslationY(0f);
+            return;
+        }
+        if (visible) {
+            if (suggestionCard.getVisibility() != View.VISIBLE) {
+                suggestionCard.setVisibility(View.VISIBLE);
+                suggestionCard.setAlpha(0f);
+                suggestionCard.setTranslationY(-dp(12));
+            }
+            suggestionCard.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(220L)
+                .start();
+            return;
+        }
+        if (suggestionCard.getVisibility() != View.VISIBLE) {
+            suggestionCard.setVisibility(View.GONE);
+            return;
+        }
+        suggestionCard.animate()
+            .alpha(0f)
+            .translationY(-dp(10))
+            .setDuration(170L)
+            .withEndAction(new Runnable() {
+                @Override
+                public void run() {
+                    suggestionCard.setVisibility(View.GONE);
+                    suggestionCard.setAlpha(1f);
+                    suggestionCard.setTranslationY(0f);
+                }
+            })
+            .start();
+    }
+
+    private void animateOverlayIn(View overlay, View card) {
+        if (overlay == null) {
+            return;
+        }
+        if (overlay.getVisibility() == View.VISIBLE && overlay.getAlpha() > 0.98f) {
+            return;
+        }
+        overlay.animate().cancel();
+        if (card != null) {
+            card.animate().cancel();
+        }
+        overlay.setVisibility(View.VISIBLE);
+        overlay.setAlpha(0f);
+        overlay.animate().alpha(1f).setDuration(160L).start();
+        if (card != null) {
+            card.setAlpha(0f);
+            card.setScaleX(0.94f);
+            card.setScaleY(0.94f);
+            card.setTranslationY(dp(22));
+            card.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .translationY(0f)
+                .setDuration(220L)
+                .start();
+        }
+    }
+
+    private void animateOverlayOut(final View overlay, final View card) {
+        if (overlay == null || overlay.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        overlay.animate().cancel();
+        if (card != null) {
+            card.animate().cancel();
+            card.animate()
+                .alpha(0f)
+                .scaleX(0.96f)
+                .scaleY(0.96f)
+                .translationY(dp(14))
+                .setDuration(150L)
+                .start();
+        }
+        overlay.animate()
+            .alpha(0f)
+            .setDuration(160L)
+            .withEndAction(new Runnable() {
+                @Override
+                public void run() {
+                    overlay.setVisibility(View.GONE);
+                    overlay.setAlpha(1f);
+                    if (card != null) {
+                        card.setAlpha(1f);
+                        card.setScaleX(1f);
+                        card.setScaleY(1f);
+                        card.setTranslationY(0f);
+                    }
+                }
+            })
+            .start();
+    }
+
+    private void animatePopupCard(View content) {
+        if (content == null) {
+            return;
+        }
+        content.animate().cancel();
+        content.setAlpha(0f);
+        content.setScaleX(0.94f);
+        content.setScaleY(0.94f);
+        content.setTranslationY(dp(18));
+        content.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .translationY(0f)
+            .setDuration(220L)
+            .start();
+    }
+
+    private void animateListItem(View itemView, int position, boolean projectList) {
+        if (itemView == null) {
+            return;
+        }
+        int lastPosition = projectList ? lastAnimatedProjectPosition : lastAnimatedFilePosition;
+        if (position <= lastPosition) {
+            itemView.setAlpha(1f);
+            itemView.setTranslationX(0f);
+            itemView.setTranslationY(0f);
+            return;
+        }
+        itemView.animate().cancel();
+        itemView.setAlpha(0f);
+        itemView.setTranslationX(projectList ? dp(18) : -dp(14));
+        itemView.setTranslationY(dp(6));
+        itemView.animate()
+            .alpha(1f)
+            .translationX(0f)
+            .translationY(0f)
+            .setDuration(220L)
+            .setStartDelay(Math.min(150L, position * 22L))
+            .start();
+        if (projectList) {
+            lastAnimatedProjectPosition = position;
+        } else {
+            lastAnimatedFilePosition = position;
+        }
     }
 
     private void detectAndBuild() {
@@ -1775,13 +2085,14 @@ public class MainActivity extends Activity {
     private Dialog createAppDialog(String title, String subtitle) {
         Dialog dialog = new Dialog(this);
         dialog.setContentView(R.layout.dialog_issue_center);
-        View content = dialog.findViewById(R.id.tvDialogTitle).getRootView();
+        final View content = dialog.findViewById(R.id.tvDialogTitle).getRootView();
         if (palette != null) {
             themeManager.applyTaggedStyles(content, palette);
         }
         ((TextView) dialog.findViewById(R.id.tvDialogTitle)).setText(title);
         ((TextView) dialog.findViewById(R.id.tvDialogSubtitle)).setText(subtitle);
         dialog.setCancelable(true);
+        dialog.setOnShowListener(dialogInterface -> animatePopupCard(content));
         return dialog;
     }
 
@@ -1796,7 +2107,7 @@ public class MainActivity extends Activity {
                 etEditor.clearDiagnosticLines();
             }
         }
-        suggestionCard.setVisibility(View.VISIBLE);
+        setSuggestionCardVisible(true, true);
         tvIssueTitle.setText(issue.getMessage());
         tvIssueFix.setText(issue.getSuggestion());
         currentCopiedFix = issue.getSuggestion();
@@ -1886,7 +2197,7 @@ public class MainActivity extends Activity {
         if (issues.isEmpty()) {
             etEditor.clearDiagnosticLines();
             if (suggestionCard.getVisibility() == View.VISIBLE && currentCopiedFix.startsWith("[编辑器检测]")) {
-                suggestionCard.setVisibility(View.GONE);
+                setSuggestionCardVisible(false, true);
                 currentCopiedFix = "";
             }
             return;
@@ -1899,7 +2210,7 @@ public class MainActivity extends Activity {
         }
         etEditor.setDiagnosticLines(lines);
         BuildIssue firstIssue = issues.get(0);
-        suggestionCard.setVisibility(View.VISIBLE);
+        setSuggestionCardVisible(true, true);
         tvIssueTitle.setText(firstIssue.getMessage());
         tvIssueFix.setText(firstIssue.getSuggestion());
         currentCopiedFix = "[编辑器检测] " + firstIssue.getSuggestion();
@@ -1992,7 +2303,11 @@ public class MainActivity extends Activity {
 
     private void dismissProgressDialog() {
         if (progressOverlay != null) {
-            progressOverlay.setVisibility(View.GONE);
+            if (progressOverlay.getVisibility() == View.VISIBLE) {
+                animateOverlayOut(progressOverlay, progressCard);
+            } else {
+                progressOverlay.setVisibility(View.GONE);
+            }
         }
         if (progressBarFancy != null) {
             progressBarFancy.setIndeterminate(false);
@@ -2004,8 +2319,8 @@ public class MainActivity extends Activity {
         if (progressOverlay == null) {
             return;
         }
-        progressOverlay.setVisibility(View.VISIBLE);
         tvProgressTitle.setText(title);
+        animateOverlayIn(progressOverlay, progressCard);
         updateProgressDialog(message, percent, indeterminate);
     }
 
@@ -2110,7 +2425,7 @@ public class MainActivity extends Activity {
             String filePath = data.getStringExtra(FileBrowserActivity.EXTRA_SELECTED_FILE);
             if (filePath != null && filePath.length() > 0) {
                 openTextFile(new File(filePath));
-                hideFileDrawer();
+                hideFileDrawer(true);
             }
             return;
         }
@@ -2150,11 +2465,10 @@ public class MainActivity extends Activity {
                         float dy = event.getY() - gestureStartY;
                         if (Math.abs(dx) > dp(56) && Math.abs(dx) > Math.abs(dy) * 1.2f) {
                             if (dx > 0 && fileDrawer.getVisibility() != View.VISIBLE) {
-                                fileDrawer.setVisibility(View.VISIBLE);
-                                btnToggleFiles.setText("目录");
+                                showFileDrawer(true);
                                 swipeHandled = true;
                             } else if (dx < 0 && fileDrawer.getVisibility() == View.VISIBLE) {
-                                hideFileDrawer();
+                                hideFileDrawer(true);
                                 swipeHandled = true;
                             }
                         }
@@ -2249,6 +2563,7 @@ public class MainActivity extends Activity {
             } else {
                 holder.icon.setImageResource(android.R.drawable.sym_def_app_icon);
             }
+            animateListItem(convertView, position, true);
             return convertView;
         }
     }
@@ -2307,6 +2622,7 @@ public class MainActivity extends Activity {
             holder.sub.setText(buildFileSecondaryText(item));
             holder.sub.setTextColor(palette == null ? Color.parseColor("#7D8DA4") : palette.textMuted);
             holder.sub.setVisibility(View.VISIBLE);
+            animateListItem(convertView, position, false);
             return convertView;
         }
     }

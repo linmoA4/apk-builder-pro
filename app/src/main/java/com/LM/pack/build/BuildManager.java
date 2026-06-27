@@ -509,7 +509,12 @@ public class BuildManager {
                     return null;
                 }
                 listener.onLogLine("正在从外置下载链路获取 Gradle " + gradleVersion + " 安装包。");
-                downloadToFile(downloadUrl, archiveFile, progressCallback, "正在下载 Gradle " + gradleVersion);
+                downloadToFile(
+                    downloadUrl,
+                    archiveFile,
+                    remapProgress(progressCallback, 0, 58),
+                    "正在下载 Gradle " + gradleVersion
+                );
             }
             if (!verifyGradleArchive(archiveFile, gradleVersion)) {
                 listener.onLogLine("检测到 Gradle 安装包校验不通过，准备重新下载。");
@@ -520,7 +525,12 @@ public class BuildManager {
                 if (downloadUrl == null) {
                     throw new IllegalStateException("没有可用的 Gradle 下载地址");
                 }
-                downloadToFile(downloadUrl, archiveFile, progressCallback, "正在重新下载 Gradle " + gradleVersion);
+                downloadToFile(
+                    downloadUrl,
+                    archiveFile,
+                    remapProgress(progressCallback, 0, 58),
+                    "正在重新下载 Gradle " + gradleVersion
+                );
                 if (!verifyGradleArchive(archiveFile, gradleVersion)) {
                     throw new IllegalStateException("Gradle 安装包 SHA-256 校验失败");
                 }
@@ -536,7 +546,15 @@ public class BuildManager {
             listener.onLogLine("正在准备离线 Gradle 目录。");
             clearDirectory(installRoot);
             ensureDir(installRoot);
-            extractZip(archiveFile, installRoot, progressCallback, "正在解压 Gradle " + gradleVersion);
+            if (progressCallback != null) {
+                progressCallback.onProgress("正在整理 Gradle 安装目录...", 60, false);
+            }
+            extractZip(
+                archiveFile,
+                installRoot,
+                remapProgress(progressCallback, 58, 42),
+                "正在解压 Gradle " + gradleVersion
+            );
             gradleBin = findGradleExecutable(installRoot);
             if (gradleBin == null) {
                 throw new IllegalStateException("离线 Gradle 解压后未找到 bin/gradle");
@@ -1068,6 +1086,20 @@ public class BuildManager {
             }
         }
         outputStream.flush();
+    }
+
+    private ProgressCallback remapProgress(final ProgressCallback callback, final int startPercent, final int weightPercent) {
+        if (callback == null) {
+            return null;
+        }
+        return new ProgressCallback() {
+            @Override
+            public void onProgress(String message, int percent, boolean indeterminate) {
+                int safePercent = percent < 0 ? 0 : Math.min(100, percent);
+                int mapped = Math.min(100, startPercent + ((safePercent * weightPercent) / 100));
+                callback.onProgress(message, mapped, false);
+            }
+        };
     }
 
     private long calculateZipTotalBytes(ZipFile zipFile) {
