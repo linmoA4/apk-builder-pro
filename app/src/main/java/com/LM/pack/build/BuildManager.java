@@ -5,6 +5,7 @@ import com.LM.pack.env.EnvironmentManager;
 import com.LM.pack.env.IntegrityVerifier;
 import com.LM.pack.model.BuildIssue;
 import com.LM.pack.model.BuildResult;
+import com.LM.pack.model.ProjectSigningConfig;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.BufferedOutputStream;
@@ -24,6 +25,10 @@ import java.util.regex.Pattern;
 
 public class BuildManager {
     public static final int EXIT_CODE_CANCELLED = -2;
+    private static final String META_DIR = ".lmproject";
+    private static final String SIGNING_FILE = "signing.properties";
+    private static final String SIGNING_BLOCK_BEGIN = "// APK_BUILDER_PRO_SIGNING_BEGIN";
+    private static final String SIGNING_BLOCK_END = "// APK_BUILDER_PRO_SIGNING_END";
 
     public interface OfflineGradleListener {
         void onProgress(String message, int percent, boolean indeterminate);
@@ -198,6 +203,25 @@ public class BuildManager {
         try {
             File projectRoot = new File(projectDir);
             File gradlew = new File(projectRoot, "gradlew");
+            ProjectSigningConfig signingConfig = readSigningConfig(projectRoot);
+            boolean releaseSigningEnabled = signingConfig.isEnabled();
+            if (releaseSigningEnabled) {
+                String signingValidationMessage = validateSigningConfig(signingConfig);
+                if (signingValidationMessage.length() > 0) {
+                    issues.add(
+                        new BuildIssue(
+                            "签名配置",
+                            -1,
+                            signingValidationMessage,
+                            "请重新选择 keystore，并确认别名、store password、key password 都已填写。"
+                        )
+                    );
+                    listener.onFinished(new BuildResult(false, -1, "签名配置无效，已停止构建", "", issues));
+                    return;
+                }
+                applyManagedSigningBlock(projectRoot, signingConfig, listener);
+            }
+            String gradleTask = releaseSigningEnabled ? "assembleRelease" : "assembleDebug";
             ProjectRequirements requirements = inspectProjectRequirements(projectRoot);
             logResolvedEnvironment(projectRoot, requirements, selectedJdkName, jdkDir, sdkDir, ndkDir, listener);
             syncProjectLocalProperties(projectRoot, sdkDir, ndkDir, listener);
@@ -224,12 +248,13 @@ public class BuildManager {
                     listener.onLogLine("Android SDK: " + sdkDir);
                 }
                 listener.onLogLine("Gradle 模式: 外置下载 Gradle " + environmentManager.recommendGradleVersion(projectRoot));
-                listener.onLogLine("Gradle 任务: assembleDebug --stacktrace");
+                listener.onLogLine("构建输出: " + (releaseSigningEnabled ? "已启用签名的 release APK" : "debug APK"));
+                listener.onLogLine("Gradle 任务: " + gradleTask + " --stacktrace");
                 processBuilder = new ProcessBuilder(
                     offlineGradleExecutable.getAbsolutePath(),
                     "-p",
                     projectDir,
-                    "assembleDebug",
+                    gradleTask,
                     "--stacktrace"
                 );
             } else {
@@ -245,8 +270,9 @@ public class BuildManager {
                     listener.onLogLine("Android SDK: " + sdkDir);
                 }
                 listener.onLogLine("Gradle 模式: 项目 Gradle Wrapper");
-                listener.onLogLine("Gradle 任务: assembleDebug --stacktrace");
-                processBuilder = new ProcessBuilder("./gradlew", "assembleDebug", "--stacktrace");
+                listener.onLogLine("构建输出: " + (releaseSigningEnabled ? "已启用签名的 release APK" : "debug APK"));
+                listener.onLogLine("Gradle 任务: " + gradleTask + " --stacktrace");
+                processBuilder = new ProcessBuilder("./gradlew", gradleTask, "--stacktrace");
             }
             processBuilder.directory(projectRoot);
             processBuilder.redirectErrorStream(true);
@@ -293,9 +319,9 @@ public class BuildManager {
             }
             if (exitCode == 0) {
                 if (apkPath.length() == 0) {
-                    apkPath = guessApkPath(projectRoot);
+                    apkPath = guessApkPath(projectRoot, releaseSigningEnabled);
                 }
-                listener.onFinished(new BuildResult(true, 0, "真实打包完成", apkPath, issues));
+                listener.onFinished(new BuildResult(true, 0, releaseSigningEnabled ? "签名 APK 构建完成" : "真实打包完成", apkPath, issues));
             } else {
                 listener.onFinished(new BuildResult(false, exitCode, "真实打包失败，Gradle 退出码：" + exitCode, apkPath, issues));
             }
@@ -1013,12 +1039,153 @@ public class BuildManager {
         return "";
     }
 
-    private String guessApkPath(File projectRoot) {
+    private String guessApkPath(File projectRoot, boolean releaseSigningEnabled) {
+        if (releaseSigningEnabled) {
+            File signedRelease = new File(projectRoot, "app/build/outputs/apk/release/app-release.apk");
+            if (signedRelease.exists()) {
+                return signedRelease.getAbsolutePath();
+            }
+        }
         File apk = new File(projectRoot, "app/build/outputs/apk/debug/app-debug.apk");
         if (apk.exists()) {
             return apk.getAbsolutePath();
         }
+        File releaseApk = new File(projectRoot, "app/build/outputs/apk/release/app-release.apk");
+        if (releaseApk.exists()) {
+            return releaseApk.getAbsolutePath();
+        }
         return "";
+    }
+
+    private ProjectSigningConfig readSigningConfig(File projectRoot) {
+        Properties properties = new Properties();
+        File signingFile = new File(new File(projectRoot, META_DIR), SIGNING_FILE);
+        if (!signingFile.exists()) {
+            return new ProjectSigningConfig(false, "", "", "", "");
+        }
+        FileInputStream inputStream = null;
+        try {
+            inputStream = new FileInputStream(signingFile);
+            properties.load(inputStream);
+            return new ProjectSigningConfig(
+                Boolean.parseBoolean(safeText(properties.getProperty("enabled"))),
+                safeText(properties.getProperty("storeFilePath")),
+                safeText(properties.getProperty("storePassword")),
+                safeText(properties.getProperty("keyAlias")),
+                safeText(properties.getProperty("keyPassword"))
+            );
+        } catch (Exception e) {
+            return new ProjectSigningConfig(false, "", "", "", "");
+        } finally {
+            try {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private String validateSigningConfig(ProjectSigningConfig config) {
+        if (config == null || !config.isEnabled()) {
+            return "";
+        }
+        if (config.getStoreFilePath().length() == 0) {
+            return "签名文件路径为空";
+        }
+        File storeFile = new File(config.getStoreFilePath());
+        if (!storeFile.exists() || !storeFile.isFile()) {
+            return "签名文件不存在：" + config.getStoreFilePath();
+        }
+        if (config.getStorePassword().length() == 0) {
+            return "store password 不能为空";
+        }
+        if (config.getKeyAlias().length() == 0) {
+            return "key alias 不能为空";
+        }
+        if (config.getKeyPassword().length() == 0) {
+            return "key password 不能为空";
+        }
+        return "";
+    }
+
+    private void applyManagedSigningBlock(File projectRoot, ProjectSigningConfig config, BuildListener listener) throws Exception {
+        File appGradle = new File(projectRoot, "app/build.gradle");
+        File appGradleKts = new File(projectRoot, "app/build.gradle.kts");
+        File targetFile = appGradle.exists() ? appGradle : appGradleKts;
+        if (!targetFile.exists()) {
+            throw new IllegalStateException("未找到 app/build.gradle 或 app/build.gradle.kts，无法注入签名配置");
+        }
+        String content = readText(targetFile);
+        String cleaned = removeManagedSigningBlock(content);
+        String signingBlock = targetFile.getName().endsWith(".kts")
+            ? buildKtsSigningBlock(config)
+            : buildGroovySigningBlock(config);
+        String finalContent = cleaned.trim() + "\n\n" + signingBlock + "\n";
+        writeText(targetFile, finalContent);
+        if (listener != null) {
+            listener.onLogLine("已将 APK 签名配置注入到 " + targetFile.getName() + "。");
+        }
+    }
+
+    private String removeManagedSigningBlock(String content) {
+        if (content == null || content.length() == 0) {
+            return "";
+        }
+        int start = content.indexOf(SIGNING_BLOCK_BEGIN);
+        int end = content.indexOf(SIGNING_BLOCK_END);
+        if (start >= 0 && end > start) {
+            return (content.substring(0, start) + content.substring(end + SIGNING_BLOCK_END.length())).trim();
+        }
+        return content;
+    }
+
+    private String buildGroovySigningBlock(ProjectSigningConfig config) {
+        return SIGNING_BLOCK_BEGIN + "\n"
+            + "android {\n"
+            + "    signingConfigs {\n"
+            + "        apkBuilderRelease {\n"
+            + "            storeFile file(\"" + escapeGradleString(config.getStoreFilePath()) + "\")\n"
+            + "            storePassword \"" + escapeGradleString(config.getStorePassword()) + "\"\n"
+            + "            keyAlias \"" + escapeGradleString(config.getKeyAlias()) + "\"\n"
+            + "            keyPassword \"" + escapeGradleString(config.getKeyPassword()) + "\"\n"
+            + "            v1SigningEnabled true\n"
+            + "            v2SigningEnabled true\n"
+            + "        }\n"
+            + "    }\n"
+            + "    buildTypes {\n"
+            + "        release {\n"
+            + "            signingConfig signingConfigs.apkBuilderRelease\n"
+            + "        }\n"
+            + "    }\n"
+            + "}\n"
+            + SIGNING_BLOCK_END;
+    }
+
+    private String buildKtsSigningBlock(ProjectSigningConfig config) {
+        return SIGNING_BLOCK_BEGIN + "\n"
+            + "android {\n"
+            + "    signingConfigs {\n"
+            + "        create(\"apkBuilderRelease\") {\n"
+            + "            storeFile = file(\"" + escapeGradleString(config.getStoreFilePath()) + "\")\n"
+            + "            storePassword = \"" + escapeGradleString(config.getStorePassword()) + "\"\n"
+            + "            keyAlias = \"" + escapeGradleString(config.getKeyAlias()) + "\"\n"
+            + "            keyPassword = \"" + escapeGradleString(config.getKeyPassword()) + "\"\n"
+            + "            enableV1Signing = true\n"
+            + "            enableV2Signing = true\n"
+            + "        }\n"
+            + "    }\n"
+            + "    buildTypes {\n"
+            + "        getByName(\"release\") {\n"
+            + "            signingConfig = signingConfigs.getByName(\"apkBuilderRelease\")\n"
+            + "        }\n"
+            + "    }\n"
+            + "}\n"
+            + SIGNING_BLOCK_END;
+    }
+
+    private String escapeGradleString(String value) {
+        return safeText(value).replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private int parseIntSafe(String value) {

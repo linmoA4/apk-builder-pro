@@ -21,6 +21,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.OpenableColumns;
 import android.os.Handler;
+import android.content.pm.PackageInfo;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
@@ -40,6 +41,7 @@ import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.core.content.FileProvider;
 import androidx.viewpager2.widget.ViewPager2;
 import androidx.recyclerview.widget.RecyclerView;
 import com.LM.pack.build.BuildManager;
@@ -55,6 +57,7 @@ import com.LM.pack.model.EnvironmentState;
 import com.LM.pack.model.FileTreeItem;
 import com.LM.pack.model.ProjectConfig;
 import com.LM.pack.model.ProjectEntry;
+import com.LM.pack.model.ProjectSigningConfig;
 import com.LM.pack.project.ProjectManager;
 import com.LM.pack.service.BuildWorkflowService;
 import com.LM.pack.service.ProjectFileService;
@@ -67,9 +70,12 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.StringReader;
+import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
+import java.util.List;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXParseException;
@@ -81,6 +87,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_IMPORT_ZIP = 4102;
     private static final int REQUEST_IMPORT_FOLDER = 4103;
     private static final int REQUEST_PICK_IMAGE = 4104;
+    private static final int REQUEST_PICK_KEYSTORE = 4105;
     private static final String STATE_VIEW_PAGE = "state_view_page";
     private static final String STATE_CURRENT_PROJECT_DIR = "state_current_project_dir";
     private static final String STATE_CURRENT_FILE_PATH = "state_current_file_path";
@@ -169,6 +176,7 @@ public class MainActivity extends Activity {
     private Runnable validationRunnable;
     private AppThemePalette palette;
     private ImagePickerTarget pendingImagePickerTarget;
+    private KeystorePickerTarget pendingKeystorePickerTarget;
     private Runnable progressCancelAction;
 
     @Override
@@ -467,6 +475,17 @@ public class MainActivity extends Activity {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 openProject(projectEntries.get(position));
+            }
+        });
+
+        lvProjects.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
+            @Override
+            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
+                if (position < 0 || position >= projectEntries.size()) {
+                    return false;
+                }
+                showProjectActionsDialog(projectEntries.get(position));
+                return true;
             }
         });
 
@@ -1571,6 +1590,519 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    private void showProjectActionsDialog(final ProjectEntry entry) {
+        if (entry == null) {
+            return;
+        }
+        final String[] items = new String[] {
+            "打开项目",
+            "APK 签名",
+            "重命名项目",
+            "复制项目",
+            "导出项目 ZIP",
+            "删除项目"
+        };
+        final Dialog dialog = createAppDialog(entry.getProjectName(), "点按操作，长按项目卡片即可再次打开这个管理面板。");
+        ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
+        Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
+        Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
+        Button btnNeutral = (Button) dialog.findViewById(R.id.btnDialogNeutral);
+        listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, items));
+        listView.setOnItemClickListener((parent, view, which, id) -> {
+            dialog.dismiss();
+            switch (which) {
+                case 0:
+                    openProject(entry);
+                    break;
+                case 1:
+                    showProjectSigningDialog(entry);
+                    break;
+                case 2:
+                    showRenameProjectDialog(entry);
+                    break;
+                case 3:
+                    showCopyProjectDialog(entry);
+                    break;
+                case 4:
+                    exportProject(entry);
+                    break;
+                case 5:
+                    showDeleteProjectDialog(entry);
+                    break;
+                default:
+                    break;
+            }
+        });
+        btnPrimary.setVisibility(View.GONE);
+        btnNeutral.setVisibility(View.GONE);
+        btnSecondary.setText("关闭");
+        btnSecondary.setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
+    }
+
+    private void showProjectSigningDialog(final ProjectEntry entry) {
+        final ProjectSigningConfig currentConfig = projectWorkspaceService.readSigningConfig(entry);
+        final LinearLayout container = buildDialogContainer();
+        final TextView status = buildFieldLabel("当前项目可以直接配置 release APK 签名。保存后打包会自动切到已签名的 release 输出。");
+        final KeystorePickerTarget keyTarget = buildKeystorePickerTarget(entry, currentConfig.getStoreFilePath());
+        final EditText etAlias = createDialogField("Key Alias", "release", currentConfig.getKeyAlias());
+        final EditText etStorePassword = createDialogField("Store Password", "请输入 keystore 密码", currentConfig.getStorePassword());
+        final EditText etKeyPassword = createDialogField("Key Password", "通常与 keystore 密码一致", currentConfig.getKeyPassword());
+        etStorePassword.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        etKeyPassword.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        container.addView(status);
+        container.addView(keyTarget.cardView);
+        container.addView(etAlias);
+        container.addView(etStorePassword);
+        container.addView(etKeyPassword);
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("APK 签名")
+            .setView(container)
+            .setPositiveButton("保存并启用", null)
+            .setNeutralButton("清除签名", null)
+            .setNegativeButton("取消", null)
+            .create();
+        dialog.setOnShowListener(dialogInterface -> {
+            animatePopupCard(dialog.getWindow() == null ? null : dialog.getWindow().getDecorView());
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String alias = etAlias.getText().toString().trim();
+                String storePassword = etStorePassword.getText().toString();
+                String keyPassword = etKeyPassword.getText().toString();
+                if (keyTarget.cachedPath.length() == 0) {
+                    toast("请先选择 keystore 文件");
+                    return;
+                }
+                if (alias.length() == 0) {
+                    toast("请输入 Key Alias");
+                    return;
+                }
+                if (storePassword.length() == 0 || keyPassword.length() == 0) {
+                    toast("请填写签名密码");
+                    return;
+                }
+                try {
+                    projectWorkspaceService.saveSigningConfig(
+                        entry,
+                        new ProjectSigningConfig(true, keyTarget.cachedPath, storePassword, alias, keyPassword)
+                    );
+                    logManager.appendLogLine("INFO", "已保存项目 APK 签名配置。");
+                    logManager.appendKeyValue("INFO", "签名项目", entry.getProjectName());
+                    logManager.appendKeyValue("INFO", "Keystore", keyTarget.cachedPath);
+                    toast("签名配置已保存");
+                    dialog.dismiss();
+                } catch (Exception e) {
+                    logManager.appendLogLine("ERROR", "保存签名配置失败：" + e.getMessage());
+                    toast("保存签名配置失败");
+                }
+            });
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                try {
+                    projectWorkspaceService.saveSigningConfig(entry, new ProjectSigningConfig(false, "", "", "", ""));
+                    logManager.appendLogLine("WARN", "已清除项目签名配置。");
+                    toast("已清除签名配置");
+                    dialog.dismiss();
+                } catch (Exception e) {
+                    logManager.appendLogLine("ERROR", "清除签名配置失败：" + e.getMessage());
+                    toast("清除签名配置失败");
+                }
+            });
+        });
+        dialog.show();
+    }
+
+    private KeystorePickerTarget buildKeystorePickerTarget(final ProjectEntry entry, String initialPath) {
+        final KeystorePickerTarget target = new KeystorePickerTarget();
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardParams.bottomMargin = dp(12);
+        card.setLayoutParams(cardParams);
+        card.setBackground(palette == null ? roundedDrawable("#172033", "#2B3A55", 16) : themeManager.createPanelDrawable(palette, true));
+
+        TextView title = new TextView(this);
+        title.setText("签名文件");
+        title.setTextColor(palette == null ? Color.WHITE : palette.textPrimary);
+        title.setTextSize(15f);
+        card.addView(title);
+
+        TextView hint = new TextView(this);
+        hint.setText("支持选择 `.jks`、`.keystore` 或任意 keystore 文件。会复制到应用管理目录，后续可直接复用。");
+        hint.setTextColor(palette == null ? Color.parseColor("#95A1B6") : palette.textMuted);
+        hint.setPadding(0, dp(6), 0, dp(10));
+        card.addView(hint);
+
+        TextView status = new TextView(this);
+        status.setTextColor(palette == null ? Color.parseColor("#AFC7E8") : palette.textSecondary);
+        status.setPadding(0, 0, 0, dp(10));
+        card.addView(status);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button pickButton = new Button(this);
+        pickButton.setText("选择 keystore");
+        if (palette != null) {
+            pickButton.setTextColor(palette.textPrimary);
+            pickButton.setBackground(themeManager.createPrimaryButtonDrawable(palette));
+        }
+        actions.addView(pickButton);
+
+        Button clearButton = new Button(this);
+        clearButton.setText("清除");
+        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clearParams.leftMargin = dp(10);
+        if (palette != null) {
+            clearButton.setTextColor(palette.textSecondary);
+            clearButton.setBackground(themeManager.createGhostButtonDrawable(palette));
+        }
+        actions.addView(clearButton, clearParams);
+        card.addView(actions);
+
+        target.projectEntry = entry;
+        target.cardView = card;
+        target.statusView = status;
+        target.cachedPath = safeText(initialPath, "");
+        updateKeystorePickerTarget(target, target.cachedPath);
+        pickButton.setOnClickListener(v -> launchKeystorePicker(target));
+        clearButton.setOnClickListener(v -> updateKeystorePickerTarget(target, ""));
+        return target;
+    }
+
+    private void updateKeystorePickerTarget(KeystorePickerTarget target, String path) {
+        if (target == null) {
+            return;
+        }
+        target.cachedPath = safeText(path, "");
+        if (target.cachedPath.length() == 0) {
+            target.statusView.setText("当前未选择 keystore");
+            return;
+        }
+        File file = new File(target.cachedPath);
+        target.statusView.setText(file.exists() ? "当前文件：" + file.getName() : "文件路径：" + target.cachedPath);
+    }
+
+    private void launchKeystorePicker(KeystorePickerTarget target) {
+        pendingKeystorePickerTarget = target;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, REQUEST_PICK_KEYSTORE);
+    }
+
+    private void applyPickedKeystoreUri(Uri uri) {
+        if (pendingKeystorePickerTarget == null || pendingKeystorePickerTarget.projectEntry == null) {
+            return;
+        }
+        try {
+            takeReadPermission(uri);
+            String displayName = resolveDisplayName(uri);
+            String fileName = sanitizeFileName(displayName.length() == 0 ? "project_signing.keystore" : displayName);
+            File targetDir = new File(
+                new File(environmentManager.getBaseDir(), "signing"),
+                sanitizeFileName(pendingKeystorePickerTarget.projectEntry.getProjectName())
+            );
+            ensureDir(targetDir);
+            File targetFile = new File(targetDir, fileName);
+            copyDocumentUriToFile(uri, targetFile);
+            updateKeystorePickerTarget(pendingKeystorePickerTarget, targetFile.getAbsolutePath());
+            toast("已读取 keystore 文件");
+        } catch (Exception e) {
+            logManager.appendLogLine("ERROR", "读取 keystore 失败：" + e.getMessage());
+            toast("读取 keystore 失败");
+        } finally {
+            pendingKeystorePickerTarget = null;
+        }
+    }
+
+    private void showRenameProjectDialog(final ProjectEntry entry) {
+        final EditText editText = createDialogField("新的项目名称", "新项目名", entry.getProjectName());
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("重命名项目")
+            .setView(editText)
+            .setPositiveButton("保存", null)
+            .setNegativeButton("取消", null)
+            .create();
+        dialog.setOnShowListener(dialogInterface -> {
+            animatePopupCard(dialog.getWindow() == null ? null : dialog.getWindow().getDecorView());
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String newName = editText.getText().toString().trim();
+                if (newName.length() == 0) {
+                    toast("项目名称不能为空");
+                    return;
+                }
+                try {
+                    ProjectEntry updatedEntry = projectWorkspaceService.renameProject(entry, newName);
+                    refreshProjectAfterMutation(entry, updatedEntry);
+                    logManager.appendLogLine("INFO", "项目已重命名。");
+                    logManager.appendKeyValue("INFO", "新名称", updatedEntry.getProjectName());
+                    toast("项目已重命名");
+                    dialog.dismiss();
+                } catch (Exception e) {
+                    logManager.appendLogLine("ERROR", "重命名项目失败：" + e.getMessage());
+                    toast("重命名项目失败");
+                }
+            });
+        });
+        dialog.show();
+    }
+
+    private void showCopyProjectDialog(final ProjectEntry entry) {
+        final EditText editText = createDialogField("复制后的项目名称", "项目副本", entry.getProjectName() + "-copy");
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("复制项目")
+            .setView(editText)
+            .setPositiveButton("开始复制", null)
+            .setNegativeButton("取消", null)
+            .create();
+        dialog.setOnShowListener(dialogInterface -> {
+            animatePopupCard(dialog.getWindow() == null ? null : dialog.getWindow().getDecorView());
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                final String newName = editText.getText().toString().trim();
+                if (newName.length() == 0) {
+                    toast("项目名称不能为空");
+                    return;
+                }
+                dialog.dismiss();
+                showProgressDialog("复制项目", "正在准备项目副本...", 0, false);
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            final ProjectEntry copiedEntry = projectWorkspaceService.duplicateProject(entry, newName, new ProjectWorkspaceService.ImportProgressListener() {
+                                @Override
+                                public void onProgress(final String message, final int percent) {
+                                    handler.post(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            updateProgressDialog(message, percent, false);
+                                        }
+                                    });
+                                }
+                            });
+                            handler.post(new Runnable() {
+                                @Override
+                                public void run() {
+                                    dismissProgressDialog();
+                                    refreshProjectList();
+                                    logManager.appendLogLine("INFO", "项目复制完成。");
+                                    logManager.appendKeyValue("INFO", "副本目录", copiedEntry.getProjectDir());
+                                    toast("项目副本已创建");
+                                }
+                            });
+                        } catch (final Exception e) {
+                            handler.post(new Runnable() {
+                                @Override
+                                public void run() {
+                                    dismissProgressDialog();
+                                    logManager.appendLogLine("ERROR", "复制项目失败：" + e.getMessage());
+                                    toast("复制项目失败");
+                                }
+                            });
+                        }
+                    }
+                }).start();
+            });
+        });
+        dialog.show();
+    }
+
+    private void showDeleteProjectDialog(final ProjectEntry entry) {
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("删除项目")
+            .setMessage("将删除项目目录及其文件，删除后无法恢复。")
+            .setPositiveButton("删除", null)
+            .setNegativeButton("取消", null)
+            .create();
+        dialog.setOnShowListener(dialogInterface -> {
+            animatePopupCard(dialog.getWindow() == null ? null : dialog.getWindow().getDecorView());
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                try {
+                    boolean deletingCurrent = currentProject != null && entry.getProjectDir().equals(currentProject.getProjectDir());
+                    projectWorkspaceService.deleteProject(entry);
+                    if (deletingCurrent) {
+                        showHome();
+                    }
+                    refreshProjectList();
+                    logManager.appendLogLine("WARN", "项目已删除：" + entry.getProjectName());
+                    toast("项目已删除");
+                    dialog.dismiss();
+                } catch (Exception e) {
+                    logManager.appendLogLine("ERROR", "删除项目失败：" + e.getMessage());
+                    toast("删除项目失败");
+                }
+            });
+        });
+        dialog.show();
+    }
+
+    private void exportProject(final ProjectEntry entry) {
+        showProgressDialog("导出项目", "正在压缩项目目录...", -1, true);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final File zipFile = projectWorkspaceService.exportProject(entry);
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            dismissProgressDialog();
+                            logManager.appendLogLine("INFO", "项目已导出为 ZIP。");
+                            logManager.appendKeyValue("INFO", "导出文件", zipFile.getAbsolutePath());
+                            toast("项目已导出");
+                        }
+                    });
+                } catch (final Exception e) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            dismissProgressDialog();
+                            logManager.appendLogLine("ERROR", "导出项目失败：" + e.getMessage());
+                            toast("导出项目失败");
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
+    private void refreshProjectAfterMutation(ProjectEntry oldEntry, ProjectEntry newEntry) {
+        boolean reopenCurrent = currentProject != null
+            && oldEntry != null
+            && currentProject.getProjectDir().equals(oldEntry.getProjectDir());
+        refreshProjectList();
+        if (reopenCurrent && newEntry != null) {
+            ProjectEntry refreshed = findProjectEntryByDir(newEntry.getProjectDir());
+            if (refreshed != null) {
+                openProject(refreshed);
+            }
+        }
+    }
+
+    private void copyDocumentUriToFile(Uri uri, File targetFile) throws Exception {
+        ensureDir(targetFile.getParentFile());
+        InputStream inputStream = null;
+        FileOutputStream outputStream = null;
+        try {
+            inputStream = getContentResolver().openInputStream(uri);
+            if (inputStream == null) {
+                throw new IllegalStateException("无法打开所选文件");
+            }
+            outputStream = new FileOutputStream(targetFile);
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, len);
+            }
+            outputStream.flush();
+        } finally {
+            if (inputStream != null) {
+                inputStream.close();
+            }
+            if (outputStream != null) {
+                outputStream.close();
+            }
+        }
+    }
+
+    private void showBuildSuccessDialog(BuildResult result) {
+        if (result == null || result.getApkPath() == null || result.getApkPath().length() == 0) {
+            return;
+        }
+        final File apkFile = new File(result.getApkPath());
+        if (!apkFile.exists()) {
+            return;
+        }
+        final Dialog dialog = createAppDialog("构建完成", "可以直接查看 APK 信息，也可以立刻分享或安装。");
+        ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
+        Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
+        Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
+        Button btnNeutral = (Button) dialog.findViewById(R.id.btnDialogNeutral);
+        listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, buildApkSummaryItems(apkFile)));
+        btnPrimary.setText("分享 APK");
+        btnNeutral.setVisibility(View.VISIBLE);
+        btnNeutral.setText("安装 APK");
+        btnSecondary.setText("关闭");
+        btnPrimary.setOnClickListener(v -> shareApk(apkFile));
+        btnNeutral.setOnClickListener(v -> installApk(apkFile));
+        btnSecondary.setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
+    }
+
+    private String[] buildApkSummaryItems(File apkFile) {
+        ArrayList<String> items = new ArrayList<String>();
+        items.add("文件名：" + apkFile.getName());
+        items.add("文件大小：" + formatFileSize(apkFile.length()));
+        items.add("更新时间：" + formatTime(apkFile.lastModified()));
+        items.add("输出路径：" + apkFile.getAbsolutePath());
+        try {
+            PackageInfo packageInfo = getPackageManager().getPackageArchiveInfo(apkFile.getAbsolutePath(), 0);
+            if (packageInfo != null) {
+                items.add("包名：" + safeText(packageInfo.packageName, "未识别"));
+                items.add("版本：" + buildApkVersionSummary(packageInfo));
+            }
+        } catch (Exception ignored) {
+        }
+        return items.toArray(new String[0]);
+    }
+
+    private String buildApkVersionSummary(PackageInfo packageInfo) {
+        if (packageInfo == null) {
+            return "未识别";
+        }
+        String versionName = safeText(packageInfo.versionName, "未识别");
+        long versionCode;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            versionCode = packageInfo.getLongVersionCode();
+        } else {
+            versionCode = packageInfo.versionCode;
+        }
+        return versionName + " (" + versionCode + ")";
+    }
+
+    private void shareApk(File apkFile) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType("application/vnd.android.package-archive");
+            intent.putExtra(Intent.EXTRA_STREAM, getFileUri(apkFile));
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(intent, "分享 APK"));
+        } catch (Exception e) {
+            toast("无法分享 APK");
+        }
+    }
+
+    private void installApk(File apkFile) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(getFileUri(apkFile), "application/vnd.android.package-archive");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+        } catch (Exception e) {
+            toast("无法发起安装");
+        }
+    }
+
+    private Uri getFileUri(File file) {
+        return FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
+    }
+
+    private String formatFileSize(long bytes) {
+        if (bytes < 1024L) {
+            return bytes + " B";
+        }
+        if (bytes < 1024L * 1024L) {
+            return String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0);
+        }
+        return String.format(java.util.Locale.US, "%.2f MB", bytes / 1024.0 / 1024.0);
+    }
+
+    private String formatTime(long timeMs) {
+        return DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(new Date(timeMs));
+    }
+
     private void loadProjectFiles() {
         if (currentProject == null) {
             fileTreeItems.clear();
@@ -2140,6 +2672,7 @@ public class MainActivity extends Activity {
                             logManager.appendKeyValue("INFO", "APK 输出", result.getApkPath());
                         }
                         toast("打包成功");
+                        showBuildSuccessDialog(result);
                     } else {
                         logManager.appendLogLine("ERROR", result.getMessage());
                         if (!lastBuildIssues.isEmpty()) {
@@ -2879,6 +3412,9 @@ public class MainActivity extends Activity {
             if (requestCode == REQUEST_PICK_IMAGE) {
                 pendingImagePickerTarget = null;
             }
+            if (requestCode == REQUEST_PICK_KEYSTORE) {
+                pendingKeystorePickerTarget = null;
+            }
             return;
         }
         if (requestCode == REQUEST_FILE_BROWSER && resultCode == RESULT_OK && data != null) {
@@ -2894,6 +3430,9 @@ public class MainActivity extends Activity {
             if (requestCode == REQUEST_PICK_IMAGE) {
                 pendingImagePickerTarget = null;
             }
+            if (requestCode == REQUEST_PICK_KEYSTORE) {
+                pendingKeystorePickerTarget = null;
+            }
             return;
         }
         if (requestCode == REQUEST_IMPORT_ZIP) {
@@ -2906,6 +3445,10 @@ public class MainActivity extends Activity {
         }
         if (requestCode == REQUEST_PICK_IMAGE) {
             applyPickedImageUri(pickedUri);
+            return;
+        }
+        if (requestCode == REQUEST_PICK_KEYSTORE) {
+            applyPickedKeystoreUri(pickedUri);
         }
     }
 
@@ -3013,7 +3556,7 @@ public class MainActivity extends Activity {
             holder.meta.setTextColor(palette == null ? Color.parseColor("#8FB6FF") : palette.accentStrong);
             holder.title.setText(entry.getProjectName());
             holder.sub.setText(safeText(entry.getPackageName(), "未识别包名"));
-            holder.meta.setText(entry.getMode() + "  ·  v" + safeText(entry.getVersionName(), "1.0"));
+            holder.meta.setText(entry.getMode() + "  ·  v" + safeText(entry.getVersionName(), "1.0") + "  ·  长按管理");
             Bitmap bitmap = null;
             if (entry.getIconPath() != null && entry.getIconPath().length() > 0 && !entry.getIconPath().endsWith(".xml")) {
                 bitmap = BitmapFactory.decodeFile(entry.getIconPath());
@@ -3157,6 +3700,13 @@ public class MainActivity extends Activity {
         ImageView previewView;
         TextView statusView;
         Button clearButton;
+        String cachedPath = "";
+    }
+
+    private static class KeystorePickerTarget {
+        ProjectEntry projectEntry;
+        LinearLayout cardView;
+        TextView statusView;
         String cachedPath = "";
     }
 

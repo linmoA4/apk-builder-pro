@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.res.AssetManager;
 import com.LM.pack.model.ProjectConfig;
 import com.LM.pack.model.ProjectEntry;
+import com.LM.pack.model.ProjectSigningConfig;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -16,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Properties;
 import java.util.regex.Matcher;
+import java.util.zip.ZipOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -23,6 +25,7 @@ public class ProjectManager {
 
     private static final String META_DIR = ".lmproject";
     private static final String META_FILE = "meta.properties";
+    private static final String SIGNING_FILE = "signing.properties";
 
     public interface ExtractProgressListener {
         void onProgress(String message, int percent);
@@ -135,6 +138,62 @@ public class ProjectManager {
             }
         }
         return entries;
+    }
+
+    public ProjectSigningConfig readSigningConfig(File projectRoot) {
+        Properties properties = new Properties();
+        File signingFile = new File(new File(projectRoot, META_DIR), SIGNING_FILE);
+        if (!signingFile.exists()) {
+            return new ProjectSigningConfig(false, "", "", "", "");
+        }
+        InputStream inputStream = null;
+        try {
+            inputStream = new FileInputStream(signingFile);
+            properties.load(inputStream);
+        } catch (Exception e) {
+            return new ProjectSigningConfig(false, "", "", "", "");
+        } finally {
+            try {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return new ProjectSigningConfig(
+            Boolean.parseBoolean(safeText(properties.getProperty("enabled"), "false")),
+            safeText(properties.getProperty("storeFilePath"), ""),
+            safeText(properties.getProperty("storePassword"), ""),
+            safeText(properties.getProperty("keyAlias"), ""),
+            safeText(properties.getProperty("keyPassword"), "")
+        );
+    }
+
+    public void saveSigningConfig(File projectRoot, ProjectSigningConfig config) throws IOException {
+        File metaDir = new File(projectRoot, META_DIR);
+        ensureDir(metaDir);
+        File signingFile = new File(metaDir, SIGNING_FILE);
+        if (config == null || !config.isEnabled()) {
+            if (signingFile.exists() && !signingFile.delete()) {
+                throw new IOException("无法清除签名配置: " + signingFile.getAbsolutePath());
+            }
+            return;
+        }
+        Properties properties = new Properties();
+        properties.setProperty("enabled", String.valueOf(config.isEnabled()));
+        properties.setProperty("storeFilePath", safeText(config.getStoreFilePath(), ""));
+        properties.setProperty("storePassword", safeText(config.getStorePassword(), ""));
+        properties.setProperty("keyAlias", safeText(config.getKeyAlias(), ""));
+        properties.setProperty("keyPassword", safeText(config.getKeyPassword(), ""));
+        FileOutputStream outputStream = null;
+        try {
+            outputStream = new FileOutputStream(signingFile);
+            properties.store(outputStream, "LM project signing config");
+        } finally {
+            if (outputStream != null) {
+                outputStream.close();
+            }
+        }
     }
 
     public boolean isZipFile(File file) {
@@ -380,6 +439,83 @@ public class ProjectManager {
                 inputStream.close();
             }
         }
+    }
+
+    public File renameProject(File projectRoot, String newProjectName) throws IOException {
+        if (projectRoot == null || !projectRoot.exists() || !projectRoot.isDirectory()) {
+            throw new IOException("项目目录不存在");
+        }
+        String safeName = sanitizeName(newProjectName);
+        if (safeName.length() == 0) {
+            throw new IOException("项目名称不能为空");
+        }
+        File parent = projectRoot.getParentFile();
+        if (parent == null) {
+            throw new IOException("无法定位项目所在目录");
+        }
+        File targetDir = new File(parent, safeName);
+        if (projectRoot.equals(targetDir)) {
+            updateProjectDisplayName(projectRoot, newProjectName);
+            return projectRoot;
+        }
+        if (targetDir.exists()) {
+            throw new IOException("目标目录已存在: " + targetDir.getName());
+        }
+        boolean renamed = projectRoot.renameTo(targetDir);
+        if (!renamed) {
+            copyDirectory(projectRoot, targetDir, null);
+            clearDirectory(projectRoot);
+        }
+        updateProjectDisplayName(targetDir, newProjectName);
+        return targetDir;
+    }
+
+    public File duplicateProject(File projectRoot, String newProjectName, CopyProgressListener listener) throws IOException {
+        if (projectRoot == null || !projectRoot.exists() || !projectRoot.isDirectory()) {
+            throw new IOException("项目目录不存在");
+        }
+        File parent = projectRoot.getParentFile();
+        if (parent == null) {
+            throw new IOException("无法定位项目所在目录");
+        }
+        File targetDir = resolveImportTargetDir(parent, newProjectName);
+        copyDirectory(projectRoot, targetDir, listener);
+        updateProjectDisplayName(targetDir, newProjectName);
+        return targetDir;
+    }
+
+    public File exportProjectZip(File projectRoot, File exportDir, String exportName) throws IOException {
+        if (projectRoot == null || !projectRoot.exists() || !projectRoot.isDirectory()) {
+            throw new IOException("项目目录不存在");
+        }
+        ensureDir(exportDir);
+        String safeName = sanitizeName(exportName);
+        if (safeName.length() == 0) {
+            safeName = sanitizeName(projectRoot.getName());
+        }
+        File zipFile = new File(exportDir, safeName + ".zip");
+        int suffix = 2;
+        while (zipFile.exists()) {
+            zipFile = new File(exportDir, safeName + "-" + suffix + ".zip");
+            suffix++;
+        }
+        ZipOutputStream zipOutputStream = null;
+        try {
+            zipOutputStream = new ZipOutputStream(new FileOutputStream(zipFile));
+            zipDirectory(projectRoot, projectRoot.getName(), zipOutputStream);
+        } finally {
+            if (zipOutputStream != null) {
+                zipOutputStream.close();
+            }
+        }
+        return zipFile;
+    }
+
+    public void deleteProject(File projectRoot) throws IOException {
+        if (projectRoot == null || !projectRoot.exists()) {
+            return;
+        }
+        clearDirectory(projectRoot);
     }
 
     public void writeText(File file, String content) throws IOException {
@@ -1104,6 +1240,59 @@ public class ProjectManager {
             return "";
         }
         return value.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+    }
+
+    private void updateProjectDisplayName(File projectRoot, String newProjectName) throws IOException {
+        if (projectRoot == null || !projectRoot.exists()) {
+            return;
+        }
+        ProjectEntry entry = readProjectEntry(projectRoot);
+        saveProjectMeta(
+            projectRoot,
+            safeText(newProjectName, entry.getProjectName()),
+            safeText(entry.getPackageName(), ""),
+            safeText(entry.getMode(), "项目"),
+            safeText(entry.getVersionName(), "1.0"),
+            findProjectIcon(projectRoot)
+        );
+    }
+
+    private void zipDirectory(File source, String entryName, ZipOutputStream outputStream) throws IOException {
+        if (source == null || outputStream == null) {
+            return;
+        }
+        String normalizedEntry = entryName.replace('\\', '/');
+        if (source.isDirectory()) {
+            if (!normalizedEntry.endsWith("/")) {
+                normalizedEntry = normalizedEntry + "/";
+            }
+            outputStream.putNextEntry(new ZipEntry(normalizedEntry));
+            outputStream.closeEntry();
+            File[] children = source.listFiles();
+            if (children == null) {
+                return;
+            }
+            for (int i = 0; i < children.length; i++) {
+                File child = children[i];
+                zipDirectory(child, normalizedEntry + child.getName(), outputStream);
+            }
+            return;
+        }
+        InputStream inputStream = null;
+        try {
+            outputStream.putNextEntry(new ZipEntry(normalizedEntry));
+            inputStream = new BufferedInputStream(new FileInputStream(source), 65536);
+            byte[] buffer = new byte[65536];
+            int len;
+            while ((len = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, len);
+            }
+            outputStream.closeEntry();
+        } finally {
+            if (inputStream != null) {
+                inputStream.close();
+            }
+        }
     }
 
     private String firstNonEmpty(String a, String b, String c) {

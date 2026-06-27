@@ -4,6 +4,7 @@ import android.content.Context;
 import com.LM.pack.env.EnvironmentManager;
 import com.LM.pack.model.ProjectConfig;
 import com.LM.pack.model.ProjectEntry;
+import com.LM.pack.model.ProjectSigningConfig;
 import com.LM.pack.project.ProjectManager;
 import java.io.File;
 import java.io.IOException;
@@ -120,6 +121,64 @@ public class ProjectWorkspaceService {
 
     public ProjectEntry readProjectEntry(File projectRoot) {
         return projectManager.readProjectEntry(projectRoot);
+    }
+
+    public ProjectSigningConfig readSigningConfig(ProjectEntry entry) {
+        if (entry == null) {
+            return new ProjectSigningConfig(false, "", "", "", "");
+        }
+        return projectManager.readSigningConfig(new File(entry.getProjectDir()));
+    }
+
+    public void saveSigningConfig(ProjectEntry entry, ProjectSigningConfig config) throws IOException {
+        if (entry == null) {
+            throw new IOException("项目不存在");
+        }
+        projectManager.saveSigningConfig(new File(entry.getProjectDir()), config);
+    }
+
+    public ProjectEntry renameProject(ProjectEntry entry, String newProjectName) throws IOException {
+        if (entry == null) {
+            throw new IOException("项目不存在");
+        }
+        File targetDir = projectManager.renameProject(new File(entry.getProjectDir()), newProjectName);
+        return projectManager.readProjectEntry(targetDir);
+    }
+
+    public ProjectEntry duplicateProject(ProjectEntry entry, String newProjectName, ImportProgressListener listener) throws IOException {
+        if (entry == null) {
+            throw new IOException("项目不存在");
+        }
+        File targetDir = projectManager.duplicateProject(
+            new File(entry.getProjectDir()),
+            newProjectName,
+            listener == null ? null : new ProjectManager.CopyProgressListener() {
+                @Override
+                public void onProgress(String message, int percent) {
+                    listener.onProgress(message, percent);
+                }
+            }
+        );
+        return projectManager.readProjectEntry(targetDir);
+    }
+
+    public File exportProject(ProjectEntry entry) throws IOException {
+        if (entry == null) {
+            throw new IOException("项目不存在");
+        }
+        File exportRoot = new File(new File(environmentManager.getBaseDir(), "exports"), "projects");
+        return projectManager.exportProjectZip(
+            new File(entry.getProjectDir()),
+            exportRoot,
+            entry.getProjectName()
+        );
+    }
+
+    public void deleteProject(ProjectEntry entry) throws IOException {
+        if (entry == null) {
+            return;
+        }
+        projectManager.deleteProject(new File(entry.getProjectDir()));
     }
 
     public boolean isZipFile(File file) {
