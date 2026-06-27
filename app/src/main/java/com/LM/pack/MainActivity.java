@@ -115,6 +115,9 @@ public class MainActivity extends Activity {
     private Button btnImportAction;
     private Button btnToggleFiles;
     private Button btnBug;
+    private Button btnUndo;
+    private Button btnRedo;
+    private Button btnSearch;
     private Button btnSaveFile;
     private Button btnBuild;
     private Button btnCopyFix;
@@ -143,6 +146,8 @@ public class MainActivity extends Activity {
     private int selectedJdkIndex = 4;
     private int selectedNdkIndex = 4;
     private String currentCopiedFix = "";
+    private String lastSearchQuery = "";
+    private String lastReplaceText = "";
     private String lastSavedText = "";
     private boolean suppressEditorWriteback = false;
     private boolean swipeHandled = false;
@@ -233,6 +238,9 @@ public class MainActivity extends Activity {
         btnImportAction = (Button) findViewById(R.id.btnImportAction);
         btnToggleFiles = (Button) editorPane.findViewById(R.id.btnToggleFiles);
         btnBug = (Button) editorPane.findViewById(R.id.btnBug);
+        btnUndo = (Button) editorPane.findViewById(R.id.btnUndo);
+        btnRedo = (Button) editorPane.findViewById(R.id.btnRedo);
+        btnSearch = (Button) editorPane.findViewById(R.id.btnSearch);
         btnSaveFile = (Button) editorPane.findViewById(R.id.btnSaveFile);
         btnBuild = (Button) editorPane.findViewById(R.id.btnBuild);
         btnCopyFix = (Button) editorPane.findViewById(R.id.btnCopyFix);
@@ -281,6 +289,12 @@ public class MainActivity extends Activity {
         });
         lvProjects.setAdapter(projectAdapter);
         lvFiles.setAdapter(fileTreeAdapter);
+        etEditor.setEditorEventListener(new CodeEditorView.EditorEventListener() {
+            @Override
+            public void onHistoryChanged(boolean canUndo, boolean canRedo) {
+                updateEditorActionButtons();
+            }
+        });
     }
 
     private void bindEvents() {
@@ -333,6 +347,29 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 showIssueChooser();
+            }
+        });
+
+        btnUndo.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                etEditor.undo();
+                updateEditorActionButtons();
+            }
+        });
+
+        btnRedo.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                etEditor.redo();
+                updateEditorActionButtons();
+            }
+        });
+
+        btnSearch.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showSearchReplaceDialog();
             }
         });
 
@@ -1514,6 +1551,8 @@ public class MainActivity extends Activity {
             suppressEditorWriteback = true;
             etEditor.setText(content);
             suppressEditorWriteback = false;
+            etEditor.resetHistory();
+            etEditor.clearSearchHighlights();
             tvCurrentFilePath.setText(projectFileService.buildDisplayPath(currentProject, file));
             setSuggestionCardVisible(false, true);
             etEditor.clearDiagnosticLines();
@@ -1537,9 +1576,12 @@ public class MainActivity extends Activity {
         suppressEditorWriteback = true;
         etEditor.setText("");
         suppressEditorWriteback = false;
+        etEditor.resetHistory();
+        etEditor.clearSearchHighlights();
         etEditor.clearDiagnosticLines();
         tvCurrentFilePath.setText("请选择一个文件");
         setSuggestionCardVisible(false, false);
+        updateEditorActionButtons();
     }
 
     private void saveCurrentFile() {
@@ -2399,6 +2441,123 @@ public class MainActivity extends Activity {
             progressBarFancy.setIndeterminate(false);
             progressBarFancy.setProgress(0);
         }
+    }
+
+    private void updateEditorActionButtons() {
+        updateActionButtonState(btnUndo, etEditor != null && etEditor.canUndo());
+        updateActionButtonState(btnRedo, etEditor != null && etEditor.canRedo());
+        updateActionButtonState(btnSearch, currentOpenFile != null);
+    }
+
+    private void updateActionButtonState(Button button, boolean enabled) {
+        if (button == null) {
+            return;
+        }
+        button.setEnabled(enabled);
+        button.setAlpha(enabled ? 1f : 0.45f);
+    }
+
+    private void showSearchReplaceDialog() {
+        if (currentOpenFile == null) {
+            toast("请先打开一个文件");
+            return;
+        }
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        int padding = dp(16);
+        container.setPadding(padding, padding, padding, 0);
+
+        final EditText etQuery = new EditText(this);
+        etQuery.setHint("搜索内容");
+        etQuery.setSingleLine(true);
+        etQuery.setText(lastSearchQuery);
+        container.addView(etQuery, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final EditText etReplacement = new EditText(this);
+        etReplacement.setHint("替换为");
+        etReplacement.setSingleLine(true);
+        etReplacement.setText(lastReplaceText);
+        LinearLayout.LayoutParams replacementParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        replacementParams.topMargin = dp(10);
+        container.addView(etReplacement, replacementParams);
+
+        final TextView tvHint = new TextView(this);
+        tvHint.setText("默认忽略大小写。支持查找下一个、替换当前和全部替换。");
+        tvHint.setTextSize(12f);
+        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        hintParams.topMargin = dp(10);
+        container.addView(tvHint, hintParams);
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("搜索与替换")
+            .setView(container)
+            .setPositiveButton("下一个", null)
+            .setNeutralButton("替换当前", null)
+            .setNegativeButton("全部替换", null)
+            .create();
+        dialog.setOnDismissListener(dialogInterface -> {
+            String query = etQuery.getText().toString().trim();
+            if (query.length() == 0) {
+                etEditor.clearSearchHighlights();
+            }
+        });
+        dialog.show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String query = etQuery.getText().toString().trim();
+            lastSearchQuery = query;
+            lastReplaceText = etReplacement.getText().toString();
+            if (query.length() == 0) {
+                toast("请输入搜索内容");
+                etEditor.clearSearchHighlights();
+                return;
+            }
+            if (!etEditor.findNext(query, true)) {
+                toast("没有找到匹配内容");
+            }
+        });
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+            String query = etQuery.getText().toString().trim();
+            String replacement = etReplacement.getText().toString();
+            lastSearchQuery = query;
+            lastReplaceText = replacement;
+            if (query.length() == 0) {
+                toast("请输入搜索内容");
+                return;
+            }
+            if (etEditor.replaceCurrentMatch(query, replacement, true)) {
+                etEditor.findNext(query, true);
+                toast("已替换当前匹配");
+                return;
+            }
+            if (etEditor.findNext(query, true) && etEditor.replaceCurrentMatch(query, replacement, true)) {
+                etEditor.findNext(query, true);
+                toast("已定位并替换");
+            } else {
+                toast("没有可替换的匹配");
+            }
+        });
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> {
+            String query = etQuery.getText().toString().trim();
+            String replacement = etReplacement.getText().toString();
+            lastSearchQuery = query;
+            lastReplaceText = replacement;
+            if (query.length() == 0) {
+                toast("请输入搜索内容");
+                return;
+            }
+            int replaced = etEditor.replaceAll(query, replacement, true);
+            if (replaced <= 0) {
+                toast("没有匹配项");
+            } else {
+                toast("已替换 " + replaced + " 处");
+            }
+        });
     }
 
     private void showProgressDialog(String title, String message, int percent, boolean indeterminate) {

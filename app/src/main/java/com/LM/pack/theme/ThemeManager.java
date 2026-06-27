@@ -18,6 +18,7 @@ import android.widget.TextView;
 import com.LM.pack.env.EnvironmentManager;
 
 public class ThemeManager {
+    // TODO: 用显式 token 映射表替代字符串 if-else 链，并为调色板参数建立分组构造方式。
 
     public static final String MODE_SYSTEM = "system";
     public static final String MODE_LIGHT = "light";

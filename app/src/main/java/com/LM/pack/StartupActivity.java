@@ -27,6 +27,7 @@ import com.LM.pack.theme.LiquidGlassBackgroundView;
 import com.LM.pack.theme.ThemeManager;
 
 public class StartupActivity extends Activity {
+    // TODO: 将启动流程改为事件驱动，替换 360ms / 420ms / 460ms 这类硬编码延迟。
 
     private static final int REQUEST_STORAGE_PERMISSION = 7001;
 

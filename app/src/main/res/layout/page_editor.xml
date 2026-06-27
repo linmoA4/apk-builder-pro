@@ -45,6 +45,35 @@
             android:tag="ghostButton primary" />
 
         <Button
+            android:id="@+id/btnUndo"
+            android:layout_width="40dp"
+            android:layout_height="36dp"
+            android:layout_marginLeft="6dp"
+            android:text="↶"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:tag="ghostButton primary" />
+
+        <Button
+            android:id="@+id/btnRedo"
+            android:layout_width="40dp"
+            android:layout_height="36dp"
+            android:layout_marginLeft="6dp"
+            android:text="↷"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:tag="ghostButton primary" />
+
+        <Button
+            android:id="@+id/btnSearch"
+            android:layout_width="46dp"
+            android:layout_height="36dp"
+            android:layout_marginLeft="6dp"
+            android:text="查"
+            android:textStyle="bold"
+            android:tag="ghostButton primary" />
+
+        <Button
             android:id="@+id/btnSaveFile"
             android:layout_width="0dp"
             android:layout_height="0dp"

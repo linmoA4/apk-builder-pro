@@ -12,6 +12,8 @@ import java.io.File;
 import java.util.ArrayList;
 
 public class BuildWorkflowService {
+    // TODO: 为构建流程补充取消与超时控制，避免 Gradle 卡死时只能强制退出。
+
     public interface Listener {
         void onPreflightFailed(ArrayList<BuildIssue> issues);
         void onBuildStarted();
