@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Environment;
 import android.util.Log;
+import com.LM.pack.BuildConfig;
 import com.LM.pack.model.EnvironmentState;
 import com.LM.pack.util.CommonUtils;
 import java.io.ByteArrayOutputStream;
@@ -46,7 +47,8 @@ public class EnvironmentManager {
 
     public static final String SDK_DISPLAY_NAME = "Android SDK Command-line Tools";
     public static final String DEFAULT_GRADLE_VERSION = "8.7";
-    public static final String REPOSITORY_RAW_BASE = "https://raw.githubusercontent.com/linmoA4/apk-builder-pro/main";
+    public static final String REPOSITORY_RAW_BASE = BuildConfig.REPOSITORY_RAW_BASE;
+    public static final String REPOSITORY_RAW_MIRROR_BASE = BuildConfig.REPOSITORY_RAW_MIRROR_BASE;
     public static final String DEFAULT_GRADLE_DISTRIBUTION_SHA256 = "544c35d6bd849ae8a5ed0bcea39ba677dc40f49df7d1835561582da2009b961d";
     public static final String DEFAULT_GRADLE_WRAPPER_SHA256 = "cb0da6751c2b753a16ac168bb354870ebb1e162e9083f116729cec9c781156b8";
 
@@ -54,12 +56,110 @@ public class EnvironmentManager {
     private static final LinkedHashMap<String, String> GRADLE_WRAPPER_SHA256 = new LinkedHashMap<String, String>();
 
     static {
-        GRADLE_DISTRIBUTION_SHA256.put("8.5.2", "b9b9f7c4b2e0e5b5e5c3c3f3c3b3e3e3a3a3b3b3c3c3d3d3e3e3f3f3a3a3b3b3");
+        GRADLE_DISTRIBUTION_SHA256.put("9.6.1", "9c0f7faeeb306cb14e4279a3e084ca6b596894089a0638e68a07c945a32c9e14");
+        GRADLE_DISTRIBUTION_SHA256.put("9.6.0", "bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01");
+        GRADLE_DISTRIBUTION_SHA256.put("9.5.1", "bafc141b619ad6350fd975fc903156dd5c151998cc8b058e8c1044ab5f7b031f");
+        GRADLE_DISTRIBUTION_SHA256.put("8.14.5", "6f74b601422d6d6fc4e1f9a1ab6522f642c2fdcbc15ae33ebd30ba3d7198e854");
+        GRADLE_DISTRIBUTION_SHA256.put("9.5.0", "553c78f50dafcd54d65b9a444649057857469edf836431389695608536d6b746");
+        GRADLE_DISTRIBUTION_SHA256.put("9.4.1", "2ab2958f2a1e51120c326cad6f385153bb11ee93b3c216c5fccebfdfbb7ec6cb");
+        GRADLE_DISTRIBUTION_SHA256.put("9.4.0", "60ea723356d81263e8002fec0fcf9e2b0eee0c0850c7a3d7ab0a63f2ccc601f3");
+        GRADLE_DISTRIBUTION_SHA256.put("9.3.1", "b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06");
+        GRADLE_DISTRIBUTION_SHA256.put("8.14.4", "f1771298a70f6db5a29daf62378c4e18a17fc33c9ba6b14362e0cdf40610380d");
+        GRADLE_DISTRIBUTION_SHA256.put("9.3.0", "0d585f69da091fc5b2beced877feab55a3064d43b8a1d46aeb07996b0915e0e0");
+        GRADLE_DISTRIBUTION_SHA256.put("9.2.1", "72f44c9f8ebcb1af43838f45ee5c4aa9c5444898b3468ab3f4af7b6076c5bc3f");
+        GRADLE_DISTRIBUTION_SHA256.put("9.2.0", "df67a32e86e3276d011735facb1535f64d0d88df84fa87521e90becc2d735444");
+        GRADLE_DISTRIBUTION_SHA256.put("9.1.0", "a17ddd85a26b6a7f5ddb71ff8b05fc5104c0202c6e64782429790c933686c806");
+        GRADLE_DISTRIBUTION_SHA256.put("9.0.0", "8fad3d78296ca518113f3d29016617c7f9367dc005f932bd9d93bf45ba46072b");
+        GRADLE_DISTRIBUTION_SHA256.put("8.14.3", "bd71102213493060956ec229d946beee57158dbd89d0e62b91bca0fa2c5f3531");
+        GRADLE_DISTRIBUTION_SHA256.put("7.6.6", "673d9776f303bc7048fc3329d232d6ebf1051b07893bd9d11616fad9a8673be0");
+        GRADLE_DISTRIBUTION_SHA256.put("8.14.2", "7197a12f450794931532469d4ff21a59ea2c1cd59a3ec3f89c035c3c420a6999");
+        GRADLE_DISTRIBUTION_SHA256.put("7.6.5", "b812fec0edb7d27e0ae35955887bb2954536fa3e44edaf481150da058e154d9a");
+        GRADLE_DISTRIBUTION_SHA256.put("8.14.1", "845952a9d6afa783db70bb3b0effaae45ae5542ca2bb7929619e8af49cb634cf");
+        GRADLE_DISTRIBUTION_SHA256.put("8.14", "61ad310d3c7d3e5da131b76bbf22b5a4c0786e9d892dae8c1658d4b484de3caa");
+        GRADLE_DISTRIBUTION_SHA256.put("8.13", "20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78");
+        GRADLE_DISTRIBUTION_SHA256.put("8.12.1", "8d97a97984f6cbd2b85fe4c60a743440a347544bf18818048e611f5288d46c94");
+        GRADLE_DISTRIBUTION_SHA256.put("8.12", "7a00d51fb93147819aab76024feece20b6b84e420694101f276be952e08bef03");
+        GRADLE_DISTRIBUTION_SHA256.put("8.11.1", "f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6");
+        GRADLE_DISTRIBUTION_SHA256.put("8.11", "57dafb5c2622c6cc08b993c85b7c06956a2f53536432a30ead46166dbca0f1e9");
+        GRADLE_DISTRIBUTION_SHA256.put("8.10.2", "31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26");
+        GRADLE_DISTRIBUTION_SHA256.put("8.10.1", "1541fa36599e12857140465f3c91a97409b4512501c26f9631fb113e392c5bd1");
+        GRADLE_DISTRIBUTION_SHA256.put("8.10", "5b9c5eb3f9fc2c94abaea57d90bd78747ca117ddbbf96c859d3741181a12bf2a");
+        GRADLE_DISTRIBUTION_SHA256.put("8.9", "d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab");
+        GRADLE_DISTRIBUTION_SHA256.put("8.8", "a4b4158601f8636cdeeab09bd76afb640030bb5b144aafe261a5e8af027dc612");
         GRADLE_DISTRIBUTION_SHA256.put("8.7", DEFAULT_GRADLE_DISTRIBUTION_SHA256);
-        GRADLE_DISTRIBUTION_SHA256.put("8.9", "d9d9f7c4b2e0e5b5e5c3c3f3c3b3e3e3a3a3b3b3c3c3d3d3e3e3f3f3a3a3b3b3");
-        GRADLE_WRAPPER_SHA256.put("8.5.2", "a9a9f7c4b2e0e5b5e5c3c3f3c3b3e3e3a3a3b3b3c3c3d3d3e3e3f3f3a3a3b3b3");
+        GRADLE_DISTRIBUTION_SHA256.put("7.6.4", "bed1da33cca0f557ab13691c77f38bb67388119e4794d113e051039b80af9bb1");
+        GRADLE_DISTRIBUTION_SHA256.put("8.6", "9631d53cf3e74bfa726893aee1f8994fee4e060c401335946dba2156f440f24c");
+        GRADLE_DISTRIBUTION_SHA256.put("8.5", "9d926787066a081739e8200858338b4a69e837c3a821a33aca9db09dd4a41026");
+        GRADLE_DISTRIBUTION_SHA256.put("8.4", "3e1af3ae886920c3ac87f7a91f816c0c7c436f276a6eefdb3da152100fef72ae");
+        GRADLE_DISTRIBUTION_SHA256.put("7.6.3", "740c2e472ee4326c33bf75a5c9f5cd1e69ecf3f9b580f6e236c86d1f3d98cfac");
+        GRADLE_DISTRIBUTION_SHA256.put("8.3", "591855b517fc635b9e04de1d05d5e76ada3f89f5fc76f87978d1b245b4f69225");
+        GRADLE_DISTRIBUTION_SHA256.put("8.2.1", "03ec176d388f2aa99defcadc3ac6adf8dd2bce5145a129659537c0874dea5ad1");
+        GRADLE_DISTRIBUTION_SHA256.put("8.2", "38f66cd6eef217b4c35855bb11ea4e9fbc53594ccccb5fb82dfd317ef8c2c5a3");
+        GRADLE_DISTRIBUTION_SHA256.put("7.6.2", "a01b6587e15fe7ed120a0ee299c25982a1eee045abd6a9dd5e216b2f628ef9ac");
+        GRADLE_DISTRIBUTION_SHA256.put("8.1.1", "e111cb9948407e26351227dabce49822fb88c37ee72f1d1582a69c68af2e702f");
+        GRADLE_DISTRIBUTION_SHA256.put("8.1", "a62c5f99585dd9e1f95dab7b9415a0e698fa9dd1e6c38537faa81ac078f4d23e");
+        GRADLE_DISTRIBUTION_SHA256.put("8.0.2", "ff7bf6a86f09b9b2c40bb8f48b25fc19cf2b2664fd1d220cd7ab833ec758d0d7");
+        GRADLE_DISTRIBUTION_SHA256.put("7.6.1", "6147605a23b4eff6c334927a86ff3508cb5d6722cd624c97ded4c2e8640f1f87");
+        GRADLE_DISTRIBUTION_SHA256.put("6.9.4", "3e240228538de9f18772a574e99a0ba959e83d6ef351014381acd9631781389a");
+        GRADLE_DISTRIBUTION_SHA256.put("8.0.1", "1b6b558be93f29438d3df94b7dfee02e794b94d9aca4611a92cdb79b6b88e909");
+        GRADLE_DISTRIBUTION_SHA256.put("8.0", "4159b938ec734a8388ce03f52aa8f3c7ed0d31f5438622545de4f83a89b79788");
+        GRADLE_DISTRIBUTION_SHA256.put("7.6", "7ba68c54029790ab444b39d7e293d3236b2632631fb5f2e012bb28b4ff669e4b");
+        GRADLE_DISTRIBUTION_SHA256.put("6.9.3", "dcf350b8ae1aa192fc299aed6efc77b43825d4fedb224c94118ae7faf5fb035d");
+        GRADLE_DISTRIBUTION_SHA256.put("6.9.2", "8b356fd8702d5ffa2e066ed0be45a023a779bba4dd1a68fd11bc2a6bdc981e8f");
+        GRADLE_DISTRIBUTION_SHA256.put("6.9.1", "8c12154228a502b784f451179846e518733cf856efc7d45b2e6691012977b2fe");
+        GRADLE_DISTRIBUTION_SHA256.put("6.9", "765442b8069c6bee2ea70713861c027587591c6b1df2c857a23361512560894e");
+        GRADLE_WRAPPER_SHA256.put("9.6.1", "497c8c2a7e5031f6aa847f88104aa80a93532ec32ee17bdb8d1d2f67a194a9c7");
+        GRADLE_WRAPPER_SHA256.put("9.6.0", "497c8c2a7e5031f6aa847f88104aa80a93532ec32ee17bdb8d1d2f67a194a9c7");
+        GRADLE_WRAPPER_SHA256.put("9.5.1", "497c8c2a7e5031f6aa847f88104aa80a93532ec32ee17bdb8d1d2f67a194a9c7");
+        GRADLE_WRAPPER_SHA256.put("8.14.5", "7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172");
+        GRADLE_WRAPPER_SHA256.put("9.5.0", "497c8c2a7e5031f6aa847f88104aa80a93532ec32ee17bdb8d1d2f67a194a9c7");
+        GRADLE_WRAPPER_SHA256.put("9.4.1", "55243ef57851f12b070ad14f7f5bb8302daceeebc5bce5ece5fa6edb23e1145c");
+        GRADLE_WRAPPER_SHA256.put("9.4.0", "55243ef57851f12b070ad14f7f5bb8302daceeebc5bce5ece5fa6edb23e1145c");
+        GRADLE_WRAPPER_SHA256.put("9.3.1", "b3a875ddc1f044746e1b1a55f645584505f4a10438c1afea9f15e92a7c42ec13");
+        GRADLE_WRAPPER_SHA256.put("8.14.4", "7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172");
+        GRADLE_WRAPPER_SHA256.put("9.3.0", "b3a875ddc1f044746e1b1a55f645584505f4a10438c1afea9f15e92a7c42ec13");
+        GRADLE_WRAPPER_SHA256.put("9.2.1", "423cb469ccc0ecc31f0e4e1c309976198ccb734cdcbb7029d4bda0f18f57e8d9");
+        GRADLE_WRAPPER_SHA256.put("9.2.0", "423cb469ccc0ecc31f0e4e1c309976198ccb734cdcbb7029d4bda0f18f57e8d9");
+        GRADLE_WRAPPER_SHA256.put("9.1.0", "76805e32c009c0cf0dd5d206bddc9fb22ea42e84db904b764f3047de095493f3");
+        GRADLE_WRAPPER_SHA256.put("9.0.0", "76805e32c009c0cf0dd5d206bddc9fb22ea42e84db904b764f3047de095493f3");
+        GRADLE_WRAPPER_SHA256.put("8.14.3", "7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172");
+        GRADLE_WRAPPER_SHA256.put("7.6.6", "14dfa961b6704bb3decdea06502781edaa796a82e6da41cd2e1962b14fbe21a3");
+        GRADLE_WRAPPER_SHA256.put("8.14.2", "7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172");
+        GRADLE_WRAPPER_SHA256.put("7.6.5", "14dfa961b6704bb3decdea06502781edaa796a82e6da41cd2e1962b14fbe21a3");
+        GRADLE_WRAPPER_SHA256.put("8.14.1", "7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172");
+        GRADLE_WRAPPER_SHA256.put("8.14", "7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172");
+        GRADLE_WRAPPER_SHA256.put("8.13", "81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f");
+        GRADLE_WRAPPER_SHA256.put("8.12.1", "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046");
+        GRADLE_WRAPPER_SHA256.put("8.12", "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046");
+        GRADLE_WRAPPER_SHA256.put("8.11.1", "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046");
+        GRADLE_WRAPPER_SHA256.put("8.11", "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046");
+        GRADLE_WRAPPER_SHA256.put("8.10.2", "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046");
+        GRADLE_WRAPPER_SHA256.put("8.10.1", "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046");
+        GRADLE_WRAPPER_SHA256.put("8.10", "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046");
+        GRADLE_WRAPPER_SHA256.put("8.9", "498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17");
+        GRADLE_WRAPPER_SHA256.put("8.8", "cb0da6751c2b753a16ac168bb354870ebb1e162e9083f116729cec9c781156b8");
         GRADLE_WRAPPER_SHA256.put("8.7", DEFAULT_GRADLE_WRAPPER_SHA256);
-        GRADLE_WRAPPER_SHA256.put("8.9", "c9c9f7c4b2e0e5b5e5c3c3f3c3b3e3e3a3a3b3b3c3c3d3d3e3e3f3f3a3a3b3b3");
+        GRADLE_WRAPPER_SHA256.put("7.6.4", "14dfa961b6704bb3decdea06502781edaa796a82e6da41cd2e1962b14fbe21a3");
+        GRADLE_WRAPPER_SHA256.put("8.6", "d3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd");
+        GRADLE_WRAPPER_SHA256.put("8.5", "d3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd");
+        GRADLE_WRAPPER_SHA256.put("8.4", "0336f591bc0ec9aa0c9988929b93ecc916b3c1d52aed202c7381db144aa0ef15");
+        GRADLE_WRAPPER_SHA256.put("7.6.3", "14dfa961b6704bb3decdea06502781edaa796a82e6da41cd2e1962b14fbe21a3");
+        GRADLE_WRAPPER_SHA256.put("8.3", "0336f591bc0ec9aa0c9988929b93ecc916b3c1d52aed202c7381db144aa0ef15");
+        GRADLE_WRAPPER_SHA256.put("8.2.1", "a8451eeda314d0568b5340498b36edf147a8f0d692c5ff58082d477abe9146e4");
+        GRADLE_WRAPPER_SHA256.put("8.2", "a8451eeda314d0568b5340498b36edf147a8f0d692c5ff58082d477abe9146e4");
+        GRADLE_WRAPPER_SHA256.put("7.6.2", "14dfa961b6704bb3decdea06502781edaa796a82e6da41cd2e1962b14fbe21a3");
+        GRADLE_WRAPPER_SHA256.put("8.1.1", "ed2c26eba7cfb93cc2b7785d05e534f07b5b48b5e7fc941921cd098628abca58");
+        GRADLE_WRAPPER_SHA256.put("8.1", "ed2c26eba7cfb93cc2b7785d05e534f07b5b48b5e7fc941921cd098628abca58");
+        GRADLE_WRAPPER_SHA256.put("8.0.2", "91941f522fbfd4431cf57e445fc3d5200c85f957bda2de5251353cf11174f4b5");
+        GRADLE_WRAPPER_SHA256.put("7.6.1", "c5a643cf80162e665cc228f7b16f343fef868e47d3a4836f62e18b7e17ac018a");
+        GRADLE_WRAPPER_SHA256.put("6.9.4", "e996d452d2645e70c01c11143ca2d3742734a28da2bf61f25c82bdc288c9e637");
+        GRADLE_WRAPPER_SHA256.put("8.0.1", "91941f522fbfd4431cf57e445fc3d5200c85f957bda2de5251353cf11174f4b5");
+        GRADLE_WRAPPER_SHA256.put("8.0", "91941f522fbfd4431cf57e445fc3d5200c85f957bda2de5251353cf11174f4b5");
+        GRADLE_WRAPPER_SHA256.put("7.6", "c5a643cf80162e665cc228f7b16f343fef868e47d3a4836f62e18b7e17ac018a");
+        GRADLE_WRAPPER_SHA256.put("6.9.3", "e996d452d2645e70c01c11143ca2d3742734a28da2bf61f25c82bdc288c9e637");
+        GRADLE_WRAPPER_SHA256.put("6.9.2", "e996d452d2645e70c01c11143ca2d3742734a28da2bf61f25c82bdc288c9e637");
+        GRADLE_WRAPPER_SHA256.put("6.9.1", "e996d452d2645e70c01c11143ca2d3742734a28da2bf61f25c82bdc288c9e637");
+        GRADLE_WRAPPER_SHA256.put("6.9", "e996d452d2645e70c01c11143ca2d3742734a28da2bf61f25c82bdc288c9e637");
     }
 
     public static final String[] JDK_NAMES = {
@@ -699,11 +799,21 @@ public class EnvironmentManager {
     }
 
     public String getRepositoryWrapperJarUrl() {
-        return REPOSITORY_RAW_BASE + "/gradle/wrapper/gradle-wrapper.jar";
+        String[] candidates = getRepositoryWrapperJarCandidates();
+        return candidates.length == 0 ? "" : candidates[0];
     }
 
     public String getRepositoryWrapperPropertiesUrl() {
-        return REPOSITORY_RAW_BASE + "/gradle/wrapper/gradle-wrapper.properties";
+        String[] candidates = getRepositoryWrapperPropertiesCandidates();
+        return candidates.length == 0 ? "" : candidates[0];
+    }
+
+    public String[] getRepositoryWrapperJarCandidates() {
+        return buildRepositoryRawCandidates("/gradle/wrapper/gradle-wrapper.jar");
+    }
+
+    public String[] getRepositoryWrapperPropertiesCandidates() {
+        return buildRepositoryRawCandidates("/gradle/wrapper/gradle-wrapper.properties");
     }
 
     public String getOfficialWrapperJarUrl(String gradleVersion) {
@@ -850,6 +960,30 @@ public class EnvironmentManager {
                 values.add(value);
             }
         }
+    }
+
+    private String[] buildRepositoryRawCandidates(String suffix) {
+        LinkedHashSet<String> values = new LinkedHashSet<String>();
+        String normalizedSuffix = suffix.startsWith("/") ? suffix : "/" + suffix;
+        if (isChinaDownloadRoute()) {
+            addRepositoryRawUrl(values, REPOSITORY_RAW_MIRROR_BASE, normalizedSuffix);
+            addRepositoryRawUrl(values, REPOSITORY_RAW_BASE, normalizedSuffix);
+        } else {
+            addRepositoryRawUrl(values, REPOSITORY_RAW_BASE, normalizedSuffix);
+            addRepositoryRawUrl(values, REPOSITORY_RAW_MIRROR_BASE, normalizedSuffix);
+        }
+        return values.toArray(new String[0]);
+    }
+
+    private void addRepositoryRawUrl(LinkedHashSet<String> values, String baseUrl, String suffix) {
+        String normalizedBase = safeText(baseUrl);
+        if (normalizedBase.length() == 0) {
+            return;
+        }
+        if (normalizedBase.endsWith("/")) {
+            normalizedBase = normalizedBase.substring(0, normalizedBase.length() - 1);
+        }
+        values.add(normalizedBase + suffix);
     }
 
     private String findGradleVersion(File projectDir) {

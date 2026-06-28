@@ -1,5 +1,11 @@
 apply plugin: 'com.android.application'
 
+def repositoryRawBase = project.findProperty("repositoryRawBase") ?: "https://raw.githubusercontent.com/linmoA4/apk-builder-pro/main"
+def repositoryRawMirrorBase = project.findProperty("repositoryRawMirrorBase") ?: "https://gitee.com/linmoA4/apk-builder-pro/raw/main"
+def asBuildConfigString = { value ->
+    "\"" + value.toString().replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+}
+
 android {
     namespace 'com.LM.pack'
     compileSdkVersion 35
@@ -11,6 +17,8 @@ android {
         targetSdkVersion 35
         versionCode 1
         versionName "1.0"
+        buildConfigField "String", "REPOSITORY_RAW_BASE", asBuildConfigString(repositoryRawBase)
+        buildConfigField "String", "REPOSITORY_RAW_MIRROR_BASE", asBuildConfigString(repositoryRawMirrorBase)
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
         }
