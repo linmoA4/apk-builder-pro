@@ -12,6 +12,7 @@ import com.LM.pack.R;
 import com.LM.pack.theme.AppThemePalette;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
 
 public class EditorTabManager {
 
@@ -23,6 +24,7 @@ public class EditorTabManager {
     private final Context context;
     private final LinearLayout container;
     private final ArrayList<File> openFiles = new ArrayList<File>();
+    private final HashSet<String> dirtyFilePaths = new HashSet<String>();
     private File activeFile;
     private TabListener tabListener;
     private AppThemePalette palette;
@@ -43,6 +45,7 @@ public class EditorTabManager {
 
     public void clear() {
         openFiles.clear();
+        dirtyFilePaths.clear();
         activeFile = null;
         render();
     }
@@ -70,6 +73,23 @@ public class EditorTabManager {
         return !openFiles.isEmpty();
     }
 
+    public void setDirty(File file, boolean dirty) {
+        if (file == null) {
+            return;
+        }
+        String path = file.getAbsolutePath();
+        if (dirty) {
+            dirtyFilePaths.add(path);
+        } else {
+            dirtyFilePaths.remove(path);
+        }
+        render();
+    }
+
+    public boolean isDirty(File file) {
+        return file != null && dirtyFilePaths.contains(file.getAbsolutePath());
+    }
+
     private boolean containsFile(File file) {
         for (int i = 0; i < openFiles.size(); i++) {
             if (sameFile(openFiles.get(i), file)) {
@@ -94,6 +114,7 @@ public class EditorTabManager {
         if (closedIndex < 0) {
             return;
         }
+        dirtyFilePaths.remove(file.getAbsolutePath());
         File fallback = activeFile;
         if (sameFile(activeFile, file)) {
             if (openFiles.isEmpty()) {
@@ -129,9 +150,10 @@ public class EditorTabManager {
         for (int i = 0; i < openFiles.size(); i++) {
             final File file = openFiles.get(i);
             final boolean active = sameFile(file, activeFile);
+            final boolean dirty = isDirty(file);
 
             TextView tab = new TextView(context);
-            tab.setText(file.getName());
+            tab.setText(buildTabTitle(file, dirty));
             tab.setTextColor(resolveTabTextColor(active));
             tab.setTextSize(12f);
             tab.setGravity(Gravity.CENTER_VERTICAL);
@@ -162,6 +184,13 @@ public class EditorTabManager {
             });
             container.addView(tab);
         }
+    }
+
+    private String buildTabTitle(File file, boolean dirty) {
+        if (file == null) {
+            return "";
+        }
+        return dirty ? "● " + file.getName() : file.getName();
     }
 
     private GradientDrawable buildTabBackground(boolean active) {

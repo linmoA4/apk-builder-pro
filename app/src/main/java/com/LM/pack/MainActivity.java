@@ -543,6 +543,7 @@ public class MainActivity extends Activity {
                 if (suppressEditorWriteback || currentOpenFile == null) {
                     return;
                 }
+                editorTabManager.setDirty(currentOpenFile, !s.toString().equals(lastSavedText));
                 scheduleAutoSave();
                 scheduleValidation();
             }
@@ -2249,6 +2250,7 @@ public class MainActivity extends Activity {
             } else {
                 editorTabManager.activate(file);
             }
+            editorTabManager.setDirty(file, false);
             validateCurrentEditorContent();
         } catch (Exception e) {
             logManager.appendLogLine("ERROR", getString(R.string.log_open_file_failed, e.getMessage()));
@@ -2279,10 +2281,12 @@ public class MainActivity extends Activity {
         try {
             String content = etEditor.getText().toString();
             if (content.equals(lastSavedText)) {
+                editorTabManager.setDirty(currentOpenFile, false);
                 return;
             }
             projectWorkspaceService.writeText(currentOpenFile, content);
             lastSavedText = content;
+            editorTabManager.setDirty(currentOpenFile, false);
         } catch (Exception e) {
             logManager.appendLogLine("ERROR", getString(R.string.log_save_file_failed, e.getMessage()));
             toast(getString(R.string.toast_save_failed));

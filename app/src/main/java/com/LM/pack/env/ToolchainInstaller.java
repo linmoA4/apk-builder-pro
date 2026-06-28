@@ -18,6 +18,52 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 
 public class ToolchainInstaller {
 
+    private static final class CountingInputStream extends InputStream {
+        private final InputStream delegate;
+        private long bytesRead;
+
+        CountingInputStream(InputStream delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public int read() throws java.io.IOException {
+            int value = delegate.read();
+            if (value >= 0) {
+                bytesRead++;
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws java.io.IOException {
+            int count = delegate.read(buffer, offset, length);
+            if (count > 0) {
+                bytesRead += count;
+            }
+            return count;
+        }
+
+        @Override
+        public void close() throws java.io.IOException {
+            delegate.close();
+        }
+
+        long getBytesRead() {
+            return bytesRead;
+        }
+    }
+
+    private static final class TarInputBundle {
+        final CountingInputStream countingInputStream;
+        final TarArchiveInputStream tarInputStream;
+
+        TarInputBundle(CountingInputStream countingInputStream, TarArchiveInputStream tarInputStream) {
+            this.countingInputStream = countingInputStream;
+            this.tarInputStream = tarInputStream;
+        }
+    }
+
     public interface InstallListener {
         void onProgress(String message, int percent, boolean indeterminate);
         void onSuccess(String installedDir);
@@ -290,11 +336,12 @@ public class ToolchainInstaller {
     }
 
     private void extractTarGz(File archiveFile, File targetDir, InstallListener listener, String progressLabel) throws Exception {
-        long totalBytes = calculateTarTotalBytes(archiveFile);
+        long archiveBytes = archiveFile == null ? 0L : archiveFile.length();
         long[] extractedBytes = {0L};
-        TarArchiveInputStream tarInputStream = null;
+        TarInputBundle bundle = null;
         try {
-            tarInputStream = openTarInputStream(archiveFile);
+            bundle = openTarInputBundle(archiveFile);
+            TarArchiveInputStream tarInputStream = bundle.tarInputStream;
             TarArchiveEntry entry;
             while ((entry = tarInputStream.getNextTarEntry()) != null) {
                 File outputFile = new File(targetDir, entry.getName());
@@ -314,8 +361,9 @@ public class ToolchainInstaller {
                     copyArchiveEntryStream(
                         tarInputStream,
                         outputStream,
-                        totalBytes,
+                        archiveBytes,
                         extractedBytes,
+                        bundle.countingInputStream,
                         progressLabel + "  " + simplifyEntryName(entry.getName()),
                         listener
                     );
@@ -330,8 +378,8 @@ public class ToolchainInstaller {
                 listener.onProgress(progressLabel + " 完成", 100, false);
             }
         } finally {
-            if (tarInputStream != null) {
-                tarInputStream.close();
+            if (bundle != null && bundle.tarInputStream != null) {
+                bundle.tarInputStream.close();
             }
         }
     }
@@ -366,6 +414,7 @@ public class ToolchainInstaller {
                         outputStream,
                         totalBytes,
                         extractedBytes,
+                        null,
                         progressLabel + "  " + simplifyEntryName(entry.getName()),
                         listener
                     );
@@ -388,29 +437,14 @@ public class ToolchainInstaller {
         }
     }
 
-    private TarArchiveInputStream openTarInputStream(File archiveFile) throws Exception {
-        return new TarArchiveInputStream(
-            new GZIPInputStream(new BufferedInputStream(new FileInputStream(archiveFile)))
+    private TarInputBundle openTarInputBundle(File archiveFile) throws Exception {
+        CountingInputStream countingInputStream = new CountingInputStream(
+            new BufferedInputStream(new FileInputStream(archiveFile))
         );
-    }
-
-    private long calculateTarTotalBytes(File archiveFile) throws Exception {
-        long totalBytes = 0L;
-        TarArchiveInputStream tarInputStream = null;
-        try {
-            tarInputStream = openTarInputStream(archiveFile);
-            TarArchiveEntry entry;
-            while ((entry = tarInputStream.getNextTarEntry()) != null) {
-                if (!entry.isDirectory() && entry.getSize() > 0) {
-                    totalBytes += entry.getSize();
-                }
-            }
-        } finally {
-            if (tarInputStream != null) {
-                tarInputStream.close();
-            }
-        }
-        return totalBytes;
+        TarArchiveInputStream tarInputStream = new TarArchiveInputStream(
+            new GZIPInputStream(countingInputStream)
+        );
+        return new TarInputBundle(countingInputStream, tarInputStream);
     }
 
     private long calculateZipTotalBytes(ZipFile zipFile) {
@@ -515,6 +549,7 @@ public class ToolchainInstaller {
         BufferedOutputStream outputStream,
         long totalBytes,
         long[] extractedBytes,
+        CountingInputStream countingInputStream,
         String progressLabel,
         InstallListener listener
     ) throws Exception {
@@ -526,10 +561,11 @@ public class ToolchainInstaller {
             extractedBytes[0] += len;
             if (listener != null) {
                 if (totalBytes > 0L) {
-                    int percent = (int) Math.min(100L, (extractedBytes[0] * 100L) / totalBytes);
+                    long consumedBytes = countingInputStream == null ? extractedBytes[0] : countingInputStream.getBytesRead();
+                    int percent = (int) Math.min(100L, (consumedBytes * 100L) / totalBytes);
                     if (percent != lastPercent) {
                         listener.onProgress(
-                            progressLabel + "  " + formatSize(extractedBytes[0]) + " / " + formatSize(totalBytes),
+                            progressLabel + "  已写出 " + formatSize(extractedBytes[0]) + " / 已读取压缩包 " + formatSize(Math.min(consumedBytes, totalBytes)) + " / " + formatSize(totalBytes),
                             percent,
                             false
                         );
