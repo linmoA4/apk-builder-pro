@@ -45,8 +45,11 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.core.content.FileProvider;
+import androidx.core.text.HtmlCompat;
 import androidx.viewpager2.widget.ViewPager2;
 import androidx.recyclerview.widget.RecyclerView;
+import com.LM.pack.ai.AIAgentDiffFormatter;
+import com.LM.pack.ai.AIAgentService;
 import com.LM.pack.ai.AIChatService;
 import com.LM.pack.ai.AICodeReviewService;
 import com.LM.pack.build.BuildManager;
@@ -57,6 +60,7 @@ import com.LM.pack.editor.EditorTabManager;
 import com.LM.pack.env.EnvironmentManager;
 import com.LM.pack.env.ToolchainInstaller;
 import com.LM.pack.log.LogManager;
+import com.LM.pack.model.AIAgentEvent;
 import com.LM.pack.model.BuildIssue;
 import com.LM.pack.model.BuildResult;
 import com.LM.pack.model.EnvironmentState;
@@ -122,6 +126,7 @@ public class MainActivity extends Activity {
     private EditorIssueAnalyzer editorIssueAnalyzer;
     private AIChatService aiChatService;
     private AICodeReviewService aiCodeReviewService;
+    private AIAgentService aiAgentService;
 
     private ViewPager2 viewPager;
     private ViewPager2.OnPageChangeCallback homePageChangeCallback;
@@ -131,6 +136,7 @@ public class MainActivity extends Activity {
     private LinearLayout fileDrawer;
     private LinearLayout suggestionCard;
     private LinearLayout aiRobotCard;
+    private LinearLayout aiAgentCard;
     private LinearLayout editorTabContainer;
     private LinearLayout addActionOverlay;
     private LiquidGlassBackgroundView bgSceneView;
@@ -142,6 +148,9 @@ public class MainActivity extends Activity {
     private TextView tvAiRobotAvatar;
     private TextView tvAiRobotTitle;
     private TextView tvAiRobotHint;
+    private TextView tvAiAgentTitle;
+    private TextView tvAiAgentStatus;
+    private TextView tvAiAgentTimeline;
     private Button btnBackHome;
     private Button btnSettings;
     private Button btnFabAdd;
@@ -158,9 +167,13 @@ public class MainActivity extends Activity {
     private Button btnCopyFix;
     private Button btnAiReview;
     private Button btnAiChat;
+    private Button btnAiBuildApp;
+    private Button btnAiTimeline;
+    private Button btnAiClearTimeline;
     private ListView lvProjects;
     private ListView lvFiles;
     private CodeEditorView etEditor;
+    private ScrollView agentTimelineScroll;
     private View progressOverlay;
     private View progressCard;
     private TextView tvProgressTitle;
@@ -174,6 +187,7 @@ public class MainActivity extends Activity {
     private final ArrayList<String> expandedDirs = new ArrayList<String>();
     private final ArrayList<BuildIssue> lastBuildIssues = new ArrayList<BuildIssue>();
     private final ArrayList<BuildIssue> aiReviewIssues = new ArrayList<BuildIssue>();
+    private final ArrayList<AIAgentEvent> aiAgentEvents = new ArrayList<AIAgentEvent>();
 
     private ProjectListAdapter projectAdapter;
     private FileTreeListAdapter fileTreeAdapter;
@@ -184,12 +198,14 @@ public class MainActivity extends Activity {
     private boolean isBuildRunning = false;
     private boolean buildFlowPending = false;
     private boolean aiReviewRunning = false;
+    private boolean aiAgentRunning = false;
     private int selectedJdkIndex = 4;
     private int selectedNdkIndex = 4;
     private String currentCopiedFix = "";
     private String lastSearchQuery = "";
     private String lastReplaceText = "";
     private String lastSavedText = "";
+    private String aiAgentLastSummary = "";
     private boolean suppressEditorWriteback = false;
     private boolean swipeHandled = false;
     private boolean addActionAnimating = false;
@@ -224,6 +240,7 @@ public class MainActivity extends Activity {
         editorIssueAnalyzer = new EditorIssueAnalyzer(this);
         aiChatService = new AIChatService();
         aiCodeReviewService = new AICodeReviewService(aiChatService);
+        aiAgentService = new AIAgentService(aiChatService, projectWorkspaceService, projectFileService);
         selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
         selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
 
@@ -338,6 +355,7 @@ public class MainActivity extends Activity {
         fileDrawer = (LinearLayout) editorPane.findViewById(R.id.fileDrawer);
         suggestionCard = (LinearLayout) editorPane.findViewById(R.id.suggestionCard);
         aiRobotCard = (LinearLayout) editorPane.findViewById(R.id.aiRobotCard);
+        aiAgentCard = (LinearLayout) editorPane.findViewById(R.id.aiAgentCard);
         editorTabContainer = (LinearLayout) editorPane.findViewById(R.id.editorTabContainer);
         addActionOverlay = (LinearLayout) findViewById(R.id.addActionOverlay);
         bgSceneView = (LiquidGlassBackgroundView) findViewById(R.id.bgSceneView);
@@ -349,6 +367,9 @@ public class MainActivity extends Activity {
         tvAiRobotAvatar = (TextView) editorPane.findViewById(R.id.tvAiRobotAvatar);
         tvAiRobotTitle = (TextView) editorPane.findViewById(R.id.tvAiRobotTitle);
         tvAiRobotHint = (TextView) editorPane.findViewById(R.id.tvAiRobotHint);
+        tvAiAgentTitle = (TextView) editorPane.findViewById(R.id.tvAiAgentTitle);
+        tvAiAgentStatus = (TextView) editorPane.findViewById(R.id.tvAiAgentStatus);
+        tvAiAgentTimeline = (TextView) editorPane.findViewById(R.id.tvAiAgentTimeline);
         btnBackHome = (Button) findViewById(R.id.btnBackHome);
         btnSettings = (Button) findViewById(R.id.btnSettings);
         btnFabAdd = (Button) findViewById(R.id.btnFabAdd);
@@ -365,9 +386,13 @@ public class MainActivity extends Activity {
         btnCopyFix = (Button) editorPane.findViewById(R.id.btnCopyFix);
         btnAiReview = (Button) editorPane.findViewById(R.id.btnAiReview);
         btnAiChat = (Button) editorPane.findViewById(R.id.btnAiChat);
+        btnAiBuildApp = (Button) editorPane.findViewById(R.id.btnAiBuildApp);
+        btnAiTimeline = (Button) editorPane.findViewById(R.id.btnAiTimeline);
+        btnAiClearTimeline = (Button) editorPane.findViewById(R.id.btnAiClearTimeline);
         lvProjects = (ListView) homePane.findViewById(R.id.lvProjects);
         lvFiles = (ListView) editorPane.findViewById(R.id.lvFiles);
         etEditor = (CodeEditorView) editorPane.findViewById(R.id.etEditor);
+        agentTimelineScroll = (ScrollView) editorPane.findViewById(R.id.agentTimelineScroll);
         progressOverlay = findViewById(R.id.progressOverlay);
         progressCard = findViewById(R.id.progressCard);
         tvProgressTitle = (TextView) findViewById(R.id.tvProgressTitle);
@@ -384,6 +409,7 @@ public class MainActivity extends Activity {
         updateFileDrawerWidth();
         startAiRobotAvatarAnimation();
         refreshAiRobotState();
+        refreshAiAgentCard();
     }
 
     private void initAdapters() {
@@ -541,6 +567,30 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 showCompanionDialog(buildCompanionQuickSeed());
+            }
+        });
+
+        btnAiBuildApp.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showAiAgentComposerDialog(null);
+            }
+        });
+
+        btnAiTimeline.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showAiAgentTimelineDialog();
+            }
+        });
+
+        btnAiClearTimeline.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                aiAgentEvents.clear();
+                aiAgentLastSummary = "";
+                refreshAiAgentCard();
+                toast(getString(R.string.ai_agent_timeline_cleared));
             }
         });
 
@@ -712,6 +762,8 @@ public class MainActivity extends Activity {
         }
         if (aiReviewRunning) {
             tvAiRobotHint.setText(R.string.ai_review_running);
+        } else if (aiAgentRunning) {
+            tvAiRobotHint.setText(R.string.ai_agent_status_running);
         } else if (!lastBuildIssues.isEmpty()) {
             tvAiRobotHint.setText(R.string.ai_robot_hint_build_failed);
         } else if (currentOpenFile != null) {
@@ -720,8 +772,58 @@ public class MainActivity extends Activity {
             tvAiRobotHint.setText(R.string.ai_robot_hint_idle);
         }
         updateActionButtonState(btnAi, currentProject != null);
-        updateActionButtonState(btnAiReview, currentOpenFile != null && !aiReviewRunning);
-        updateActionButtonState(btnAiChat, !aiReviewRunning);
+        updateActionButtonState(btnAiReview, currentOpenFile != null && !aiReviewRunning && !aiAgentRunning);
+        updateActionButtonState(btnAiChat, !aiReviewRunning && !aiAgentRunning);
+        updateActionButtonState(btnAiBuildApp, currentProject != null && !aiReviewRunning && !aiAgentRunning);
+        updateActionButtonState(btnAiTimeline, !aiAgentEvents.isEmpty());
+        updateActionButtonState(btnAiClearTimeline, !aiAgentEvents.isEmpty() && !aiAgentRunning);
+        refreshAiAgentCard();
+    }
+
+    private void refreshAiAgentCard() {
+        if (tvAiAgentStatus == null || tvAiAgentTimeline == null) {
+            return;
+        }
+        if (aiAgentRunning) {
+            tvAiAgentStatus.setText(R.string.ai_agent_status_running);
+        } else if (aiAgentEvents.isEmpty()) {
+            tvAiAgentStatus.setText(R.string.ai_agent_status_idle);
+        } else if (aiAgentLastSummary.length() > 0) {
+            tvAiAgentStatus.setText(aiAgentLastSummary);
+        } else {
+            tvAiAgentStatus.setText(R.string.ai_agent_status_done);
+        }
+        String html = buildAiAgentTimelineHtml(12);
+        tvAiAgentTimeline.setText(HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_LEGACY));
+        if (agentTimelineScroll != null) {
+            agentTimelineScroll.post(new Runnable() {
+                @Override
+                public void run() {
+                    agentTimelineScroll.fullScroll(View.FOCUS_DOWN);
+                }
+            });
+        }
+    }
+
+    private String buildAiAgentTimelineHtml(int maxEvents) {
+        if (aiAgentEvents.isEmpty()) {
+            return safeText(getString(R.string.ai_agent_timeline_empty));
+        }
+        int start = Math.max(0, aiAgentEvents.size() - Math.max(1, maxEvents));
+        StringBuilder builder = new StringBuilder();
+        for (int i = start; i < aiAgentEvents.size(); i++) {
+            AIAgentEvent event = aiAgentEvents.get(i);
+            if (builder.length() > 0) {
+                builder.append("<br/><br/>");
+            }
+            builder.append("<b>")
+                .append(AIAgentDiffFormatter.escapeHtml(formatTime(event.getTimestampMs())))
+                .append(" · ")
+                .append(AIAgentDiffFormatter.escapeHtml(event.getTitle()))
+                .append("</b><br/>")
+                .append(safeText(event.getHtmlBody()));
+        }
+        return builder.toString();
     }
 
     private void onSwipeToHome() {
@@ -745,6 +847,9 @@ public class MainActivity extends Activity {
         projectPrepared = false;
         lastBuildIssues.clear();
         aiReviewIssues.clear();
+        aiAgentRunning = false;
+        aiAgentEvents.clear();
+        aiAgentLastSummary = "";
         updateBugButtonState();
         refreshAiRobotState();
         if (!isEditorHomeResetReady()) {
@@ -780,6 +885,9 @@ public class MainActivity extends Activity {
         setSuggestionCardVisible(false, false);
         lastBuildIssues.clear();
         aiReviewIssues.clear();
+        aiAgentRunning = false;
+        aiAgentEvents.clear();
+        aiAgentLastSummary = "";
         updateBugButtonState();
         refreshAiRobotState();
         editorTabManager.clear();
@@ -2981,18 +3089,205 @@ public class MainActivity extends Activity {
             getString(R.string.ai_review_dialog_title),
             getString(R.string.ai_review_dialog_subtitle),
             new String[] {
+                getString(R.string.ai_agent_action_build),
                 getString(R.string.ai_review_option_code),
                 getString(R.string.ai_review_option_chat)
             },
             0,
             which -> {
                 if (which == 0) {
+                    showAiAgentComposerDialog(null);
+                } else if (which == 1) {
                     runAiCodeReview();
                 } else {
                     showCompanionDialog(buildCompanionQuickSeed());
                 }
             }
         );
+    }
+
+    private void showAiAgentComposerDialog(String presetInput) {
+        if (currentProject == null) {
+            toast(getString(R.string.toast_open_project_first));
+            return;
+        }
+        if (aiAgentRunning) {
+            toast(getString(R.string.ai_agent_busy));
+            return;
+        }
+        LinearLayout container = buildDialogContainer();
+        TextView hint = buildFieldLabel(getString(R.string.ai_agent_dialog_hint));
+        final EditText input = createDialogField(
+            getString(R.string.ai_agent_dialog_title),
+            getString(R.string.ai_agent_dialog_default),
+            safeText(presetInput, getString(R.string.ai_agent_dialog_default))
+        );
+        input.setMinLines(4);
+        input.setMaxLines(8);
+        container.addView(hint);
+        container.addView(input);
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle(getString(R.string.ai_agent_dialog_title))
+            .setView(container)
+            .setPositiveButton(getString(R.string.ai_agent_dialog_run), null)
+            .setNegativeButton("取消", null)
+            .create();
+        dialog.setOnShowListener(dialogInterface -> {
+            animatePopupCard(dialog.getWindow() == null ? null : dialog.getWindow().getDecorView());
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String goal = safeText(input.getText() == null ? null : input.getText().toString());
+                if (goal.length() == 0) {
+                    toast(getString(R.string.ai_agent_empty_task));
+                    return;
+                }
+                dialog.dismiss();
+                startAiAgentTask(goal, null);
+            });
+        });
+        dialog.show();
+    }
+
+    private void showAiAgentTimelineDialog() {
+        if (aiAgentEvents.isEmpty()) {
+            toast(getString(R.string.ai_agent_no_timeline));
+            return;
+        }
+        final Dialog dialog = createAppDialog(
+            getString(R.string.ai_agent_timeline_title),
+            getString(R.string.ai_agent_timeline_subtitle)
+        );
+        ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
+        Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
+        Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
+        Button btnNeutral = (Button) dialog.findViewById(R.id.btnDialogNeutral);
+        TextView timelineView = new TextView(this);
+        timelineView.setPadding(dp(12), dp(12), dp(12), dp(12));
+        timelineView.setTextSize(12f);
+        if (palette != null) {
+            timelineView.setTextColor(palette.textPrimary);
+            timelineView.setBackground(themeManager.createEditorDrawable(palette));
+        }
+        timelineView.setTextIsSelectable(true);
+        timelineView.setText(HtmlCompat.fromHtml(buildAiAgentTimelineHtml(120), HtmlCompat.FROM_HTML_MODE_LEGACY));
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.addView(timelineView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(320));
+        scrollView.setLayoutParams(params);
+        listView.setAdapter(null);
+        listView.setVisibility(View.GONE);
+        ViewGroup parent = (ViewGroup) listView.getParent();
+        if (parent != null) {
+            parent.addView(scrollView, 2);
+        }
+        btnPrimary.setText("复制过程");
+        btnSecondary.setText("关闭");
+        btnNeutral.setVisibility(View.GONE);
+        btnSecondary.setOnClickListener(v -> dialog.dismiss());
+        btnPrimary.setOnClickListener(v -> {
+            ClipboardManager clipboardManager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            clipboardManager.setPrimaryClip(ClipData.newPlainText(getString(R.string.ai_agent_timeline_title), buildAiAgentPlainText()));
+            toast("AI 过程已复制");
+        });
+        dialog.show();
+    }
+
+    private void startAiAgentTask(String goal, ArrayList<BuildIssue> issues) {
+        if (currentProject == null) {
+            toast(getString(R.string.toast_open_project_first));
+            return;
+        }
+        if (aiAgentRunning) {
+            toast(getString(R.string.ai_agent_busy));
+            return;
+        }
+        flushPendingAutoSave();
+        aiAgentRunning = true;
+        aiAgentLastSummary = "";
+        refreshAiRobotState();
+        final ProjectEntry projectSnapshot = currentProject;
+        final File openFileSnapshot = currentOpenFile;
+        final ArrayList<BuildIssue> issueSnapshot = issues == null ? new ArrayList<BuildIssue>() : new ArrayList<BuildIssue>(issues);
+        aiAgentService.startTask(projectSnapshot, openFileSnapshot, goal, issueSnapshot, new AIAgentService.Listener() {
+            @Override
+            public void onEvent(final AIAgentEvent event) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        aiAgentEvents.add(event);
+                        logManager.appendLogLine(
+                            AIAgentEvent.TYPE_ERROR.equals(event.getType()) ? "ERROR" : "INFO",
+                            "[AI 代理] " + safeText(event.getPlainSummary(), event.getTitle())
+                        );
+                        refreshAiAgentCard();
+                    }
+                });
+            }
+
+            @Override
+            public void onFinished(final String summary, final boolean success) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        aiAgentRunning = false;
+                        aiAgentLastSummary = safeText(summary, success ? getString(R.string.ai_agent_status_done) : "AI 执行失败");
+                        refreshAiRobotState();
+                        reloadProjectAfterAiAgent();
+                        if (success) {
+                            toast(getString(R.string.ai_agent_status_done));
+                        } else {
+                            toast(aiAgentLastSummary);
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    private void reloadProjectAfterAiAgent() {
+        if (currentProject == null) {
+            return;
+        }
+        loadProjectFiles();
+        if (currentOpenFile != null && currentOpenFile.exists()) {
+            loadFileIntoEditor(currentOpenFile, false);
+        } else {
+            openDefaultEditorFile(currentProject);
+        }
+    }
+
+    private String buildAiAgentPlainText() {
+        if (aiAgentEvents.isEmpty()) {
+            return getString(R.string.ai_agent_no_timeline);
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < aiAgentEvents.size(); i++) {
+            AIAgentEvent event = aiAgentEvents.get(i);
+            if (builder.length() > 0) {
+                builder.append("\n\n");
+            }
+            builder.append(formatTime(event.getTimestampMs()))
+                .append(" · ")
+                .append(event.getTitle())
+                .append('\n')
+                .append(safeText(event.getPlainSummary(), event.getTitle()));
+        }
+        return builder.toString();
+    }
+
+    private String buildIssueFixGoal(ArrayList<BuildIssue> issues) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(getString(R.string.ai_agent_fix_goal_prefix)).append('\n');
+        if (issues != null) {
+            for (int i = 0; i < issues.size(); i++) {
+                BuildIssue issue = issues.get(i);
+                builder.append(i + 1).append(". ").append(issue.getDisplayText());
+                if (safeText(issue.getSuggestion()).length() > 0) {
+                    builder.append("\n建议：").append(issue.getSuggestion());
+                }
+                builder.append("\n\n");
+            }
+        }
+        return builder.toString().trim();
     }
 
     private void runAiCodeReview() {
@@ -3401,15 +3696,19 @@ public class MainActivity extends Activity {
             dialog.dismiss();
             openIssue(issues.get(which));
         });
-        btnNeutral.setVisibility(View.GONE);
+        btnNeutral.setVisibility(View.VISIBLE);
         btnSecondary.setText("关闭");
-        btnPrimary.setText("一键提取全部错误");
+        btnPrimary.setText(getString(R.string.ai_agent_fix_button));
+        btnNeutral.setText(getString(R.string.ai_agent_copy_errors));
         btnSecondary.setOnClickListener(v -> dialog.dismiss());
         btnPrimary.setOnClickListener(v -> {
+                dialog.dismiss();
+                startAiAgentTask(buildIssueFixGoal(issues), issues);
+            });
+        btnNeutral.setOnClickListener(v -> {
                 ClipboardManager clipboardManager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("全部错误", buildIssueExtractionText(issues)));
                 toast("全部错误已提取到剪贴板");
-                dialog.dismiss();
             });
         dialog.show();
     }

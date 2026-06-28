@@ -24,6 +24,7 @@ android {
         buildConfigField "String", "AI_REVIEW_MODEL_SYNTAX", asBuildConfigString("glm-4-flash")
         buildConfigField "String", "AI_REVIEW_MODEL_LOGIC", asBuildConfigString("glm-4.5-air")
         buildConfigField "String", "AI_COMPANION_MODEL", asBuildConfigString("glm-4.7-flash")
+        buildConfigField "String", "AI_AGENT_MODEL", asBuildConfigString("glm-4.7-flash")
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
         }

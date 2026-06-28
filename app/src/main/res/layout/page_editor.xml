@@ -290,6 +290,85 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <LinearLayout
+                android:id="@+id/aiAgentCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:orientation="vertical"
+                android:padding="12dp"
+                android:tag="panelRaised">
+
+                <TextView
+                    android:id="@+id/tvAiAgentTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ai_agent_title"
+                    android:textStyle="bold"
+                    android:tag="primary" />
+
+                <TextView
+                    android:id="@+id/tvAiAgentStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/ai_agent_status_idle"
+                    android:textSize="12sp"
+                    android:tag="secondary" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnAiBuildApp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="@string/ai_agent_action_build"
+                        android:textStyle="bold"
+                        android:tag="primaryButton primary" />
+
+                    <Button
+                        android:id="@+id/btnAiTimeline"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:layout_marginLeft="8dp"
+                        android:text="@string/ai_agent_action_timeline"
+                        android:textStyle="bold"
+                        android:tag="ghostButton primary" />
+
+                    <Button
+                        android:id="@+id/btnAiClearTimeline"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:layout_marginLeft="8dp"
+                        android:text="@string/ai_agent_action_clear"
+                        android:textStyle="bold"
+                        android:tag="ghostButton primary" />
+                </LinearLayout>
+
+                <ScrollView
+                    android:id="@+id/agentTimelineScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="180dp"
+                    android:layout_marginTop="10dp"
+                    android:fillViewport="true"
+                    android:tag="editorSurface">
+
+                    <TextView
+                        android:id="@+id/tvAiAgentTimeline"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:padding="12dp"
+                        android:text="@string/ai_agent_timeline_empty"
+                        android:textIsSelectable="true"
+                        android:textSize="12sp"
+                        android:tag="primary" />
+                </ScrollView>
+            </LinearLayout>
+
             <com.LM.pack.editor.CodeEditorView
                 android:id="@+id/etEditor"
                 android:layout_width="match_parent"
