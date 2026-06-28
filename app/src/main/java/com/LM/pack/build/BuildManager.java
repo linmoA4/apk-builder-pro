@@ -511,6 +511,15 @@ public class BuildManager {
         if (compileSdk <= 0) {
             return "";
         }
+        if (compileSdk >= 36) {
+            return "36.0.0";
+        }
+        if (compileSdk == 35) {
+            return "35.0.1";
+        }
+        if (compileSdk == 34) {
+            return "34.0.0";
+        }
         return compileSdk + ".0.0";
     }
 
@@ -711,7 +720,11 @@ public class BuildManager {
         java.net.HttpURLConnection connection = null;
         InputStream inputStream = null;
         BufferedOutputStream outputStream = null;
+        File partialFile = null;
         try {
+            ensureDir(targetFile == null ? null : targetFile.getParentFile());
+            partialFile = buildPartialDownloadFile(targetFile);
+            deleteQuietly(partialFile);
             connection = (java.net.HttpURLConnection) new java.net.URL(urlString).openConnection();
             connection.setConnectTimeout(60000);
             connection.setReadTimeout(60000);
@@ -723,8 +736,12 @@ public class BuildManager {
             }
             long totalBytes = connection.getContentLengthLong();
             inputStream = new BufferedInputStream(connection.getInputStream());
-            outputStream = new BufferedOutputStream(new FileOutputStream(targetFile));
+            outputStream = new BufferedOutputStream(new FileOutputStream(partialFile));
             copyStreamWithProgress(inputStream, outputStream, totalBytes, progressCallback, label);
+            outputStream.flush();
+            outputStream.close();
+            outputStream = null;
+            replaceFileAtomically(partialFile, targetFile);
         } finally {
             if (inputStream != null) {
                 inputStream.close();
@@ -735,6 +752,7 @@ public class BuildManager {
             if (connection != null) {
                 connection.disconnect();
             }
+            deleteQuietly(partialFile);
         }
     }
 
@@ -825,6 +843,31 @@ public class BuildManager {
 
     private String safeText(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private File buildPartialDownloadFile(File targetFile) {
+        if (targetFile == null) {
+            return null;
+        }
+        return new File(targetFile.getAbsolutePath() + ".part");
+    }
+
+    private void replaceFileAtomically(File sourceFile, File targetFile) throws Exception {
+        if (sourceFile == null || targetFile == null || !sourceFile.exists()) {
+            throw new IllegalStateException("下载文件不存在，无法写入目标文件");
+        }
+        if (targetFile.exists() && !targetFile.delete()) {
+            throw new IllegalStateException("无法替换旧文件：" + targetFile.getAbsolutePath());
+        }
+        if (!sourceFile.renameTo(targetFile)) {
+            throw new IllegalStateException("无法完成下载文件写入：" + targetFile.getAbsolutePath());
+        }
+    }
+
+    private void deleteQuietly(File file) {
+        if (file != null && file.exists()) {
+            file.delete();
+        }
     }
 
     private String safeGradleVersion(String value) {
@@ -1006,7 +1049,7 @@ public class BuildManager {
             );
             return;
         }
-        Matcher lineColumnMatcher = Pattern.compile("^(.+?):(\\d+):(\\d+):\\s*(?:error:)?\\s*(.+)$").matcher(trimmed);
+        Matcher lineColumnMatcher = Pattern.compile("^(.+?):(\\d+):(\\d+):\\s*error:\\s*(.+)$").matcher(trimmed);
         if (lineColumnMatcher.find()) {
             addIssueIfAbsent(
                 issues,
@@ -1019,7 +1062,7 @@ public class BuildManager {
             );
             return;
         }
-        Matcher lineErrorMatcher = Pattern.compile("^(.+?):(\\d+):\\s*(?:error:)?\\s*(.+)$").matcher(trimmed);
+        Matcher lineErrorMatcher = Pattern.compile("^(.+?):(\\d+):\\s*error:\\s*(.+)$").matcher(trimmed);
         if (lineErrorMatcher.find()) {
             String filePath = lineErrorMatcher.group(1).trim();
             int lineNumber = parseIntSafe(lineErrorMatcher.group(2));

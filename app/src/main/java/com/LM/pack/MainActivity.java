@@ -162,6 +162,7 @@ public class MainActivity extends Activity {
     private File currentOpenFile;
     private boolean projectPrepared = false;
     private boolean isBuildRunning = false;
+    private boolean buildFlowPending = false;
     private int selectedJdkIndex = 4;
     private int selectedNdkIndex = 4;
     private String currentCopiedFix = "";
@@ -1331,16 +1332,29 @@ public class MainActivity extends Activity {
     }
 
     private void showOptionListDialog(String title, String subtitle, String[] labels, int checkedIndex, final OptionSelectListener listener) {
+        showOptionListDialog(title, subtitle, labels, checkedIndex, listener, null);
+    }
+
+    private void showOptionListDialog(
+        String title,
+        String subtitle,
+        String[] labels,
+        int checkedIndex,
+        final OptionSelectListener listener,
+        final Runnable onDismissWithoutSelection
+    ) {
         final Dialog dialog = createAppDialog(title, subtitle);
         ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
         Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
         Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
         Button btnNeutral = (Button) dialog.findViewById(R.id.btnDialogNeutral);
+        final boolean[] selected = new boolean[] {false};
         listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels));
         if (checkedIndex >= 0 && checkedIndex < labels.length) {
             listView.setSelection(checkedIndex);
         }
         listView.setOnItemClickListener((parent, view, which, id) -> {
+            selected[0] = true;
             dialog.dismiss();
             if (listener != null) {
                 listener.onSelected(which);
@@ -1350,6 +1364,11 @@ public class MainActivity extends Activity {
         btnNeutral.setVisibility(View.GONE);
         btnSecondary.setText("关闭");
         btnSecondary.setOnClickListener(v -> dialog.dismiss());
+        dialog.setOnDismissListener(dialogInterface -> {
+            if (!selected[0] && onDismissWithoutSelection != null) {
+                onDismissWithoutSelection.run();
+            }
+        });
         dialog.show();
         animatePopupCard(dialog.getWindow() == null ? null : dialog.getWindow().getDecorView());
     }
@@ -2477,10 +2496,11 @@ public class MainActivity extends Activity {
             toast(getString(R.string.toast_open_project_first));
             return;
         }
-        if (isBuildRunning) {
+        if (isBuildRunning || buildFlowPending) {
             toast(getString(R.string.toast_build_running));
             return;
         }
+        buildFlowPending = true;
         File projectDir = new File(currentProject.getProjectDir());
         showBuildPreparationDialog(projectDir);
     }
@@ -2489,6 +2509,7 @@ public class MainActivity extends Activity {
         final int recommendedJdk = environmentManager.recommendJdkIndex(projectDir);
         final int recommendedNdk = environmentManager.recommendNdkIndex(projectDir);
         final Dialog dialog = createAppDialog("打包环境推荐", buildProjectBuildSummary(projectDir));
+        final boolean[] continued = new boolean[] {false};
         ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
         Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
         Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
@@ -2503,8 +2524,12 @@ public class MainActivity extends Activity {
         btnSecondary.setText("取消");
         btnNeutral.setVisibility(View.VISIBLE);
         btnNeutral.setText("自选路线");
-        btnSecondary.setOnClickListener(v -> dialog.dismiss());
+        btnSecondary.setOnClickListener(v -> {
+            buildFlowPending = false;
+            dialog.dismiss();
+        });
         btnPrimary.setOnClickListener(v -> {
+            continued[0] = true;
             dialog.dismiss();
             environmentManager.saveSelectedJdkIndex(recommendedJdk);
             environmentManager.saveSelectedNdkIndex(recommendedNdk);
@@ -2513,8 +2538,14 @@ public class MainActivity extends Activity {
             ensureToolchainAndBuild(recommendedJdk, recommendedNdk);
         });
         btnNeutral.setOnClickListener(v -> {
+            continued[0] = true;
             dialog.dismiss();
             showCustomBuildChoiceFlow(projectDir, recommendedJdk, recommendedNdk);
+        });
+        dialog.setOnDismissListener(dialogInterface -> {
+            if (!continued[0]) {
+                buildFlowPending = false;
+            }
         });
         dialog.show();
     }
@@ -2535,13 +2566,32 @@ public class MainActivity extends Activity {
                         selectedJdkIndex = jdkIndex;
                         selectedNdkIndex = ndkIndex;
                         ensureToolchainAndBuild(jdkIndex, ndkIndex);
+                    },
+                    new Runnable() {
+                        @Override
+                        public void run() {
+                            buildFlowPending = false;
+                        }
                     }
-                )
-            )
+                ),
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        buildFlowPending = false;
+                    }
+                }
+            ),
+            new Runnable() {
+                @Override
+                public void run() {
+                    buildFlowPending = false;
+                }
+            }
         );
     }
 
     private void ensureToolchainAndBuild(final int jdkIndex, final int ndkIndex) {
+        buildFlowPending = false;
         environmentState = environmentManager.loadState();
         final boolean jdkInstalled = environmentManager.isSelectedJdkInstalled(jdkIndex, environmentState);
         final boolean ndkInstalled = environmentManager.isSelectedNdkInstalled(ndkIndex, environmentState);
@@ -2883,12 +2933,18 @@ public class MainActivity extends Activity {
     private Dialog createAppDialog(String title, String subtitle) {
         Dialog dialog = new Dialog(this);
         dialog.setContentView(R.layout.dialog_issue_center);
-        final View content = dialog.findViewById(R.id.tvDialogTitle).getRootView();
+        final View titleView = dialog.findViewById(R.id.tvDialogTitle);
+        final View subtitleView = dialog.findViewById(R.id.tvDialogSubtitle);
+        final View content = titleView != null ? titleView.getRootView() : dialog.findViewById(android.R.id.content);
         if (palette != null) {
             themeManager.applyTaggedStyles(content, palette);
         }
-        ((TextView) dialog.findViewById(R.id.tvDialogTitle)).setText(title);
-        ((TextView) dialog.findViewById(R.id.tvDialogSubtitle)).setText(subtitle);
+        if (titleView instanceof TextView) {
+            ((TextView) titleView).setText(title);
+        }
+        if (subtitleView instanceof TextView) {
+            ((TextView) subtitleView).setText(subtitle);
+        }
         dialog.setCancelable(true);
         dialog.setOnShowListener(dialogInterface -> animatePopupCard(content));
         return dialog;

@@ -238,13 +238,14 @@ public class ToolchainInstaller {
         HttpURLConnection connection = null;
         InputStream inputStream = null;
         BufferedOutputStream outputStream = null;
+        File partialFile = null;
         try {
             URL url = new URL(urlString);
             connection = (HttpURLConnection) url.openConnection();
-            connection.setInstanceFollowRedirects(true);
+            connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(60000);
             connection.setReadTimeout(60000);
-            connection.setRequestProperty("User-Agent", "LM-APK-Builder/2.0");
+            connection.setRequestProperty("User-Agent", "LM-APK-Builder/2.1");
             connection.connect();
             int responseCode = connection.getResponseCode();
             if (responseCode >= 300 && responseCode < 400) {
@@ -259,9 +260,21 @@ public class ToolchainInstaller {
                 throw new IllegalStateException("下载失败，HTTP " + connection.getResponseCode());
             }
             long totalBytes = connection.getContentLengthLong();
+            ensureDir(targetFile == null ? null : targetFile.getParentFile());
+            partialFile = new File(targetFile.getAbsolutePath() + ".part");
+            deleteQuietly(partialFile);
             inputStream = new BufferedInputStream(connection.getInputStream());
-            outputStream = new BufferedOutputStream(new FileOutputStream(targetFile));
+            outputStream = new BufferedOutputStream(new FileOutputStream(partialFile));
             copyStream(inputStream, outputStream, totalBytes, progressLabel, listener);
+            outputStream.flush();
+            outputStream.close();
+            outputStream = null;
+            if (targetFile.exists() && !targetFile.delete()) {
+                throw new IllegalStateException("无法替换旧文件：" + targetFile.getAbsolutePath());
+            }
+            if (!partialFile.renameTo(targetFile)) {
+                throw new IllegalStateException("无法完成下载文件写入：" + targetFile.getAbsolutePath());
+            }
         } finally {
             if (inputStream != null) {
                 inputStream.close();
@@ -272,6 +285,7 @@ public class ToolchainInstaller {
             if (connection != null) {
                 connection.disconnect();
             }
+            deleteQuietly(partialFile);
         }
     }
 

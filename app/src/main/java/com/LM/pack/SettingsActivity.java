@@ -620,12 +620,18 @@ public class SettingsActivity extends Activity {
     private Dialog createAppDialog(String title, String subtitle) {
         Dialog dialog = new Dialog(this);
         dialog.setContentView(R.layout.dialog_issue_center);
-        final View content = dialog.findViewById(R.id.tvDialogTitle).getRootView();
+        final View titleView = dialog.findViewById(R.id.tvDialogTitle);
+        final View subtitleView = dialog.findViewById(R.id.tvDialogSubtitle);
+        final View content = titleView != null ? titleView.getRootView() : dialog.findViewById(android.R.id.content);
         if (palette != null) {
             themeManager.applyTaggedStyles(content, palette);
         }
-        ((TextView) dialog.findViewById(R.id.tvDialogTitle)).setText(title);
-        ((TextView) dialog.findViewById(R.id.tvDialogSubtitle)).setText(subtitle);
+        if (titleView instanceof TextView) {
+            ((TextView) titleView).setText(title);
+        }
+        if (subtitleView instanceof TextView) {
+            ((TextView) subtitleView).setText(subtitle);
+        }
         dialog.setCancelable(true);
         dialog.setOnShowListener(dialogInterface -> animatePopupCard(content));
         return dialog;

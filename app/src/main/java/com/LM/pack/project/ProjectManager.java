@@ -79,16 +79,18 @@ public class ProjectManager {
         File projectRoot = new File(projectRootPath);
         File appDir = new File(projectRoot, "app");
         File manifestFile = new File(appDir, "src/main/AndroidManifest.xml");
-        File appBuildGradle = new File(appDir, "build.gradle");
+        File appBuildGradle = resolveAppBuildGradleFile(appDir);
+        File settingsGradle = resolveSettingsGradleFile(projectRoot);
+        File rootBuildGradle = resolveRootBuildGradleFile(projectRoot);
         File stringsFile = new File(appDir, "src/main/res/values/strings.xml");
 
         ensureDir(projectRoot);
         ensureDir(appDir);
         ensureDir(new File(appDir, "src/main/res/values"));
 
-        writeText(new File(projectRoot, "settings.gradle"), buildSettingsGradle(config));
-        if (!new File(projectRoot, "build.gradle").exists()) {
-            writeText(new File(projectRoot, "build.gradle"), buildRootGradle());
+        writeText(settingsGradle, settingsGradle.getName().endsWith(".kts") ? buildSettingsGradleKts(config) : buildSettingsGradle(config));
+        if (!rootBuildGradle.exists()) {
+            writeText(rootBuildGradle, buildRootGradle());
         }
         if (!new File(projectRoot, "gradle.properties").exists()) {
             writeText(new File(projectRoot, "gradle.properties"), buildGradleProperties());
@@ -740,15 +742,27 @@ public class ProjectManager {
 
     private String updateAppBuildGradle(String content, ProjectConfig config) {
         String updated = content;
-        updated = updated.replaceAll("namespace\\s+'[^']+'", "namespace '" + Matcher.quoteReplacement(config.getPackageName()) + "'");
-        updated = updated.replaceAll("applicationId\\s+\"[^\"]+\"", "applicationId \"" + Matcher.quoteReplacement(config.getPackageName()) + "\"");
-        updated = updated.replaceAll("compileSdkVersion\\s+\\d+", "compileSdkVersion " + config.getTargetSdk());
-        updated = updated.replaceAll("minSdkVersion\\s+\\d+", "minSdkVersion " + config.getMinSdk());
-        updated = updated.replaceAll("targetSdkVersion\\s+\\d+", "targetSdkVersion " + config.getTargetSdk());
-        updated = updated.replaceAll("versionCode\\s+\\d+", "versionCode " + config.getVersionCode());
-        updated = updated.replaceAll("versionName\\s+\"[^\"]+\"", "versionName \"" + Matcher.quoteReplacement(config.getVersionName()) + "\"");
+        boolean kotlinDsl = content != null && (content.contains("namespace = ") || content.contains("compileSdk = ") || content.contains("applicationId = "));
+        if (kotlinDsl) {
+            updated = updated.replaceAll("namespace\\s*=\\s*[\"'][^\"']+[\"']", "namespace = \"" + Matcher.quoteReplacement(config.getPackageName()) + "\"");
+            updated = updated.replaceAll("applicationId\\s*=\\s*[\"'][^\"']+[\"']", "applicationId = \"" + Matcher.quoteReplacement(config.getPackageName()) + "\"");
+            updated = updated.replaceAll("compileSdk(?:Version)?\\s*=\\s*\\d+", "compileSdk = " + config.getTargetSdk());
+            updated = updated.replaceAll("minSdk(?:Version)?\\s*=\\s*\\d+", "minSdk = " + config.getMinSdk());
+            updated = updated.replaceAll("targetSdk(?:Version)?\\s*=\\s*\\d+", "targetSdk = " + config.getTargetSdk());
+            updated = updated.replaceAll("versionCode\\s*=\\s*\\d+", "versionCode = " + config.getVersionCode());
+            updated = updated.replaceAll("versionName\\s*=\\s*[\"'][^\"']+[\"']", "versionName = \"" + Matcher.quoteReplacement(config.getVersionName()) + "\"");
+        } else {
+            updated = updated.replaceAll("namespace\\s+'[^']+'", "namespace '" + Matcher.quoteReplacement(config.getPackageName()) + "'");
+            updated = updated.replaceAll("namespace\\s+\"[^\"]+\"", "namespace \"" + Matcher.quoteReplacement(config.getPackageName()) + "\"");
+            updated = updated.replaceAll("applicationId\\s+\"[^\"]+\"", "applicationId \"" + Matcher.quoteReplacement(config.getPackageName()) + "\"");
+            updated = updated.replaceAll("compileSdkVersion\\s+\\d+", "compileSdkVersion " + config.getTargetSdk());
+            updated = updated.replaceAll("minSdkVersion\\s+\\d+", "minSdkVersion " + config.getMinSdk());
+            updated = updated.replaceAll("targetSdkVersion\\s+\\d+", "targetSdkVersion " + config.getTargetSdk());
+            updated = updated.replaceAll("versionCode\\s+\\d+", "versionCode " + config.getVersionCode());
+            updated = updated.replaceAll("versionName\\s+\"[^\"]+\"", "versionName \"" + Matcher.quoteReplacement(config.getVersionName()) + "\"");
+        }
         if (!updated.contains("namespace")) {
-            return buildAppGradle(config);
+            return kotlinDsl ? content : buildAppGradle(config);
         }
         return updated;
     }
@@ -791,6 +805,34 @@ public class ProjectManager {
 
     private String buildSettingsGradle(ProjectConfig config) {
         return "rootProject.name = \"" + escapeGradle(config.getAppName()) + "\"\ninclude ':app'\n";
+    }
+
+    private String buildSettingsGradleKts(ProjectConfig config) {
+        return "rootProject.name = \"" + escapeGradle(config.getAppName()) + "\"\ninclude(\":app\")\n";
+    }
+
+    private File resolveAppBuildGradleFile(File appDir) {
+        File kotlinDsl = new File(appDir, "build.gradle.kts");
+        if (kotlinDsl.exists()) {
+            return kotlinDsl;
+        }
+        return new File(appDir, "build.gradle");
+    }
+
+    private File resolveSettingsGradleFile(File projectRoot) {
+        File kotlinDsl = new File(projectRoot, "settings.gradle.kts");
+        if (kotlinDsl.exists()) {
+            return kotlinDsl;
+        }
+        return new File(projectRoot, "settings.gradle");
+    }
+
+    private File resolveRootBuildGradleFile(File projectRoot) {
+        File kotlinDsl = new File(projectRoot, "build.gradle.kts");
+        if (kotlinDsl.exists()) {
+            return kotlinDsl;
+        }
+        return new File(projectRoot, "build.gradle");
     }
 
     private String buildRootGradle() {

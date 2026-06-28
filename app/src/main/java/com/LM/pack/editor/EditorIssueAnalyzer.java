@@ -45,7 +45,7 @@ public class EditorIssueAnalyzer {
         } catch (SAXParseException e) {
             issues.add(new BuildIssue(
                 fileName,
-                e.getLineNumber(),
+                normalizeLineNumber(e.getLineNumber()),
                 e.getMessage(),
                 context.getString(R.string.issue_xml_suggestion)
             ));
@@ -66,6 +66,7 @@ public class EditorIssueAnalyzer {
         int lineNumber = 1;
         boolean inString = false;
         char stringQuote = 0;
+        boolean earlyCloseReported = false;
         for (int i = 0; i < content.length(); i++) {
             char c = content.charAt(i);
             if (c == '\n') {
@@ -96,13 +97,18 @@ public class EditorIssueAnalyzer {
                 squareBalance--;
             }
             if (roundBalance < 0 || curlyBalance < 0 || squareBalance < 0) {
-                issues.add(new BuildIssue(
-                    fileName,
-                    lineNumber,
-                    context.getString(R.string.issue_bracket_early_close_message),
-                    context.getString(R.string.issue_bracket_early_close_suggestion)
-                ));
-                return;
+                if (!earlyCloseReported) {
+                    issues.add(new BuildIssue(
+                        fileName,
+                        lineNumber,
+                        context.getString(R.string.issue_bracket_early_close_message),
+                        context.getString(R.string.issue_bracket_early_close_suggestion)
+                    ));
+                    earlyCloseReported = true;
+                }
+                roundBalance = Math.max(0, roundBalance);
+                curlyBalance = Math.max(0, curlyBalance);
+                squareBalance = Math.max(0, squareBalance);
             }
         }
         if (inString) {
@@ -122,5 +128,9 @@ public class EditorIssueAnalyzer {
                 context.getString(R.string.issue_bracket_unbalanced_suggestion)
             ));
         }
+    }
+
+    private int normalizeLineNumber(int lineNumber) {
+        return lineNumber > 0 ? lineNumber : 1;
     }
 }

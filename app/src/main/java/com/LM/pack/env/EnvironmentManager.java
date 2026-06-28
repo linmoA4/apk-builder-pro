@@ -489,6 +489,9 @@ public class EnvironmentManager {
         if (javaLevel >= 11 || gradleMajor >= 5 || agpMajor >= 4) {
             return 1;
         }
+        if (gradleMajor <= 0 && agpMajor <= 0 && javaLevel <= 0) {
+            return 4;
+        }
         return 0;
     }
 

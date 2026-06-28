@@ -352,7 +352,7 @@ public class ProjectPreflightChecker {
         try {
             DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file);
         } catch (SAXParseException e) {
-            issues.add(new BuildIssue(file.getAbsolutePath(), e.getLineNumber(), e.getMessage(), "检查 XML 标签是否闭合、属性引号是否完整。"));
+            issues.add(new BuildIssue(file.getAbsolutePath(), normalizeLineNumber(e.getLineNumber()), e.getMessage(), "检查 XML 标签是否闭合、属性引号是否完整。"));
         } catch (Exception e) {
             issues.add(new BuildIssue(file.getAbsolutePath(), -1, e.getMessage(), "检查 XML 结构和资源引用。"));
         }
@@ -637,6 +637,10 @@ public class ProjectPreflightChecker {
         if ((cancellationSignal != null && cancellationSignal.isCancelled()) || Thread.currentThread().isInterrupted()) {
             throw new CancellationException("预检查已取消");
         }
+    }
+
+    private int normalizeLineNumber(int lineNumber) {
+        return lineNumber > 0 ? lineNumber : 1;
     }
 
     private String safeText(String value) {
