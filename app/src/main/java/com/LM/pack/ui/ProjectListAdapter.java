@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.util.Log;
 import android.util.LruCache;
 import android.view.Gravity;
 import android.view.View;
@@ -21,6 +22,8 @@ import java.io.File;
 import java.util.List;
 
 public class ProjectListAdapter extends BaseAdapter {
+
+    private static final String TAG = "ProjectListAdapter";
 
     private final Context context;
     private final ThemeManager themeManager;
@@ -137,17 +140,25 @@ public class ProjectListAdapter extends BaseAdapter {
         if (!iconFile.exists() || !iconFile.isFile()) {
             return null;
         }
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(iconPath, bounds);
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inPreferredConfig = Bitmap.Config.RGB_565;
-        options.inSampleSize = computeSampleSize(bounds, dp(52), dp(52));
-        Bitmap bitmap = BitmapFactory.decodeFile(iconPath, options);
-        if (bitmap != null) {
-            iconCache.put(iconPath, bitmap);
+        try {
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(iconPath, bounds);
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inPreferredConfig = Bitmap.Config.RGB_565;
+            options.inSampleSize = computeSampleSize(bounds, dp(52), dp(52));
+            Bitmap bitmap = BitmapFactory.decodeFile(iconPath, options);
+            if (bitmap != null) {
+                iconCache.put(iconPath, bitmap);
+                return bitmap;
+            }
+            Log.w(TAG, "decode returned null, iconPath=" + iconPath);
+        } catch (OutOfMemoryError error) {
+            Log.e(TAG, "icon decode OOM, iconPath=" + iconPath, error);
+        } catch (RuntimeException exception) {
+            Log.e(TAG, "icon decode failed, iconPath=" + iconPath, exception);
         }
-        return bitmap;
+        return null;
     }
 
     private int computeSampleSize(BitmapFactory.Options options, int targetWidth, int targetHeight) {

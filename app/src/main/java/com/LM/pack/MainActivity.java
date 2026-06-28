@@ -113,6 +113,7 @@ public class MainActivity extends Activity {
     private EditorIssueAnalyzer editorIssueAnalyzer;
 
     private ViewPager2 viewPager;
+    private ViewPager2.OnPageChangeCallback homePageChangeCallback;
     private LinearLayout homePane;
     private LinearLayout editorPane;
     private LinearLayout emptyState;
@@ -305,14 +306,6 @@ public class MainActivity extends Activity {
         viewPager.setAdapter(new ViewPager2Adapter(pages));
         viewPager.setUserInputEnabled(true);
         viewPager.setCurrentItem(0, false);
-        viewPager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
-            @Override
-            public void onPageSelected(int position) {
-                if (position == 0) {
-                    onSwipeToHome();
-                }
-            }
-        });
         emptyState = (LinearLayout) homePane.findViewById(R.id.emptyState);
         fileDrawer = (LinearLayout) editorPane.findViewById(R.id.fileDrawer);
         suggestionCard = (LinearLayout) editorPane.findViewById(R.id.suggestionCard);
@@ -388,6 +381,22 @@ public class MainActivity extends Activity {
                 updateEditorActionButtons();
             }
         });
+        ensureHomePageCallbackRegistered();
+    }
+
+    private void ensureHomePageCallbackRegistered() {
+        if (viewPager == null || homePageChangeCallback != null) {
+            return;
+        }
+        homePageChangeCallback = new ViewPager2.OnPageChangeCallback() {
+            @Override
+            public void onPageSelected(int position) {
+                if (position == 0) {
+                    onSwipeToHome();
+                }
+            }
+        };
+        viewPager.registerOnPageChangeCallback(homePageChangeCallback);
     }
 
     private void bindEvents() {
@@ -615,18 +624,36 @@ public class MainActivity extends Activity {
 
     private void onSwipeToHome() {
         flushPendingAutoSave();
-        btnBackHome.setVisibility(View.GONE);
-        btnFabAdd.setVisibility(View.VISIBLE);
-        btnToggleFiles.setText(R.string.editor_toggle_files);
-        tvToolbarTitle.setText(R.string.main_title);
+        if (btnBackHome != null) {
+            btnBackHome.setVisibility(View.GONE);
+        }
+        if (btnFabAdd != null) {
+            btnFabAdd.setVisibility(View.VISIBLE);
+        }
+        if (btnToggleFiles != null) {
+            btnToggleFiles.setText(R.string.editor_toggle_files);
+        }
+        if (tvToolbarTitle != null) {
+            tvToolbarTitle.setText(R.string.main_title);
+        }
         setSuggestionCardVisible(false, false);
         hideFileDrawer(false);
         hideAddActionOverlay(false);
         currentProject = null;
         projectPrepared = false;
+        if (!isEditorHomeResetReady()) {
+            return;
+        }
         editorTabManager.clear();
         fileTreeAdapter.setProjectRoot(null);
         clearEditor();
+    }
+
+    private boolean isEditorHomeResetReady() {
+        return editorTabManager != null
+            && fileTreeAdapter != null
+            && etEditor != null
+            && tvCurrentFilePath != null;
     }
 
     private void showHome() {
