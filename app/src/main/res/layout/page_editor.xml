@@ -74,6 +74,15 @@
             android:tag="ghostButton primary" />
 
         <Button
+            android:id="@+id/btnAi"
+            android:layout_width="46dp"
+            android:layout_height="36dp"
+            android:layout_marginLeft="6dp"
+            android:text="@string/editor_ai"
+            android:textStyle="bold"
+            android:tag="ghostButton primary" />
+
+        <Button
             android:id="@+id/btnSaveFile"
             android:layout_width="0dp"
             android:layout_height="0dp"
@@ -210,6 +219,75 @@
                     android:text="@string/editor_copy_fix"
                     android:textStyle="bold"
                     android:tag="warnButton primary" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/aiRobotCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:tag="panelRaised">
+
+                <TextView
+                    android:id="@+id/tvAiRobotAvatar"
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:gravity="center"
+                    android:text="🤖"
+                    android:textSize="26sp"
+                    android:tag="panel" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="10dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvAiRobotTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/ai_robot_name"
+                        android:textStyle="bold"
+                        android:tag="primary" />
+
+                    <TextView
+                        android:id="@+id/tvAiRobotHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/ai_robot_hint_idle"
+                        android:textSize="12sp"
+                        android:tag="secondary" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnAiReview"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="@string/ai_review_action"
+                            android:textStyle="bold"
+                            android:tag="primaryButton primary" />
+
+                        <Button
+                            android:id="@+id/btnAiChat"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:layout_marginLeft="8dp"
+                            android:text="@string/ai_chat_action"
+                            android:textStyle="bold"
+                            android:tag="ghostButton primary" />
+                    </LinearLayout>
+                </LinearLayout>
             </LinearLayout>
 
             <com.LM.pack.editor.CodeEditorView

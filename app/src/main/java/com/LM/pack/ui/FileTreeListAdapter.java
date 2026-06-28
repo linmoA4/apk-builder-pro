@@ -116,11 +116,11 @@ public class FileTreeListAdapter extends BaseAdapter {
                 relative = "/";
             }
             return item.isDirectory()
-                ? context.getString(R.string.file_tree_directory_relative_format, relative)
+                ? context.getString(R.string.file_tree_directory_relative_format, relative) + " · " + context.getString(R.string.file_browser_long_press_tip)
                 : context.getString(R.string.file_tree_file_relative_format, relative);
         }
         return item.isDirectory()
-            ? context.getString(R.string.file_tree_directory_short)
+            ? context.getString(R.string.file_tree_directory_short) + " · " + context.getString(R.string.file_browser_long_press_tip)
             : context.getString(R.string.file_tree_file_short);
     }
 

@@ -51,8 +51,8 @@ public class BuildWorkflowService {
         final Listener listener
     ) {
         final File projectDir = new File(currentProject.getProjectDir());
-        final int resolvedJdkIndex = environmentManager.recommendJdkIndex(projectDir);
-        final int resolvedNdkIndex = environmentManager.recommendNdkIndex(projectDir);
+        final int resolvedJdkIndex = selectedJdkIndex;
+        final int resolvedNdkIndex = selectedNdkIndex;
         environmentManager.saveSelectedJdkIndex(resolvedJdkIndex);
         environmentManager.saveSelectedNdkIndex(resolvedNdkIndex);
         cancelRequested = false;

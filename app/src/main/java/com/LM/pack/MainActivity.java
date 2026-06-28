@@ -1,5 +1,7 @@
 package com.LM.pack;
 
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
@@ -45,6 +47,8 @@ import android.widget.Toast;
 import androidx.core.content.FileProvider;
 import androidx.viewpager2.widget.ViewPager2;
 import androidx.recyclerview.widget.RecyclerView;
+import com.LM.pack.ai.AIChatService;
+import com.LM.pack.ai.AICodeReviewService;
 import com.LM.pack.build.BuildManager;
 import com.LM.pack.build.ProjectPreflightChecker;
 import com.LM.pack.editor.CodeEditorView;
@@ -116,6 +120,8 @@ public class MainActivity extends Activity {
     private BuildWorkflowService buildWorkflowService;
     private EnvironmentState environmentState;
     private EditorIssueAnalyzer editorIssueAnalyzer;
+    private AIChatService aiChatService;
+    private AICodeReviewService aiCodeReviewService;
 
     private ViewPager2 viewPager;
     private ViewPager2.OnPageChangeCallback homePageChangeCallback;
@@ -124,6 +130,7 @@ public class MainActivity extends Activity {
     private LinearLayout emptyState;
     private LinearLayout fileDrawer;
     private LinearLayout suggestionCard;
+    private LinearLayout aiRobotCard;
     private LinearLayout editorTabContainer;
     private LinearLayout addActionOverlay;
     private LiquidGlassBackgroundView bgSceneView;
@@ -132,6 +139,9 @@ public class MainActivity extends Activity {
     private TextView tvCurrentFilePath;
     private TextView tvIssueTitle;
     private TextView tvIssueFix;
+    private TextView tvAiRobotAvatar;
+    private TextView tvAiRobotTitle;
+    private TextView tvAiRobotHint;
     private Button btnBackHome;
     private Button btnSettings;
     private Button btnFabAdd;
@@ -142,9 +152,12 @@ public class MainActivity extends Activity {
     private Button btnUndo;
     private Button btnRedo;
     private Button btnSearch;
+    private Button btnAi;
     private Button btnSaveFile;
     private Button btnBuild;
     private Button btnCopyFix;
+    private Button btnAiReview;
+    private Button btnAiChat;
     private ListView lvProjects;
     private ListView lvFiles;
     private CodeEditorView etEditor;
@@ -160,6 +173,7 @@ public class MainActivity extends Activity {
     private final ArrayList<FileTreeItem> fileTreeItems = new ArrayList<FileTreeItem>();
     private final ArrayList<String> expandedDirs = new ArrayList<String>();
     private final ArrayList<BuildIssue> lastBuildIssues = new ArrayList<BuildIssue>();
+    private final ArrayList<BuildIssue> aiReviewIssues = new ArrayList<BuildIssue>();
 
     private ProjectListAdapter projectAdapter;
     private FileTreeListAdapter fileTreeAdapter;
@@ -169,6 +183,7 @@ public class MainActivity extends Activity {
     private boolean projectPrepared = false;
     private boolean isBuildRunning = false;
     private boolean buildFlowPending = false;
+    private boolean aiReviewRunning = false;
     private int selectedJdkIndex = 4;
     private int selectedNdkIndex = 4;
     private String currentCopiedFix = "";
@@ -187,6 +202,8 @@ public class MainActivity extends Activity {
     private ImagePickerTarget pendingImagePickerTarget;
     private KeystorePickerTarget pendingKeystorePickerTarget;
     private Runnable progressCancelAction;
+    private ObjectAnimator robotAvatarAnimator;
+    private final StringBuilder aiCompanionTranscript = new StringBuilder();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -205,6 +222,8 @@ public class MainActivity extends Activity {
         buildWorkflowService = new BuildWorkflowService(buildManager, preflightChecker, environmentManager, handler);
         environmentState = environmentManager.loadState();
         editorIssueAnalyzer = new EditorIssueAnalyzer(this);
+        aiChatService = new AIChatService();
+        aiCodeReviewService = new AICodeReviewService(aiChatService);
         selectedJdkIndex = environmentManager.loadSelectedJdkIndex();
         selectedNdkIndex = environmentManager.loadSelectedNdkIndex();
 
@@ -271,6 +290,10 @@ public class MainActivity extends Activity {
         if (isFinishing() && buildWorkflowService != null) {
             buildWorkflowService.cancelCurrentWork();
         }
+        if (robotAvatarAnimator != null) {
+            robotAvatarAnimator.cancel();
+            robotAvatarAnimator = null;
+        }
         super.onDestroy();
     }
 
@@ -314,6 +337,7 @@ public class MainActivity extends Activity {
         emptyState = (LinearLayout) homePane.findViewById(R.id.emptyState);
         fileDrawer = (LinearLayout) editorPane.findViewById(R.id.fileDrawer);
         suggestionCard = (LinearLayout) editorPane.findViewById(R.id.suggestionCard);
+        aiRobotCard = (LinearLayout) editorPane.findViewById(R.id.aiRobotCard);
         editorTabContainer = (LinearLayout) editorPane.findViewById(R.id.editorTabContainer);
         addActionOverlay = (LinearLayout) findViewById(R.id.addActionOverlay);
         bgSceneView = (LiquidGlassBackgroundView) findViewById(R.id.bgSceneView);
@@ -322,6 +346,9 @@ public class MainActivity extends Activity {
         tvCurrentFilePath = (TextView) editorPane.findViewById(R.id.tvCurrentFilePath);
         tvIssueTitle = (TextView) editorPane.findViewById(R.id.tvIssueTitle);
         tvIssueFix = (TextView) editorPane.findViewById(R.id.tvIssueFix);
+        tvAiRobotAvatar = (TextView) editorPane.findViewById(R.id.tvAiRobotAvatar);
+        tvAiRobotTitle = (TextView) editorPane.findViewById(R.id.tvAiRobotTitle);
+        tvAiRobotHint = (TextView) editorPane.findViewById(R.id.tvAiRobotHint);
         btnBackHome = (Button) findViewById(R.id.btnBackHome);
         btnSettings = (Button) findViewById(R.id.btnSettings);
         btnFabAdd = (Button) findViewById(R.id.btnFabAdd);
@@ -332,9 +359,12 @@ public class MainActivity extends Activity {
         btnUndo = (Button) editorPane.findViewById(R.id.btnUndo);
         btnRedo = (Button) editorPane.findViewById(R.id.btnRedo);
         btnSearch = (Button) editorPane.findViewById(R.id.btnSearch);
+        btnAi = (Button) editorPane.findViewById(R.id.btnAi);
         btnSaveFile = (Button) editorPane.findViewById(R.id.btnSaveFile);
         btnBuild = (Button) editorPane.findViewById(R.id.btnBuild);
         btnCopyFix = (Button) editorPane.findViewById(R.id.btnCopyFix);
+        btnAiReview = (Button) editorPane.findViewById(R.id.btnAiReview);
+        btnAiChat = (Button) editorPane.findViewById(R.id.btnAiChat);
         lvProjects = (ListView) homePane.findViewById(R.id.lvProjects);
         lvFiles = (ListView) editorPane.findViewById(R.id.lvFiles);
         etEditor = (CodeEditorView) editorPane.findViewById(R.id.etEditor);
@@ -352,6 +382,8 @@ public class MainActivity extends Activity {
 
         ViewGroup.LayoutParams layoutParams = fileDrawer.getLayoutParams();
         updateFileDrawerWidth();
+        startAiRobotAvatarAnimation();
+        refreshAiRobotState();
     }
 
     private void initAdapters() {
@@ -491,6 +523,27 @@ public class MainActivity extends Activity {
             }
         });
 
+        btnAi.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showAiActionDialog();
+            }
+        });
+
+        btnAiReview.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                runAiCodeReview();
+            }
+        });
+
+        btnAiChat.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showCompanionDialog(buildCompanionQuickSeed());
+            }
+        });
+
         btnCopyFix.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -526,6 +579,21 @@ public class MainActivity extends Activity {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 handleFileTreeClick(position);
+            }
+        });
+
+        lvFiles.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
+            @Override
+            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
+                if (position < 0 || position >= fileTreeItems.size()) {
+                    return false;
+                }
+                FileTreeItem item = fileTreeItems.get(position);
+                if (!item.isDirectory()) {
+                    return false;
+                }
+                openDirectoryBrowser(item.getFile());
+                return true;
             }
         });
 
@@ -625,6 +693,35 @@ public class MainActivity extends Activity {
         if (fileTreeAdapter != null) {
             fileTreeAdapter.setPalette(palette);
         }
+        refreshAiRobotState();
+    }
+
+    private void startAiRobotAvatarAnimation() {
+        if (tvAiRobotAvatar == null || robotAvatarAnimator != null) {
+            return;
+        }
+        robotAvatarAnimator = ObjectAnimator.ofFloat(tvAiRobotAvatar, "translationY", 0f, -8f, 0f);
+        robotAvatarAnimator.setDuration(1800L);
+        robotAvatarAnimator.setRepeatCount(ValueAnimator.INFINITE);
+        robotAvatarAnimator.start();
+    }
+
+    private void refreshAiRobotState() {
+        if (tvAiRobotHint == null) {
+            return;
+        }
+        if (aiReviewRunning) {
+            tvAiRobotHint.setText(R.string.ai_review_running);
+        } else if (!lastBuildIssues.isEmpty()) {
+            tvAiRobotHint.setText(R.string.ai_robot_hint_build_failed);
+        } else if (currentOpenFile != null) {
+            tvAiRobotHint.setText(R.string.ai_robot_hint_ready);
+        } else {
+            tvAiRobotHint.setText(R.string.ai_robot_hint_idle);
+        }
+        updateActionButtonState(btnAi, currentProject != null);
+        updateActionButtonState(btnAiReview, currentOpenFile != null && !aiReviewRunning);
+        updateActionButtonState(btnAiChat, !aiReviewRunning);
     }
 
     private void onSwipeToHome() {
@@ -646,6 +743,10 @@ public class MainActivity extends Activity {
         hideAddActionOverlay(false);
         currentProject = null;
         projectPrepared = false;
+        lastBuildIssues.clear();
+        aiReviewIssues.clear();
+        updateBugButtonState();
+        refreshAiRobotState();
         if (!isEditorHomeResetReady()) {
             return;
         }
@@ -678,7 +779,9 @@ public class MainActivity extends Activity {
         tvCurrentFilePath.setText(entry.getProjectDir());
         setSuggestionCardVisible(false, false);
         lastBuildIssues.clear();
+        aiReviewIssues.clear();
         updateBugButtonState();
+        refreshAiRobotState();
         editorTabManager.clear();
         projectFileService.ensureDefaultExpandedDirs(entry, expandedDirs);
         fileTreeAdapter.setProjectRoot(entry.getProjectDir());
@@ -2327,6 +2430,7 @@ public class MainActivity extends Activity {
             }
             editorTabManager.setDirty(file, false);
             validateCurrentEditorContent();
+            refreshAiRobotState();
         } catch (Exception e) {
             logManager.appendLogLine("ERROR", getString(R.string.log_open_file_failed, e.getMessage()));
             toast(getString(R.string.toast_open_file_failed));
@@ -2347,6 +2451,7 @@ public class MainActivity extends Activity {
         tvCurrentFilePath.setText(R.string.no_file_selected);
         setSuggestionCardVisible(false, false);
         updateEditorActionButtons();
+        refreshAiRobotState();
     }
 
     private void saveCurrentFile() {
@@ -2786,6 +2891,7 @@ public class MainActivity extends Activity {
                     lastBuildIssues.clear();
                     lastBuildIssues.addAll(issues);
                     updateBugButtonState();
+                    refreshAiRobotState();
                     logManager.appendLogLine("ERROR", "打包前检查未通过，已停止构建。");
                     appendIssueListToLogs("预检查发现的问题", lastBuildIssues);
                     if (!maybeShowWrapperRepairDialog("检查发现错误", lastBuildIssues)) {
@@ -2796,6 +2902,7 @@ public class MainActivity extends Activity {
                 @Override
                 public void onBuildStarted() {
                     isBuildRunning = true;
+                    refreshAiRobotState();
                     updateProgressDialog("检查通过，开始调用 Gradle 构建...");
                 }
 
@@ -2808,6 +2915,7 @@ public class MainActivity extends Activity {
                 public void onWorkflowCancelled(String message) {
                     dismissProgressDialog();
                     isBuildRunning = false;
+                    refreshAiRobotState();
                     logManager.appendLogLine("WARN", safeText(message, "构建已取消"));
                     toast("已取消构建");
                 }
@@ -2819,6 +2927,7 @@ public class MainActivity extends Activity {
                     lastBuildIssues.clear();
                     lastBuildIssues.addAll(result.getIssues());
                     updateBugButtonState();
+                    refreshAiRobotState();
                     if (result.isSuccess()) {
                         logManager.appendLogLine("INFO", result.getMessage());
                         if (result.getApkPath() != null && result.getApkPath().length() > 0) {
@@ -2863,6 +2972,327 @@ public class MainActivity extends Activity {
         return builder.toString();
     }
 
+    private void showAiActionDialog() {
+        if (currentProject == null) {
+            toast(getString(R.string.toast_open_project_first));
+            return;
+        }
+        showOptionListDialog(
+            getString(R.string.ai_review_dialog_title),
+            getString(R.string.ai_review_dialog_subtitle),
+            new String[] {
+                getString(R.string.ai_review_option_code),
+                getString(R.string.ai_review_option_chat)
+            },
+            0,
+            which -> {
+                if (which == 0) {
+                    runAiCodeReview();
+                } else {
+                    showCompanionDialog(buildCompanionQuickSeed());
+                }
+            }
+        );
+    }
+
+    private void runAiCodeReview() {
+        if (currentOpenFile == null) {
+            toast(getString(R.string.ai_chat_open_file_first));
+            return;
+        }
+        if (aiReviewRunning) {
+            toast(getString(R.string.ai_review_running));
+            return;
+        }
+        flushPendingAutoSave();
+        aiReviewRunning = true;
+        refreshAiRobotState();
+        showProgressDialog(getString(R.string.ai_review_action), getString(R.string.ai_review_running));
+        final String fileContent = etEditor.getText().toString();
+        final String relativePath = buildRelativeProjectPath(currentOpenFile);
+        aiCodeReviewService.reviewFile(relativePath, fileContent, new AICodeReviewService.ReviewCallback() {
+            @Override
+            public void onComplete(final ArrayList<BuildIssue> issues, final ArrayList<String> notices, final boolean fullSuccess) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        aiReviewRunning = false;
+                        dismissProgressDialog();
+                        aiReviewIssues.clear();
+                        aiReviewIssues.addAll(issues);
+                        updateBugButtonState();
+                        refreshAiRobotState();
+                        if (notices != null) {
+                            for (int i = 0; i < notices.size(); i++) {
+                                logManager.appendLogLine("WARN", notices.get(i));
+                            }
+                        }
+                        if (issues.isEmpty()) {
+                            if (fullSuccess) {
+                                toast(getString(R.string.ai_review_clean));
+                            } else if (notices != null && !notices.isEmpty()) {
+                                toast(notices.get(0));
+                            } else {
+                                toast(getString(R.string.ai_review_partial));
+                            }
+                            return;
+                        }
+                        appendIssueListToLogs(getString(R.string.ai_review_done), aiReviewIssues);
+                        if (!fullSuccess && notices != null && !notices.isEmpty()) {
+                            toast(getString(R.string.ai_review_partial));
+                        } else {
+                            toast(getString(R.string.ai_review_done));
+                        }
+                        showIssueDialog(getString(R.string.ai_review_done), aiReviewIssues);
+                    }
+                });
+            }
+        });
+    }
+
+    private void showCompanionDialog(String presetInput) {
+        if (aiCompanionTranscript.length() == 0) {
+            appendCompanionLine("🤖 小机器人", getString(R.string.ai_chat_seed));
+        }
+
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(dp(18), dp(18), dp(18), dp(8));
+        if (palette != null) {
+            container.setBackground(themeManager.createPanelDrawable(palette, true));
+        }
+
+        TextView header = new TextView(this);
+        header.setText("🤖  " + getString(R.string.ai_chat_subtitle));
+        header.setTextSize(13f);
+        if (palette != null) {
+            header.setTextColor(palette.textSecondary);
+        }
+        container.addView(header);
+
+        final ScrollView scrollView = new ScrollView(this);
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(220)
+        );
+        scrollParams.topMargin = dp(12);
+        scrollView.setLayoutParams(scrollParams);
+        if (palette != null) {
+            scrollView.setBackground(themeManager.createEditorDrawable(palette));
+        }
+
+        final TextView conversationView = new TextView(this);
+        conversationView.setPadding(dp(12), dp(12), dp(12), dp(12));
+        conversationView.setTextSize(13f);
+        if (palette != null) {
+            conversationView.setTextColor(palette.textPrimary);
+        }
+        scrollView.addView(conversationView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        container.addView(scrollView);
+
+        final TextView loadingView = new TextView(this);
+        loadingView.setText(R.string.ai_chat_loading);
+        loadingView.setVisibility(View.GONE);
+        loadingView.setPadding(0, dp(8), 0, 0);
+        if (palette != null) {
+            loadingView.setTextColor(palette.textMuted);
+        }
+        container.addView(loadingView);
+
+        final EditText input = new EditText(this);
+        input.setHint(R.string.ai_chat_input_hint);
+        input.setMinLines(2);
+        input.setMaxLines(4);
+        input.setText(safeText(presetInput));
+        if (safeText(presetInput).length() > 0) {
+            input.setSelection(input.getText().length());
+        }
+        if (palette != null) {
+            input.setTextColor(palette.textPrimary);
+            input.setHintTextColor(palette.textMuted);
+            input.setBackground(themeManager.createEditorDrawable(palette));
+        }
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        inputParams.topMargin = dp(12);
+        container.addView(input, inputParams);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        actionParams.topMargin = dp(12);
+        actions.setLayoutParams(actionParams);
+
+        final Button quickButton = new Button(this);
+        quickButton.setText(R.string.ai_chat_quick_relax);
+        if (palette != null) {
+            quickButton.setTextColor(palette.textSecondary);
+            quickButton.setBackground(themeManager.createGhostButtonDrawable(palette));
+        }
+        actions.addView(quickButton);
+
+        final Button sendButton = new Button(this);
+        sendButton.setText(R.string.ai_chat_send);
+        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        sendParams.leftMargin = dp(10);
+        if (palette != null) {
+            sendButton.setTextColor(palette.textPrimary);
+            sendButton.setBackground(themeManager.createPrimaryButtonDrawable(palette));
+        }
+        actions.addView(sendButton, sendParams);
+        container.addView(actions);
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle(getString(R.string.ai_chat_title))
+            .setView(container)
+            .setNegativeButton("关闭", null)
+            .create();
+
+        quickButton.setOnClickListener(v -> {
+            String seed = buildCompanionQuickSeed();
+            input.setText(seed);
+            input.setSelection(input.getText().length());
+        });
+        sendButton.setOnClickListener(v -> sendCompanionMessage(conversationView, scrollView, input, loadingView, sendButton, quickButton));
+
+        updateConversationView(conversationView, scrollView);
+        dialog.show();
+        animatePopupCard(dialog.getWindow() == null ? null : dialog.getWindow().getDecorView());
+    }
+
+    private void sendCompanionMessage(
+        final TextView conversationView,
+        final ScrollView scrollView,
+        final EditText input,
+        final TextView loadingView,
+        final Button sendButton,
+        final Button quickButton
+    ) {
+        final String userMessage = safeText(input.getText() == null ? null : input.getText().toString());
+        if (userMessage.length() == 0) {
+            toast(getString(R.string.ai_chat_empty_input));
+            return;
+        }
+        appendCompanionLine("我", userMessage);
+        updateConversationView(conversationView, scrollView);
+        input.setText("");
+        loadingView.setVisibility(View.VISIBLE);
+        sendButton.setEnabled(false);
+        quickButton.setEnabled(false);
+        aiChatService.requestChat(
+            BuildConfig.AI_COMPANION_MODEL,
+            buildCompanionSystemPrompt(),
+            buildCompanionUserPrompt(userMessage),
+            new AIChatService.ChatCallback() {
+                @Override
+                public void onSuccess(final String content) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            loadingView.setVisibility(View.GONE);
+                            sendButton.setEnabled(true);
+                            quickButton.setEnabled(true);
+                            appendCompanionLine("🤖 小机器人", content);
+                            updateConversationView(conversationView, scrollView);
+                        }
+                    });
+                }
+
+                @Override
+                public void onError(final String message) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            loadingView.setVisibility(View.GONE);
+                            sendButton.setEnabled(true);
+                            quickButton.setEnabled(true);
+                            logManager.appendLogLine("WARN", safeText(message, "情绪陪伴请求失败"));
+                            toast(safeText(message, "情绪陪伴请求失败"));
+                        }
+                    });
+                }
+            }
+        );
+    }
+
+    private void appendCompanionLine(String speaker, String message) {
+        if (aiCompanionTranscript.length() > 0) {
+            aiCompanionTranscript.append("\n\n");
+        }
+        aiCompanionTranscript.append(safeText(speaker, "对话")).append("：\n").append(safeText(message, ""));
+    }
+
+    private void updateConversationView(final TextView conversationView, final ScrollView scrollView) {
+        if (conversationView == null) {
+            return;
+        }
+        conversationView.setText(aiCompanionTranscript.toString());
+        if (scrollView != null) {
+            scrollView.post(new Runnable() {
+                @Override
+                public void run() {
+                    scrollView.fullScroll(View.FOCUS_DOWN);
+                }
+            });
+        }
+    }
+
+    private String buildCompanionQuickSeed() {
+        if (!lastBuildIssues.isEmpty()) {
+            return "刚刚又打包失败了，我有点想把电脑和自己一起静音。";
+        }
+        if (currentOpenFile != null) {
+            return "今天 Bug 太多了，我有点崩。";
+        }
+        return "我今天心情一般，想找你聊两句。";
+    }
+
+    private String buildCompanionSystemPrompt() {
+        return "你是 APK Builder Pro 里的情绪陪伴小机器人。"
+            + "请用中文回复，语气温暖、幽默、高情商，先接住用户情绪，再轻轻给一点安慰或一两个轻量建议。"
+            + "用户抱怨 Bug 太多、打包失败或心情不好时，要像贴心搭档一样回应，不要说教，不要冷冰冰，不要输出 JSON，不要使用项目符号列表。"
+            + "回复控制在 2 到 5 句，允许偶尔开一点轻松玩笑，但不要阴阳怪气。";
+    }
+
+    private String buildCompanionUserPrompt(String userMessage) {
+        StringBuilder builder = new StringBuilder();
+        if (currentProject != null) {
+            builder.append("当前项目：").append(currentProject.getProjectName()).append('\n');
+        }
+        if (currentOpenFile != null) {
+            builder.append("当前文件：").append(buildRelativeProjectPath(currentOpenFile)).append('\n');
+        }
+        if (!lastBuildIssues.isEmpty()) {
+            builder.append("最近一次构建/预检问题：").append(lastBuildIssues.get(0).getMessage()).append('\n');
+        }
+        builder.append("用户刚刚说：").append(userMessage);
+        return builder.toString();
+    }
+
+    private String buildRelativeProjectPath(File file) {
+        if (file == null || currentProject == null) {
+            return "";
+        }
+        try {
+            String projectRoot = new File(currentProject.getProjectDir()).getCanonicalPath();
+            String filePath = file.getCanonicalPath();
+            if (filePath.startsWith(projectRoot + File.separator)) {
+                return filePath.substring(projectRoot.length() + 1);
+            }
+            return file.getName();
+        } catch (Exception e) {
+            return file.getName();
+        }
+    }
+
     private String readAbiSummary(File projectDir) {
         File appGradle = new File(projectDir, "app/build.gradle");
         if (!appGradle.exists()) {
@@ -2895,8 +3325,25 @@ public class MainActivity extends Activity {
     }
 
     private void showIssueChooser() {
-        if (lastBuildIssues.isEmpty()) {
+        if (lastBuildIssues.isEmpty() && aiReviewIssues.isEmpty()) {
             toast("当前没有错误记录");
+            return;
+        }
+        if (!lastBuildIssues.isEmpty() && !aiReviewIssues.isEmpty()) {
+            showOptionListDialog(
+                "错误来源",
+                "这里既有构建/预检问题，也有 AI 双引擎的审查结果。",
+                new String[] {
+                    "构建 / 预检问题（" + lastBuildIssues.size() + "条）",
+                    "AI 审查结果（" + aiReviewIssues.size() + "条）"
+                },
+                0,
+                which -> showIssueDialog(which == 0 ? "构建 / 预检问题" : "AI 审查结果", which == 0 ? lastBuildIssues : aiReviewIssues)
+            );
+            return;
+        }
+        if (!aiReviewIssues.isEmpty()) {
+            showIssueDialog("AI 审查结果", aiReviewIssues);
             return;
         }
         showIssueDialog("错误列表", lastBuildIssues);
@@ -3080,15 +3527,16 @@ public class MainActivity extends Activity {
     }
 
     private void updateBugButtonState() {
+        boolean hasIssues = !lastBuildIssues.isEmpty() || !aiReviewIssues.isEmpty();
         if (palette == null) {
-            if (lastBuildIssues.isEmpty()) {
+            if (!hasIssues) {
                 btnBug.setBackgroundResource(R.drawable.bg_button_ghost);
             } else {
                 btnBug.setBackgroundResource(R.drawable.bg_button_warn);
             }
             return;
         }
-        if (lastBuildIssues.isEmpty()) {
+        if (!hasIssues) {
             btnBug.setBackground(themeManager.createGhostButtonDrawable(palette));
         } else {
             btnBug.setBackground(themeManager.createWarnButtonDrawable(palette));
@@ -3191,6 +3639,7 @@ public class MainActivity extends Activity {
         updateActionButtonState(btnUndo, etEditor != null && etEditor.canUndo());
         updateActionButtonState(btnRedo, etEditor != null && etEditor.canRedo());
         updateActionButtonState(btnSearch, currentOpenFile != null);
+        refreshAiRobotState();
     }
 
     private void updateActionButtonState(Button button, boolean enabled) {
