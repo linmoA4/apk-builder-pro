@@ -6,6 +6,7 @@ import com.LM.pack.model.ProjectConfig;
 import com.LM.pack.model.ProjectEntry;
 import com.LM.pack.model.ProjectSigningConfig;
 import com.LM.pack.project.ProjectManager;
+import com.LM.pack.util.CommonUtils;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -275,6 +276,6 @@ public class ProjectWorkspaceService {
     }
 
     private String safeText(String value) {
-        return value == null ? "" : value.trim();
+        return CommonUtils.safeText(value);
     }
 }

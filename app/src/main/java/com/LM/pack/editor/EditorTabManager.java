@@ -10,6 +10,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import com.LM.pack.R;
 import com.LM.pack.theme.AppThemePalette;
+import com.LM.pack.util.CommonUtils;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -226,6 +227,6 @@ public class EditorTabManager {
     }
 
     private int dp(int value) {
-        return (int) (value * context.getResources().getDisplayMetrics().density);
+        return CommonUtils.dp(context, (float) value);
     }
 }

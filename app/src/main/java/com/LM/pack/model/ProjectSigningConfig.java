@@ -1,5 +1,7 @@
 package com.LM.pack.model;
 
+import com.LM.pack.util.CommonUtils;
+
 public class ProjectSigningConfig {
 
     private final boolean enabled;
@@ -16,10 +18,10 @@ public class ProjectSigningConfig {
         String keyPassword
     ) {
         this.enabled = enabled;
-        this.storeFilePath = safeText(storeFilePath);
-        this.storePassword = safeText(storePassword);
-        this.keyAlias = safeText(keyAlias);
-        this.keyPassword = safeText(keyPassword);
+        this.storeFilePath = CommonUtils.safeText(storeFilePath);
+        this.storePassword = CommonUtils.safeText(storePassword);
+        this.keyAlias = CommonUtils.safeText(keyAlias);
+        this.keyPassword = CommonUtils.safeText(keyPassword);
     }
 
     public boolean isEnabled() {
@@ -48,9 +50,5 @@ public class ProjectSigningConfig {
             && storePassword.length() > 0
             && keyAlias.length() > 0
             && keyPassword.length() > 0;
-    }
-
-    private String safeText(String value) {
-        return value == null ? "" : value.trim();
     }
 }

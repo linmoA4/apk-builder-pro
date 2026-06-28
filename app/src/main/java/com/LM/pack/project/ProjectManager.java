@@ -6,6 +6,7 @@ import android.util.Log;
 import com.LM.pack.model.ProjectConfig;
 import com.LM.pack.model.ProjectEntry;
 import com.LM.pack.model.ProjectSigningConfig;
+import com.LM.pack.util.CommonUtils;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -1431,7 +1432,7 @@ public class ProjectManager {
     }
 
     private String safeText(String value, String fallback) {
-        return value == null || value.length() == 0 ? fallback : value;
+        return CommonUtils.safeText(value, fallback);
     }
 
     private String escapeJava(String value) {

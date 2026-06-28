@@ -20,6 +20,7 @@ import com.LM.pack.service.ProjectFileService;
 import com.LM.pack.theme.AppThemePalette;
 import com.LM.pack.theme.LiquidGlassBackgroundView;
 import com.LM.pack.theme.ThemeManager;
+import com.LM.pack.util.CommonUtils;
 import java.io.File;
 import java.util.ArrayList;
 
@@ -291,6 +292,6 @@ public class FileBrowserActivity extends Activity {
     }
 
     private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density);
+        return CommonUtils.dp(this, (float) value);
     }
 }

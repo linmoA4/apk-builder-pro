@@ -7,6 +7,7 @@ import com.LM.pack.env.IntegrityVerifier;
 import com.LM.pack.model.BuildIssue;
 import com.LM.pack.model.BuildResult;
 import com.LM.pack.model.ProjectSigningConfig;
+import com.LM.pack.util.CommonUtils;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.BufferedOutputStream;
@@ -939,7 +940,7 @@ public class BuildManager {
     }
 
     private String safeText(String value) {
-        return value == null ? "" : value.trim();
+        return CommonUtils.safeText(value);
     }
 
     private File buildPartialDownloadFile(File targetFile) {
@@ -1587,11 +1588,7 @@ public class BuildManager {
     }
 
     private int parseIntSafe(String value) {
-        try {
-            return Integer.parseInt(value);
-        } catch (Exception e) {
-            return -1;
-        }
+        return CommonUtils.parseIntSafe(value);
     }
 
     private String suggestFix(String message, String codeLine) {

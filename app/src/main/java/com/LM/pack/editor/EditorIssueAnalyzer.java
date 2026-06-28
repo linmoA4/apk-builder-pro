@@ -4,6 +4,7 @@ import android.content.Context;
 import com.LM.pack.R;
 import com.LM.pack.model.BuildIssue;
 import java.util.ArrayList;
+import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXParseException;
@@ -12,6 +13,16 @@ import java.io.StringReader;
 public class EditorIssueAnalyzer {
 
     private final Context context;
+    private final ThreadLocal<DocumentBuilder> documentBuilderCache = new ThreadLocal<DocumentBuilder>() {
+        @Override
+        protected DocumentBuilder initialValue() {
+            try {
+                return DocumentBuilderFactory.newInstance().newDocumentBuilder();
+            } catch (Exception e) {
+                return null;
+            }
+        }
+    };
 
     public EditorIssueAnalyzer(Context context) {
         this.context = context.getApplicationContext();
@@ -41,7 +52,10 @@ public class EditorIssueAnalyzer {
 
     private void collectXmlIssues(String fileName, String content, ArrayList<BuildIssue> issues) {
         try {
-            DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new InputSource(new StringReader(content)));
+            DocumentBuilder builder = documentBuilderCache.get();
+            if (builder != null) {
+                builder.parse(new InputSource(new StringReader(content)));
+            }
         } catch (SAXParseException e) {
             issues.add(new BuildIssue(
                 fileName,

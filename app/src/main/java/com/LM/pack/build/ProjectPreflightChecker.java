@@ -6,6 +6,8 @@ import com.LM.pack.env.IntegrityVerifier;
 import com.LM.pack.model.BuildIssue;
 import com.LM.pack.model.EnvironmentState;
 import com.LM.pack.project.ProjectManager;
+import com.LM.pack.service.ProjectFileService;
+import com.LM.pack.util.CommonUtils;
 import java.io.FileInputStream;
 import java.io.File;
 import java.util.ArrayList;
@@ -26,10 +28,14 @@ public class ProjectPreflightChecker {
 
     private final ProjectManager projectManager;
     private final EnvironmentManager environmentManager;
+    private final ProjectFileService projectFileService;
+    private final BracketCounter bracketCounter;
 
     public ProjectPreflightChecker(ProjectManager projectManager, EnvironmentManager environmentManager) {
         this.projectManager = projectManager;
         this.environmentManager = environmentManager;
+        this.projectFileService = new ProjectFileService();
+        this.bracketCounter = new BracketCounter();
     }
 
     public ArrayList<BuildIssue> collectProjectIssues(
@@ -127,7 +133,7 @@ public class ProjectPreflightChecker {
             String content = projectManager.readText(appGradleFile);
             Matcher matcher = Pattern.compile("compileSdk(?:Version)?\\s*(?:=\\s*)?(\\d+)").matcher(content);
             if (matcher.find()) {
-                return parseIntSafe(matcher.group(1));
+                return CommonUtils.parseIntSafe(matcher.group(1));
             }
             issues.add(new BuildIssue(appGradleFile.getAbsolutePath(), -1, "没有识别到 compileSdk。", "请在 `android {}` 中显式声明 `compileSdkVersion 35`，或至少补一个明确的 `compileSdk = 数字`。"));
         } catch (Exception e) {
@@ -139,7 +145,7 @@ public class ProjectPreflightChecker {
     private String readSdkDirForValidation(File projectDir, EnvironmentState environmentState, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
         throwIfCancelled(cancellationSignal);
         File localProperties = new File(projectDir, "local.properties");
-        String preferredSdkDir = environmentState == null ? "" : safeText(environmentState.getAndroidSdkDir());
+        String preferredSdkDir = environmentState == null ? "" : CommonUtils.safeText(environmentState.getAndroidSdkDir());
         try {
             if (!localProperties.exists()) {
                 if (!environmentManager.isExistingDirectory(preferredSdkDir)) {
@@ -253,8 +259,8 @@ public class ProjectPreflightChecker {
         try {
             inputStream = new FileInputStream(wrapperProperties);
             properties.load(inputStream);
-            String distributionUrl = safeText(properties.getProperty("distributionUrl"));
-            String declaredSha256 = safeText(properties.getProperty("distributionSha256Sum"));
+            String distributionUrl = CommonUtils.safeText(properties.getProperty("distributionUrl"));
+            String declaredSha256 = CommonUtils.safeText(properties.getProperty("distributionSha256Sum"));
             String gradleVersion = extractGradleVersionFromDistributionUrl(distributionUrl);
             String expectedSha256 = environmentManager.getGradleDistributionSha256(gradleVersion);
             if (distributionUrl.length() == 0) {
@@ -303,7 +309,7 @@ public class ProjectPreflightChecker {
     }
 
     private String extractGradleVersionFromDistributionUrl(String distributionUrl) {
-        Matcher matcher = Pattern.compile("gradle-([0-9][^/\\\\-]*)-").matcher(safeText(distributionUrl));
+        Matcher matcher = Pattern.compile("gradle-([0-9][^/\\\\-]*)-").matcher(CommonUtils.safeText(distributionUrl));
         if (matcher.find()) {
             return matcher.group(1);
         }
@@ -378,7 +384,7 @@ public class ProjectPreflightChecker {
             File file = files[i];
             if (file.isDirectory()) {
                 validateSourceDirectory(file, issues, cancellationSignal);
-            } else if (isTextEditableFile(file)) {
+            } else if (projectFileService.isTextEditableFile(file)) {
                 validateTextFile(file, issues, cancellationSignal);
             }
         }
@@ -408,234 +414,24 @@ public class ProjectPreflightChecker {
             }
             String name = file.getName().toLowerCase();
             if (name.endsWith(".java")) {
-                validateJavaSyntax(file, content, issues, cancellationSignal);
+                bracketCounter.validateJavaSyntax(file.getAbsolutePath(), content, issues, new BracketCounter.CancellationSignal() {
+                    @Override
+                    public boolean isCancelled() {
+                        return cancellationSignal != null && cancellationSignal.isCancelled();
+                    }
+                });
             } else if (name.endsWith(".kt")) {
-                validateKotlinSyntax(file, content, issues, cancellationSignal);
+                bracketCounter.validateKotlinSyntax(file.getAbsolutePath(), content, issues, new BracketCounter.CancellationSignal() {
+                    @Override
+                    public boolean isCancelled() {
+                        return cancellationSignal != null && cancellationSignal.isCancelled();
+                    }
+                });
             }
         } catch (CancellationException cancelled) {
             throw cancelled;
         } catch (Exception e) {
             issues.add(new BuildIssue(file.getAbsolutePath(), -1, "读取文件失败：" + e.getMessage(), "确认文件可读且不是二进制格式。"));
-        }
-    }
-
-    private void validateJavaSyntax(File file, String content, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
-        int braceDepth = 0;
-        int parenDepth = 0;
-        int bracketDepth = 0;
-        boolean inSingleLineComment = false;
-        boolean inMultiLineComment = false;
-        boolean inString = false;
-        boolean inChar = false;
-        char prev = 0;
-        char prevPrev = 0;
-        String[] lines = content.split("\n", -1);
-        for (int lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-            throwIfCancelled(cancellationSignal);
-            String line = lines[lineIdx];
-            int lineNum = lineIdx + 1;
-            inSingleLineComment = false;
-            for (int col = 0; col < line.length(); col++) {
-                throwIfCancelled(cancellationSignal);
-                char ch = line.charAt(col);
-                if (inMultiLineComment) {
-                    if (ch == '/' && prev == '*') {
-                        inMultiLineComment = false;
-                    }
-                } else if (inSingleLineComment) {
-                    continue;
-                } else if (inString) {
-                    if (ch == '"' && prev != '\\') {
-                        inString = false;
-                    }
-                } else if (inChar) {
-                    if (ch == '\'' && prev != '\\') {
-                        inChar = false;
-                    }
-                } else if (ch == '/' && prev == '/') {
-                    inSingleLineComment = true;
-                } else if (ch == '*' && prev == '/') {
-                    inMultiLineComment = true;
-                } else if (ch == '"') {
-                    inString = true;
-                } else if (ch == '\'') {
-                    inChar = true;
-                } else if (ch == '{') {
-                    braceDepth++;
-                } else if (ch == '}') {
-                    braceDepth--;
-                    if (braceDepth < 0) {
-                        issues.add(new BuildIssue(file.getAbsolutePath(), lineNum, "多余的右大括号 '}'", "删除或修正多余的大括号。"));
-                        braceDepth = 0;
-                    }
-                } else if (ch == '(') {
-                    parenDepth++;
-                } else if (ch == ')') {
-                    parenDepth--;
-                    if (parenDepth < 0) {
-                        issues.add(new BuildIssue(file.getAbsolutePath(), lineNum, "多余的右圆括号 ')'", "删除或修正多余的圆括号。"));
-                        parenDepth = 0;
-                    }
-                } else if (ch == '[') {
-                    bracketDepth++;
-                } else if (ch == ']') {
-                    bracketDepth--;
-                    if (bracketDepth < 0) {
-                        issues.add(new BuildIssue(file.getAbsolutePath(), lineNum, "多余的右方括号 ']'", "删除或修正多余的方括号。"));
-                        bracketDepth = 0;
-                    }
-                }
-                prevPrev = prev;
-                prev = ch;
-            }
-            if (!inMultiLineComment && !inSingleLineComment) {
-                String trimmed = line.trim();
-                if (trimmed.length() > 0
-                    && !trimmed.equals("{")
-                    && !trimmed.equals("}")
-                    && !trimmed.startsWith("@")
-                    && !trimmed.startsWith("//")
-                    && !trimmed.startsWith("/*")
-                    && !trimmed.equals("*/")
-                    && !trimmed.endsWith("{")
-                    && !trimmed.endsWith("}")
-                    && !trimmed.endsWith(";")
-                    && !trimmed.endsWith(",")
-                    && !trimmed.endsWith(":")
-                    && !trimmed.startsWith("package ")
-                    && !trimmed.startsWith("import ")
-                    && !trimmed.startsWith("if (")
-                    && !trimmed.startsWith("for (")
-                    && !trimmed.startsWith("while (")
-                    && !trimmed.startsWith("try")
-                    && !trimmed.startsWith("catch")
-                    && !trimmed.startsWith("else")
-                    && !trimmed.startsWith("do")
-                    && !trimmed.matches(".*\\s*\\*.*")) {
-                    issues.add(new BuildIssue(file.getAbsolutePath(), lineNum, "可能缺少分号 ';'", "在语句末尾添加分号。"));
-                }
-            }
-        }
-        if (braceDepth != 0) {
-            issues.add(new BuildIssue(file.getAbsolutePath(), -1, "大括号不匹配，差 " + braceDepth + " 个（" + (braceDepth > 0 ? "多" : "少") + "）", "检查 {} 是否成对出现。"));
-        }
-        if (parenDepth != 0) {
-            issues.add(new BuildIssue(file.getAbsolutePath(), -1, "圆括号不匹配，差 " + parenDepth + " 个（" + (parenDepth > 0 ? "多" : "少") + "）", "检查 () 是否成对出现。"));
-        }
-        if (bracketDepth != 0) {
-            issues.add(new BuildIssue(file.getAbsolutePath(), -1, "方括号不匹配，差 " + bracketDepth + " 个（" + (bracketDepth > 0 ? "多" : "少") + "）", "检查 [] 是否成对出现。"));
-        }
-    }
-
-    private void validateKotlinSyntax(File file, String content, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
-        int braceDepth = 0;
-        int parenDepth = 0;
-        int bracketDepth = 0;
-        boolean inSingleLineComment = false;
-        boolean inMultiLineComment = false;
-        boolean inString = false;
-        boolean inRawString = false;
-        int rawStringHash = 0;
-        boolean inChar = false;
-        char prev = 0;
-        String[] lines = content.split("\n", -1);
-        for (int lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-            throwIfCancelled(cancellationSignal);
-            String line = lines[lineIdx];
-            int lineNum = lineIdx + 1;
-            inSingleLineComment = false;
-            for (int col = 0; col < line.length(); col++) {
-                throwIfCancelled(cancellationSignal);
-                char ch = line.charAt(col);
-                if (inMultiLineComment) {
-                    if (ch == '/' && prev == '*') {
-                        inMultiLineComment = false;
-                    }
-                } else if (inSingleLineComment) {
-                    continue;
-                } else if (inRawString) {
-                    if (ch == '"' && col + rawStringHash < line.length()) {
-                        boolean match = true;
-                        for (int i = 1; i <= rawStringHash; i++) {
-                            if (line.charAt(col + i) != '"') {
-                                match = false;
-                                break;
-                            }
-                        }
-                        if (match) {
-                            inRawString = false;
-                            rawStringHash = 0;
-                        }
-                    }
-                } else if (inString) {
-                    if (ch == '"' && prev != '\\') {
-                        inString = false;
-                    }
-                } else if (inChar) {
-                    if (ch == '\'' && prev != '\\') {
-                        inChar = false;
-                    }
-                } else if (ch == '/' && prev == '/') {
-                    inSingleLineComment = true;
-                } else if (ch == '*' && prev == '/') {
-                    inMultiLineComment = true;
-                } else if (ch == '"') {
-                    int hashCount = 0;
-                    while (col + hashCount + 1 < line.length() && line.charAt(col + hashCount + 1) == '"') {
-                        hashCount++;
-                    }
-                    if (hashCount >= 2) {
-                        inRawString = true;
-                        rawStringHash = hashCount;
-                    } else {
-                        inString = true;
-                    }
-                } else if (ch == '\'') {
-                    inChar = true;
-                } else if (ch == '{') {
-                    braceDepth++;
-                } else if (ch == '}') {
-                    braceDepth--;
-                    if (braceDepth < 0) {
-                        issues.add(new BuildIssue(file.getAbsolutePath(), lineNum, "多余的右大括号 '}'", "删除或修正多余的大括号。"));
-                        braceDepth = 0;
-                    }
-                } else if (ch == '(') {
-                    parenDepth++;
-                } else if (ch == ')') {
-                    parenDepth--;
-                    if (parenDepth < 0) {
-                        issues.add(new BuildIssue(file.getAbsolutePath(), lineNum, "多余的右圆括号 ')'", "删除或修正多余的圆括号。"));
-                        parenDepth = 0;
-                    }
-                } else if (ch == '[') {
-                    bracketDepth++;
-                } else if (ch == ']') {
-                    bracketDepth--;
-                    if (bracketDepth < 0) {
-                        issues.add(new BuildIssue(file.getAbsolutePath(), lineNum, "多余的右方括号 ']'", "删除或修正多余的方括号。"));
-                        bracketDepth = 0;
-                    }
-                }
-                prev = ch;
-            }
-        }
-        if (braceDepth != 0) {
-            issues.add(new BuildIssue(file.getAbsolutePath(), -1, "大括号不匹配，差 " + braceDepth + " 个（" + (braceDepth > 0 ? "多" : "少") + "）", "检查 {} 是否成对出现。"));
-        }
-        if (parenDepth != 0) {
-            issues.add(new BuildIssue(file.getAbsolutePath(), -1, "圆括号不匹配，差 " + parenDepth + " 个（" + (parenDepth > 0 ? "多" : "少") + "）", "检查 () 是否成对出现。"));
-        }
-        if (bracketDepth != 0) {
-            issues.add(new BuildIssue(file.getAbsolutePath(), -1, "方括号不匹配，差 " + bracketDepth + " 个（" + (bracketDepth > 0 ? "多" : "少") + "）", "检查 [] 是否成对出现。"));
-        }
-    }
-
-    private int parseIntSafe(String value) {
-        try {
-            return Integer.parseInt(value);
-        } catch (Exception e) {
-            return -1;
         }
     }
 
@@ -647,9 +443,5 @@ public class ProjectPreflightChecker {
 
     private int normalizeLineNumber(int lineNumber) {
         return lineNumber > 0 ? lineNumber : 1;
-    }
-
-    private String safeText(String value) {
-        return value == null ? "" : value.trim();
     }
 }

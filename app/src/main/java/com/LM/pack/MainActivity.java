@@ -70,6 +70,8 @@ import com.LM.pack.theme.LiquidGlassBackgroundView;
 import com.LM.pack.theme.ThemeManager;
 import com.LM.pack.ui.FileTreeListAdapter;
 import com.LM.pack.ui.ProjectListAdapter;
+import com.LM.pack.util.CommonUtils;
+import com.LM.pack.util.DrawableUtils;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -3340,24 +3342,15 @@ public class MainActivity extends Activity {
     }
 
     private String safeText(String value, String fallback) {
-        if (value == null || value.length() == 0) {
-            return fallback;
-        }
-        return value;
+        return CommonUtils.safeText(value, fallback);
     }
 
     private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density);
+        return CommonUtils.dp(this, (float) value);
     }
 
     private GradientDrawable roundedDrawable(String fillColor, String strokeColor, float radiusDp) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(Color.parseColor(fillColor));
-        drawable.setCornerRadius(dp((int) radiusDp));
-        if (strokeColor != null && strokeColor.length() > 0) {
-            drawable.setStroke(1, Color.parseColor(strokeColor));
-        }
-        return drawable;
+        return DrawableUtils.roundedDrawable(this, fillColor, strokeColor, radiusDp);
     }
 
     private void toast(String message) {

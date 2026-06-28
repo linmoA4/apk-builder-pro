@@ -25,6 +25,7 @@ import com.LM.pack.theme.AppThemePalette;
 import com.LM.pack.theme.GlassProgressBarView;
 import com.LM.pack.theme.LiquidGlassBackgroundView;
 import com.LM.pack.theme.ThemeManager;
+import com.LM.pack.util.CommonUtils;
 
 public class StartupActivity extends Activity {
     // TODO: 将启动流程改为事件驱动，替换 360ms / 420ms / 460ms 这类硬编码延迟。
@@ -385,13 +386,10 @@ public class StartupActivity extends Activity {
     }
 
     private int dp(float value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+        return CommonUtils.dp(this, value);
     }
 
     private String safeText(String value, String fallback) {
-        if (value == null || value.trim().length() == 0) {
-            return fallback;
-        }
-        return value.trim();
+        return CommonUtils.safeText(value, fallback);
     }
 }

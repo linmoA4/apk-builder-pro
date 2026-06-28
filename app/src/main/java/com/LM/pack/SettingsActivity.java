@@ -29,11 +29,13 @@ import com.LM.pack.model.EnvironmentState;
 import com.LM.pack.theme.AppThemePalette;
 import com.LM.pack.theme.LiquidGlassBackgroundView;
 import com.LM.pack.theme.ThemeManager;
+import com.LM.pack.util.CommonUtils;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
 
 public class SettingsActivity extends Activity {
 
@@ -201,70 +203,82 @@ public class SettingsActivity extends Activity {
 
     private void prepareExternalSdkThenRest(final int embeddedJdkIndex, final int embeddedNdkIndex, final boolean userTriggered) {
         boolean needSdk = !environmentManager.isAndroidSdkRegistered(environmentState);
-        if (!needSdk) {
-            prepareExternalJdkThenNdk(embeddedJdkIndex, embeddedNdkIndex, userTriggered);
-            return;
+        CompletableFuture<Void> future;
+        if (needSdk) {
+            future = installSdkAsync().thenComposeAsync(installedDir ->
+                CompletableFuture.runAsync(() -> {
+                    environmentState = environmentManager.saveAndroidSdkDir(installedDir);
+                }, runnable -> handler.post(runnable))
+            );
+        } else {
+            future = CompletableFuture.completedFuture(null);
         }
+        future
+            .thenComposeAsync(nil -> prepareJdkAsync(embeddedJdkIndex, embeddedNdkIndex), runnable -> handler.post(runnable))
+            .thenComposeAsync(nil -> prepareCoreSdkPackagesAsync(embeddedNdkIndex), runnable -> handler.post(runnable))
+            .thenComposeAsync(nil -> prepareNdkAsync(embeddedNdkIndex), runnable -> handler.post(runnable))
+            .thenComposeAsync(nil -> prepareGradleAsync(), runnable -> handler.post(runnable))
+            .thenRunAsync(() -> finishPreparationSuccess(userTriggered), runnable -> handler.post(runnable))
+            .exceptionally(throwable -> {
+                handler.post(() -> finishPreparationWithError(CommonUtils.safeText(throwable.getMessage(), "环境准备失败")));
+                return null;
+            });
+    }
+
+    private CompletableFuture<String> installSdkAsync() {
+        CompletableFuture<String> future = new CompletableFuture<>();
         toolchainInstaller.installEmbeddedSdk(new ToolchainInstaller.InstallListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
                 handler.post(() -> showProgressOverlay("准备 Android SDK", message, blendProgress(0, 36, percent), indeterminate));
             }
-
             @Override
             public void onSuccess(final String installedDir) {
-                handler.post(() -> {
-                    environmentState = environmentManager.saveAndroidSdkDir(installedDir);
-                    prepareExternalJdkThenNdk(embeddedJdkIndex, embeddedNdkIndex, userTriggered);
-                });
+                future.complete(installedDir);
             }
-
             @Override
             public void onError(final String message) {
-                handler.post(() -> finishPreparationWithError(message));
+                future.completeExceptionally(new RuntimeException(message));
             }
         });
+        return future;
     }
 
-    private void prepareExternalJdkThenNdk(final int embeddedJdkIndex, final int embeddedNdkIndex, final boolean userTriggered) {
+    private CompletableFuture<Void> prepareJdkAsync(final int embeddedJdkIndex, final int embeddedNdkIndex) {
         boolean needJdk = embeddedJdkIndex >= 0 && !environmentManager.isSelectedJdkInstalled(embeddedJdkIndex, environmentState);
         if (!needJdk) {
-            prepareCoreSdkPackagesThenNdk(embeddedNdkIndex, userTriggered);
-            return;
+            return CompletableFuture.completedFuture(null);
         }
+        CompletableFuture<Void> future = new CompletableFuture<>();
         toolchainInstaller.installJdk(embeddedJdkIndex, new ToolchainInstaller.InstallListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
                 handler.post(() -> showProgressOverlay("准备 JDK 21", message, blendProgress(36, 18, percent), indeterminate));
             }
-
             @Override
             public void onSuccess(final String installedDir) {
-                handler.post(() -> {
-                    environmentState = environmentManager.saveInstalledJdk(EnvironmentManager.JDK_NAMES[embeddedJdkIndex], installedDir);
-                    if (selectedJdkIndex == embeddedJdkIndex || selectedJdkIndex < 0) {
-                        environmentManager.saveSelectedJdkIndex(embeddedJdkIndex);
-                        selectedJdkIndex = embeddedJdkIndex;
-                    }
-                    prepareCoreSdkPackagesThenNdk(embeddedNdkIndex, userTriggered);
-                });
+                environmentState = environmentManager.saveInstalledJdk(EnvironmentManager.JDK_NAMES[embeddedJdkIndex], installedDir);
+                if (selectedJdkIndex == embeddedJdkIndex || selectedJdkIndex < 0) {
+                    environmentManager.saveSelectedJdkIndex(embeddedJdkIndex);
+                    selectedJdkIndex = embeddedJdkIndex;
+                }
+                future.complete(null);
             }
-
             @Override
             public void onError(final String message) {
-                handler.post(() -> finishPreparationWithError(message));
+                future.completeExceptionally(new RuntimeException(message));
             }
         });
+        return future;
     }
 
-    private void prepareCoreSdkPackagesThenNdk(final int embeddedNdkIndex, final boolean userTriggered) {
-        final String sdkDir = environmentState == null ? "" : safeText(environmentState.getAndroidSdkDir(), "");
+    private CompletableFuture<Void> prepareCoreSdkPackagesAsync(final int embeddedNdkIndex) {
+        final String sdkDir = environmentState == null ? "" : CommonUtils.safeText(environmentState.getAndroidSdkDir(), "");
         final File sdkRoot = sdkDir.length() == 0 ? null : new File(sdkDir);
         final File sdkManager = new File(environmentManager.getSdkManagerPath());
         final String jdkDir = resolveAnyAvailableJdkDir();
         if (sdkRoot == null || !sdkRoot.isDirectory() || !sdkManager.exists() || jdkDir.length() == 0) {
-            prepareExternalNdk(embeddedNdkIndex, userTriggered);
-            return;
+            return CompletableFuture.completedFuture(null);
         }
         final ArrayList<String> packages = new ArrayList<String>();
         if (!isSdkPackageInstalled(sdkRoot, "platform-tools")) {
@@ -277,9 +291,9 @@ public class SettingsActivity extends Activity {
             packages.add("platforms;android-36");
         }
         if (packages.isEmpty()) {
-            prepareExternalNdk(embeddedNdkIndex, userTriggered);
-            return;
+            return CompletableFuture.completedFuture(null);
         }
+        CompletableFuture<Void> future = new CompletableFuture<>();
         new Thread(() -> {
             try {
                 ensureAcceptedSdkLicenses(sdkRoot);
@@ -294,80 +308,74 @@ public class SettingsActivity extends Activity {
                         blendProgress(54, 14, stagePercent),
                         false
                     ));
-                    runSdkManagerInstall(sdkManager, sdkRoot, jdkDir, packageName, new InstallLogListener() {
-                        @Override
-                        public void onLog(String line) {
-                            if (line == null || line.trim().length() == 0) {
-                                return;
-                            }
-                            handler.post(() -> showProgressOverlay(
-                                "补齐核心 SDK 组件",
-                                simplifySdkManagerLine(line),
-                                blendProgress(54, 14, Math.max(4, stagePercent)),
-                                false
-                            ));
+                    runSdkManagerInstall(sdkManager, sdkRoot, jdkDir, packageName, line -> {
+                        if (line == null || line.trim().length() == 0) {
+                            return;
                         }
+                        handler.post(() -> showProgressOverlay(
+                            "补齐核心 SDK 组件",
+                            simplifySdkManagerLine(line),
+                            blendProgress(54, 14, Math.max(4, stagePercent)),
+                            false
+                        ));
                     });
                 }
-                handler.post(() -> prepareExternalNdk(embeddedNdkIndex, userTriggered));
-            } catch (final Exception e) {
-                handler.post(() -> finishPreparationWithError("补齐核心 SDK 组件失败：" + safeText(e.getMessage(), "未知错误")));
+                future.complete(null);
+            } catch (Exception e) {
+                future.completeExceptionally(e);
             }
         }).start();
+        return future;
     }
 
-    private void prepareExternalNdk(final int embeddedNdkIndex, final boolean userTriggered) {
+    private CompletableFuture<Void> prepareNdkAsync(final int embeddedNdkIndex) {
         boolean needNdk = embeddedNdkIndex >= 0 && !environmentManager.isSelectedNdkInstalled(embeddedNdkIndex, environmentState);
         if (!needNdk) {
-            prepareOfflineGradle(userTriggered);
-            return;
+            return CompletableFuture.completedFuture(null);
         }
+        CompletableFuture<Void> future = new CompletableFuture<>();
         toolchainInstaller.installNdk(embeddedNdkIndex, new ToolchainInstaller.InstallListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
                 handler.post(() -> showProgressOverlay("准备 NDK r27", message, blendProgress(68, 14, percent), indeterminate));
             }
-
             @Override
             public void onSuccess(final String installedDir) {
-                handler.post(() -> {
-                    environmentState = environmentManager.saveInstalledNdk(EnvironmentManager.NDK_NAMES[embeddedNdkIndex], installedDir);
-                    if (selectedNdkIndex == embeddedNdkIndex || selectedNdkIndex < 0) {
-                        environmentManager.saveSelectedNdkIndex(embeddedNdkIndex);
-                        selectedNdkIndex = embeddedNdkIndex;
-                    }
-                    prepareOfflineGradle(userTriggered);
-                });
+                environmentState = environmentManager.saveInstalledNdk(EnvironmentManager.NDK_NAMES[embeddedNdkIndex], installedDir);
+                if (selectedNdkIndex == embeddedNdkIndex || selectedNdkIndex < 0) {
+                    environmentManager.saveSelectedNdkIndex(embeddedNdkIndex);
+                    selectedNdkIndex = embeddedNdkIndex;
+                }
+                future.complete(null);
             }
-
             @Override
             public void onError(final String message) {
-                handler.post(() -> finishPreparationWithError(message));
+                future.completeExceptionally(new RuntimeException(message));
             }
         });
+        return future;
     }
 
-    private void prepareOfflineGradle(final boolean userTriggered) {
+    private CompletableFuture<Void> prepareGradleAsync() {
         if (buildManager.isOfflineGradlePrepared()) {
-            finishPreparationSuccess(userTriggered);
-            return;
+            return CompletableFuture.completedFuture(null);
         }
+        CompletableFuture<Void> future = new CompletableFuture<>();
         buildManager.prepareOfflineGradleAsync(new BuildManager.OfflineGradleListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
                 handler.post(() -> showProgressOverlay("准备 Gradle 8.7", message, blendProgress(82, 18, percent), indeterminate));
             }
-
             @Override
             public void onSuccess(final File gradleExecutable) {
-                handler.post(() -> finishPreparationSuccess(userTriggered));
+                future.complete(null);
             }
-
             @Override
             public void onError(final String message) {
-                handler.post(() -> finishPreparationWithError(message));
+                future.completeExceptionally(new RuntimeException(message));
             }
         });
+        return future;
     }
 
     private void finishPreparationSuccess(boolean userTriggered) {
@@ -1344,14 +1352,11 @@ public class SettingsActivity extends Activity {
     }
 
     private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density);
+        return CommonUtils.dp(this, value);
     }
 
     private String safeText(String value, String fallback) {
-        if (value == null || value.trim().length() == 0) {
-            return fallback;
-        }
-        return value.trim();
+        return CommonUtils.safeText(value, fallback);
     }
 
     private void toast(String message) {

@@ -19,6 +19,7 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputConnectionWrapper;
 import android.widget.EditText;
 import com.LM.pack.theme.AppThemePalette;
+import com.LM.pack.util.CommonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -577,7 +578,7 @@ public class CodeEditorView extends EditText {
     }
 
     private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density);
+        return CommonUtils.dp(getResources(), (float) value);
     }
 
     private int findLineStart(CharSequence text, int lineNumber) {

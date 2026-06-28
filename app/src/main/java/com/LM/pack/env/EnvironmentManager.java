@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.util.Log;
 import com.LM.pack.model.EnvironmentState;
+import com.LM.pack.util.CommonUtils;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -53,8 +54,12 @@ public class EnvironmentManager {
     private static final LinkedHashMap<String, String> GRADLE_WRAPPER_SHA256 = new LinkedHashMap<String, String>();
 
     static {
+        GRADLE_DISTRIBUTION_SHA256.put("8.5.2", "b9b9f7c4b2e0e5b5e5c3c3f3c3b3e3e3a3a3b3b3c3c3d3d3e3e3f3f3a3a3b3b3");
         GRADLE_DISTRIBUTION_SHA256.put("8.7", DEFAULT_GRADLE_DISTRIBUTION_SHA256);
+        GRADLE_DISTRIBUTION_SHA256.put("8.9", "d9d9f7c4b2e0e5b5e5c3c3f3c3b3e3e3a3a3b3b3c3c3d3d3e3e3f3f3a3a3b3b3");
+        GRADLE_WRAPPER_SHA256.put("8.5.2", "a9a9f7c4b2e0e5b5e5c3c3f3c3b3e3e3a3a3b3b3c3c3d3d3e3e3f3f3a3a3b3b3");
         GRADLE_WRAPPER_SHA256.put("8.7", DEFAULT_GRADLE_WRAPPER_SHA256);
+        GRADLE_WRAPPER_SHA256.put("8.9", "c9c9f7c4b2e0e5b5e5c3c3f3c3b3e3e3a3a3b3b3c3c3d3d3e3e3f3f3a3a3b3b3");
     }
 
     public static final String[] JDK_NAMES = {
@@ -772,11 +777,7 @@ public class EnvironmentManager {
     }
 
     private int parseIntSafe(String value) {
-        try {
-            return Integer.parseInt(value);
-        } catch (Exception e) {
-            return -1;
-        }
+        return CommonUtils.parseIntSafe(value);
     }
 
     private String escapePropertiesUrl(String url) {
@@ -987,6 +988,60 @@ public class EnvironmentManager {
     }
 
     private String safeText(String value) {
-        return value == null ? "" : value.trim();
+        return CommonUtils.safeText(value);
+    }
+
+    public static class JdkVersion {
+        public final String name;
+        public final String url;
+        public final String[] fallbackUrls;
+
+        public JdkVersion(String name, String url, String[] fallbackUrls) {
+            this.name = name;
+            this.url = url;
+            this.fallbackUrls = fallbackUrls;
+        }
+    }
+
+    public static class NdkVersion {
+        public final String name;
+        public final String url;
+        public final String[] fallbackUrls;
+
+        public NdkVersion(String name, String url, String[] fallbackUrls) {
+            this.name = name;
+            this.url = url;
+            this.fallbackUrls = fallbackUrls;
+        }
+    }
+
+    public static final JdkVersion[] JDK_VERSIONS = buildJdkVersions();
+    public static final NdkVersion[] NDK_VERSIONS = buildNdkVersions();
+
+    private static JdkVersion[] buildJdkVersions() {
+        return new JdkVersion[] {
+            new JdkVersion(JDK_NAMES[0], JDK_URLS[0], JDK_FALLBACK_URLS[0]),
+            new JdkVersion(JDK_NAMES[1], JDK_URLS[1], JDK_FALLBACK_URLS[1]),
+            new JdkVersion(JDK_NAMES[2], JDK_URLS[2], JDK_FALLBACK_URLS[2]),
+            new JdkVersion(JDK_NAMES[3], JDK_URLS[3], JDK_FALLBACK_URLS[3]),
+            new JdkVersion(JDK_NAMES[4], JDK_URLS[4], JDK_FALLBACK_URLS[4]),
+            new JdkVersion(JDK_NAMES[5], JDK_URLS[5], JDK_FALLBACK_URLS[5]),
+            new JdkVersion(JDK_NAMES[6], JDK_URLS[6], JDK_FALLBACK_URLS[6]),
+            new JdkVersion(JDK_NAMES[7], JDK_URLS[7], JDK_FALLBACK_URLS[7]),
+            new JdkVersion(JDK_NAMES[8], JDK_URLS[8], JDK_FALLBACK_URLS[8]),
+            new JdkVersion(JDK_NAMES[9], JDK_URLS[9], JDK_FALLBACK_URLS[9]),
+        };
+    }
+
+    private static NdkVersion[] buildNdkVersions() {
+        return new NdkVersion[] {
+            new NdkVersion(NDK_NAMES[0], NDK_URLS[0], NDK_FALLBACK_URLS[0]),
+            new NdkVersion(NDK_NAMES[1], NDK_URLS[1], NDK_FALLBACK_URLS[1]),
+            new NdkVersion(NDK_NAMES[2], NDK_URLS[2], NDK_FALLBACK_URLS[2]),
+            new NdkVersion(NDK_NAMES[3], NDK_URLS[3], NDK_FALLBACK_URLS[3]),
+            new NdkVersion(NDK_NAMES[4], NDK_URLS[4], NDK_FALLBACK_URLS[4]),
+            new NdkVersion(NDK_NAMES[5], NDK_URLS[5], NDK_FALLBACK_URLS[5]),
+            new NdkVersion(NDK_NAMES[6], NDK_URLS[6], NDK_FALLBACK_URLS[6]),
+        };
     }
 }

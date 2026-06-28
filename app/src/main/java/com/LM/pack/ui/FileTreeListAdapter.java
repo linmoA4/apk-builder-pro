@@ -13,6 +13,8 @@ import com.LM.pack.R;
 import com.LM.pack.model.FileTreeItem;
 import com.LM.pack.theme.AppThemePalette;
 import com.LM.pack.theme.ThemeManager;
+import com.LM.pack.util.CommonUtils;
+import com.LM.pack.util.DrawableUtils;
 import java.io.File;
 import java.util.List;
 
@@ -123,17 +125,11 @@ public class FileTreeListAdapter extends BaseAdapter {
     }
 
     private int dp(int value) {
-        return (int) (value * context.getResources().getDisplayMetrics().density);
+        return CommonUtils.dp(context, (float) value);
     }
 
     private GradientDrawable roundedDrawable(String fillColor, String strokeColor, float radiusDp) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(Color.parseColor(fillColor));
-        drawable.setCornerRadius(dp((int) radiusDp));
-        if (strokeColor != null && strokeColor.length() > 0) {
-            drawable.setStroke(1, Color.parseColor(strokeColor));
-        }
-        return drawable;
+        return DrawableUtils.roundedDrawable(context, fillColor, strokeColor, radiusDp);
     }
 
     private static class FileTreeRowHolder {
