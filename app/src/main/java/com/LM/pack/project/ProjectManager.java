@@ -564,11 +564,39 @@ public class ProjectManager {
     }
 
     public void copyDirectory(File source, File target, CopyProgressListener listener) throws IOException {
+        if (source != null && source.isFile()) {
+            copyFile(source, target);
+            if (listener != null) {
+                listener.onProgress("已复制 " + source.getName(), 100);
+            }
+            return;
+        }
         long totalBytes = listener == null ? 0L : Math.max(1L, calculateDirectoryTotalBytes(source));
         long[] copiedBytes = {0L};
         copyDirectoryInternal(source, target, listener, totalBytes, copiedBytes);
         if (listener != null) {
             listener.onProgress("项目文件复制完成", 100);
+        }
+    }
+
+    public void copyFile(File source, File target) throws IOException {
+        if (source == null || !source.exists() || !source.isFile()) {
+            throw new IOException("源文件不存在");
+        }
+        ensureDir(target.getParentFile());
+        InputStream inputStream = null;
+        FileOutputStream outputStream = null;
+        try {
+            inputStream = new FileInputStream(source);
+            outputStream = new FileOutputStream(target);
+            copyStream(inputStream, outputStream);
+        } finally {
+            if (inputStream != null) {
+                inputStream.close();
+            }
+            if (outputStream != null) {
+                outputStream.close();
+            }
         }
     }
 
@@ -660,13 +688,13 @@ public class ProjectManager {
         if (!backgroundXml.exists()) {
             writeText(backgroundXml, buildDefaultLauncherBackground());
         }
-        String extension = lower.endsWith(".webp") ? ".webp" : ".png";
+        String extension = resolveImageExtension(lower);
         File foregroundFile = new File(projectRoot, "app/src/main/res/drawable/ic_launcher_foreground" + extension);
-        copyDirectory(sourceFile, foregroundFile);
+        copyFile(sourceFile, foregroundFile);
         String[] folders = {"mipmap-mdpi", "mipmap-hdpi", "mipmap-xhdpi", "mipmap-xxhdpi", "mipmap-xxxhdpi"};
         for (int i = 0; i < folders.length; i++) {
             File targetFile = new File(projectRoot, "app/src/main/res/" + folders[i] + "/ic_launcher" + extension);
-            copyDirectory(sourceFile, targetFile);
+            copyFile(sourceFile, targetFile);
         }
     }
 
@@ -686,9 +714,25 @@ public class ProjectManager {
         if (placeholderXml.exists()) {
             placeholderXml.delete();
         }
-        String extension = lower.endsWith(".webp") ? ".webp" : ".png";
+        String extension = resolveImageExtension(lower);
         File targetFile = new File(projectRoot, "app/src/main/res/drawable/splash_image" + extension);
-        copyDirectory(sourceFile, targetFile);
+        copyFile(sourceFile, targetFile);
+    }
+
+    private String resolveImageExtension(String lowerName) {
+        if (lowerName == null || lowerName.length() == 0) {
+            return ".png";
+        }
+        if (lowerName.endsWith(".webp")) {
+            return ".webp";
+        }
+        if (lowerName.endsWith(".jpeg")) {
+            return ".jpeg";
+        }
+        if (lowerName.endsWith(".jpg")) {
+            return ".jpg";
+        }
+        return ".png";
     }
 
     private void saveProjectMeta(

@@ -120,7 +120,7 @@ public class ProjectListAdapter extends BaseAdapter {
         if (bitmap != null) {
             holder.icon.setImageBitmap(bitmap);
         } else {
-            holder.icon.setImageResource(android.R.drawable.sym_def_app_icon);
+            holder.icon.setImageResource(R.drawable.app_brand);
         }
         return convertView;
     }
