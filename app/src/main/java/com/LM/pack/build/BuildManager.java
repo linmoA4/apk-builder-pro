@@ -487,7 +487,10 @@ public class BuildManager {
             }
             return;
         }
-        ensureSdkLicenses(sdkRoot);
+        if (!environmentManager.isSdkLicenseAccepted()) {
+            throw new IllegalStateException("检测到缺失的 Android SDK 组件，但你还没有显式确认 Android SDK 许可证。请先到设置页的“安装 Android API”中确认许可后再重试构建。");
+        }
+        ensureAcceptedSdkLicenses(sdkRoot);
         sdkManager.setExecutable(true);
         if (listener != null) {
             listener.onLogLine("检测到缺失的 SDK 组件，正在自动补齐：");
@@ -566,7 +569,7 @@ public class BuildManager {
         return compileSdk + ".0.0";
     }
 
-    private void ensureSdkLicenses(File sdkRoot) throws Exception {
+    private void ensureAcceptedSdkLicenses(File sdkRoot) throws Exception {
         File licensesDir = new File(sdkRoot, "licenses");
         ensureDir(licensesDir);
         writeText(
@@ -1609,6 +1612,9 @@ public class BuildManager {
         }
         if (lower.indexOf("gradle") >= 0 && lower.indexOf("wrapper") >= 0) {
             return "优先使用外置 Gradle 下载链路，或在应用自定义弹窗中补齐 `gradle/wrapper` 目录。";
+        }
+        if (lower.indexOf("license") >= 0 || lower.indexOf("licenses") >= 0) {
+            return "请先到设置页执行“安装 Android API”，显式确认 Android SDK 许可证后再重新构建。";
         }
         if (codeLine != null && codeLine.trim().length() > 0) {
             return "先修正当前高亮行的语法，再重新打包验证。";

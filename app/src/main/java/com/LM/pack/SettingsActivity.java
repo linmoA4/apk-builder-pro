@@ -405,7 +405,12 @@ public class SettingsActivity extends Activity {
         for (int i = 0; i < apiLevels.length; i++) {
             labels[i] = buildAndroidApiLabel(apiLevels[i]);
         }
-        final Dialog dialog = createAppDialog("安装 Android API", "支持多选。勾选后会一次性安装所选平台版本。");
+        final Dialog dialog = createAppDialog(
+            "安装 Android API",
+            environmentManager.isSdkLicenseAccepted()
+                ? "支持多选。勾选后会一次性安装所选平台版本。"
+                : "首次安装前需要显式确认 Android SDK 许可证。"
+        );
         final ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
         final Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
         final Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
@@ -436,7 +441,38 @@ public class SettingsActivity extends Activity {
                 return;
             }
             dialog.dismiss();
-            installSelectedAndroidApis(selected);
+            maybeConfirmSdkLicenseThenInstall(selected);
+        });
+        dialog.show();
+    }
+
+    private void maybeConfirmSdkLicenseThenInstall(final ArrayList<Integer> apiLevels) {
+        if (environmentManager.isSdkLicenseAccepted()) {
+            installSelectedAndroidApis(apiLevels);
+            return;
+        }
+        final Dialog dialog = createAppDialog(
+            "确认 Android SDK 许可证",
+            "安装 Android API 前，需要你显式确认：将按当前 SDK 目录写入许可证记录，并用 sdkmanager 安装所选组件。"
+        );
+        ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
+        Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
+        Button btnSecondary = (Button) dialog.findViewById(R.id.btnDialogSecondary);
+        Button btnNeutral = (Button) dialog.findViewById(R.id.btnDialogNeutral);
+        listView.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, new String[] {
+            "你确认后，应用才会写入 Android SDK license 文件。",
+            "未确认前，构建阶段不会再静默写入许可证，也不会自动补齐缺失 SDK 组件。",
+            "如果后续 Google 更新许可证内容，仍需要重新检查并调整。"
+        }));
+        btnPrimary.setVisibility(View.VISIBLE);
+        btnPrimary.setText("我已确认");
+        btnSecondary.setText("取消");
+        btnNeutral.setVisibility(View.GONE);
+        btnSecondary.setOnClickListener(v -> dialog.dismiss());
+        btnPrimary.setOnClickListener(v -> {
+            dialog.dismiss();
+            environmentManager.saveSdkLicenseAccepted(true);
+            installSelectedAndroidApis(apiLevels);
         });
         dialog.show();
     }
@@ -473,7 +509,7 @@ public class SettingsActivity extends Activity {
         showProgressOverlay("安装 Android API", "正在准备安装任务...", 2, false);
         new Thread(() -> {
             try {
-                ensureSdkLicenses(new File(sdkDir));
+                ensureAcceptedSdkLicenses(new File(sdkDir));
                 int total = packages.size();
                 for (int i = 0; i < packages.size(); i++) {
                     final int currentIndex = i;
@@ -962,7 +998,7 @@ public class SettingsActivity extends Activity {
         return "";
     }
 
-    private void ensureSdkLicenses(File sdkRoot) throws Exception {
+    private void ensureAcceptedSdkLicenses(File sdkRoot) throws Exception {
         File licensesDir = new File(sdkRoot, "licenses");
         if (!licensesDir.exists() && !licensesDir.mkdirs()) {
             throw new IllegalStateException("无法创建 licenses 目录");

@@ -30,6 +30,7 @@ public class EnvironmentManager {
     private static final String KEY_SELECTED_JDK_INDEX = "selected_jdk_index";
     private static final String KEY_SELECTED_NDK_INDEX = "selected_ndk_index";
     private static final String KEY_DOWNLOAD_ROUTE = "download_route";
+    private static final String KEY_SDK_LICENSE_ACCEPTED = "sdk_license_accepted";
 
     public static final String DOWNLOAD_ROUTE_CHINA = "china";
     public static final String DOWNLOAD_ROUTE_GLOBAL = "global";
@@ -326,6 +327,14 @@ public class EnvironmentManager {
     public void saveDownloadRoute(String route) {
         String normalized = normalizeDownloadRoute(route);
         sharedPreferences.edit().putString(KEY_DOWNLOAD_ROUTE, normalized).apply();
+    }
+
+    public boolean isSdkLicenseAccepted() {
+        return sharedPreferences.getBoolean(KEY_SDK_LICENSE_ACCEPTED, false);
+    }
+
+    public void saveSdkLicenseAccepted(boolean accepted) {
+        sharedPreferences.edit().putBoolean(KEY_SDK_LICENSE_ACCEPTED, accepted).apply();
     }
 
     public boolean isSelectedJdkInstalled(int selectedJdkIndex, EnvironmentState state) {
