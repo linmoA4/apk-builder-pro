@@ -83,7 +83,9 @@ public class FileTreeListAdapter extends BaseAdapter {
             holder = (FileTreeRowHolder) convertView.getTag();
         }
         FileTreeItem item = fileTreeItems.get(position);
-        String prefix = item.isDirectory() ? "›  " : "·  ";
+        int leftPadding = dp(16 + Math.max(0, item.getDepth()) * 18);
+        convertView.setPadding(leftPadding, dp(10), dp(12), dp(10));
+        String prefix = item.isDirectory() ? "▸  " : "·  ";
         convertView.setBackground(palette == null ? roundedDrawable("#151B24", "", 8) : themeManager.createPanelDrawable(palette, false));
         holder.title.setText(prefix + item.getFile().getName());
         holder.title.setTextColor(item.isDirectory()

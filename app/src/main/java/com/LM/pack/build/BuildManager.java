@@ -30,6 +30,16 @@ public class BuildManager {
     private static final String SIGNING_BLOCK_BEGIN = "// APK_BUILDER_PRO_SIGNING_BEGIN";
     private static final String SIGNING_BLOCK_END = "// APK_BUILDER_PRO_SIGNING_END";
 
+    private static final class ManagedSigningScriptState {
+        final File targetFile;
+        final String originalContent;
+
+        ManagedSigningScriptState(File targetFile, String originalContent) {
+            this.targetFile = targetFile;
+            this.originalContent = originalContent;
+        }
+    }
+
     public interface OfflineGradleListener {
         void onProgress(String message, int percent, boolean indeterminate);
         void onSuccess(File gradleExecutable);
@@ -200,6 +210,7 @@ public class BuildManager {
         BufferedReader reader = null;
         ArrayList<BuildIssue> issues = new ArrayList<BuildIssue>();
         String apkPath = "";
+        ManagedSigningScriptState managedSigningScriptState = null;
         try {
             File projectRoot = new File(projectDir);
             File gradlew = new File(projectRoot, "gradlew");
@@ -219,7 +230,7 @@ public class BuildManager {
                     listener.onFinished(new BuildResult(false, -1, "签名配置无效，已停止构建", "", issues));
                     return;
                 }
-                applyManagedSigningBlock(projectRoot, signingConfig, listener);
+                managedSigningScriptState = applyManagedSigningBlock(projectRoot, signingConfig, listener);
             }
             String gradleTask = releaseSigningEnabled ? "assembleRelease" : "assembleDebug";
             ProjectRequirements requirements = inspectProjectRequirements(projectRoot);
@@ -338,6 +349,7 @@ public class BuildManager {
                 }
             } catch (Exception e) {
             }
+            restoreManagedSigningBlock(managedSigningScriptState, listener);
             clearActiveProcess(process);
             destroyProcessQuietly(process);
             cancelRequested = false;
@@ -1109,7 +1121,7 @@ public class BuildManager {
         return "";
     }
 
-    private void applyManagedSigningBlock(File projectRoot, ProjectSigningConfig config, BuildListener listener) throws Exception {
+    private ManagedSigningScriptState applyManagedSigningBlock(File projectRoot, ProjectSigningConfig config, BuildListener listener) throws Exception {
         File appGradle = new File(projectRoot, "app/build.gradle");
         File appGradleKts = new File(projectRoot, "app/build.gradle.kts");
         File targetFile = appGradle.exists() ? appGradle : appGradleKts;
@@ -1125,6 +1137,23 @@ public class BuildManager {
         writeText(targetFile, finalContent);
         if (listener != null) {
             listener.onLogLine("已将 APK 签名配置注入到 " + targetFile.getName() + "。");
+        }
+        return new ManagedSigningScriptState(targetFile, content);
+    }
+
+    private void restoreManagedSigningBlock(ManagedSigningScriptState state, BuildListener listener) {
+        if (state == null || state.targetFile == null || state.originalContent == null) {
+            return;
+        }
+        try {
+            writeText(state.targetFile, state.originalContent);
+            if (listener != null) {
+                listener.onLogLine("已恢复 " + state.targetFile.getName() + " 中的原始签名脚本内容。");
+            }
+        } catch (Exception e) {
+            if (listener != null) {
+                listener.onLogLine("恢复签名脚本失败：" + e.getMessage());
+            }
         }
     }
 

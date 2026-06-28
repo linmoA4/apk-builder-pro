@@ -10,6 +10,7 @@ import com.LM.pack.model.EnvironmentState;
 import com.LM.pack.model.ProjectEntry;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.concurrent.CancellationException;
 
 public class BuildWorkflowService {
     // TODO: 为构建流程补充取消与超时控制，避免 Gradle 卡死时只能强制退出。
@@ -64,7 +65,13 @@ public class BuildWorkflowService {
                         projectPrepared,
                         environmentState,
                         resolvedJdkIndex,
-                        resolvedNdkIndex
+                        resolvedNdkIndex,
+                        new ProjectPreflightChecker.CancellationSignal() {
+                            @Override
+                            public boolean isCancelled() {
+                                return cancelRequested || Thread.currentThread().isInterrupted();
+                            }
+                        }
                     );
                     mainHandler.post(new Runnable() {
                         @Override
@@ -79,6 +86,13 @@ public class BuildWorkflowService {
                             }
                             listener.onBuildStarted();
                             startRealBuild(currentProject, environmentState, resolvedJdkIndex, resolvedNdkIndex, listener);
+                        }
+                    });
+                } catch (CancellationException cancelled) {
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            listener.onWorkflowCancelled("构建已取消");
                         }
                     });
                 } catch (Exception e) {

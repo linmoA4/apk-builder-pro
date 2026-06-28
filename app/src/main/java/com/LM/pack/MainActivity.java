@@ -631,6 +631,7 @@ public class MainActivity extends Activity {
         lastBuildIssues.clear();
         updateBugButtonState();
         editorTabManager.clear();
+        projectFileService.ensureDefaultExpandedDirs(entry, expandedDirs);
         fileTreeAdapter.setProjectRoot(entry.getProjectDir());
         loadProjectFiles();
         showFileDrawer(false);
@@ -2115,10 +2116,14 @@ public class MainActivity extends Activity {
         }
         final ProjectEntry projectSnapshot = currentProject;
         final File rootDirectory = new File(projectSnapshot.getProjectDir());
+        final ArrayList<String> expandedSnapshot = new ArrayList<String>(expandedDirs);
+        if (!expandedSnapshot.contains(rootDirectory.getAbsolutePath())) {
+            expandedSnapshot.add(rootDirectory.getAbsolutePath());
+        }
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final ArrayList<FileTreeItem> items = projectFileService.listDirectory(projectSnapshot, rootDirectory);
+                final ArrayList<FileTreeItem> items = projectFileService.buildFileTree(projectSnapshot, expandedSnapshot);
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
@@ -2149,11 +2154,32 @@ public class MainActivity extends Activity {
         }
         FileTreeItem item = fileTreeItems.get(position);
         if (item.isDirectory()) {
-            openDirectoryBrowser(item.getFile());
+            toggleDirectoryExpanded(item.getFile());
             return;
         }
         openTextFile(item.getFile());
         hideFileDrawer(true);
+    }
+
+    private void toggleDirectoryExpanded(File directory) {
+        if (currentProject == null || directory == null || !directory.isDirectory()) {
+            return;
+        }
+        String directoryPath = directory.getAbsolutePath();
+        String projectRoot = currentProject.getProjectDir();
+        if (directoryPath.equals(projectRoot)) {
+            if (!expandedDirs.contains(directoryPath)) {
+                expandedDirs.add(directoryPath);
+            }
+            loadProjectFiles();
+            return;
+        }
+        if (expandedDirs.contains(directoryPath)) {
+            expandedDirs.remove(directoryPath);
+        } else {
+            expandedDirs.add(directoryPath);
+        }
+        loadProjectFiles();
     }
 
     private void openDirectoryBrowser(File directory) {

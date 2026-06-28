@@ -8,6 +8,7 @@ import com.LM.pack.project.ProjectManager;
 import java.io.FileInputStream;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.concurrent.CancellationException;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -16,6 +17,10 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import org.xml.sax.SAXParseException;
 
 public class ProjectPreflightChecker {
+
+    public interface CancellationSignal {
+        boolean isCancelled();
+    }
 
     private final ProjectManager projectManager;
     private final EnvironmentManager environmentManager;
@@ -30,9 +35,11 @@ public class ProjectPreflightChecker {
         boolean projectPrepared,
         EnvironmentState environmentState,
         int selectedJdkIndex,
-        int selectedNdkIndex
+        int selectedNdkIndex,
+        CancellationSignal cancellationSignal
     ) {
         ArrayList<BuildIssue> issues = new ArrayList<BuildIssue>();
+        throwIfCancelled(cancellationSignal);
         if (!projectPrepared || projectDir == null) {
             issues.add(new BuildIssue("项目", -1, "当前没有可打包的项目。", "先从首页创建或导入工程，再进入编辑页打包。"));
             return issues;
@@ -48,22 +55,23 @@ public class ProjectPreflightChecker {
             return issues;
         }
 
-        validateRequiredStructure(projectDir, issues);
-        validateGradleWrapper(projectDir, issues);
+        validateRequiredStructure(projectDir, issues, cancellationSignal);
+        validateGradleWrapper(projectDir, issues, cancellationSignal);
 
         File appGradleFile = resolveAppGradleFile(projectDir);
-        int compileSdk = readCompileSdk(projectDir, appGradleFile, issues);
-        String sdkDir = readSdkDirForValidation(projectDir, environmentState, issues);
-        validateAndroidSdkPackages(projectDir, appGradleFile, sdkDir, compileSdk, issues);
+        int compileSdk = readCompileSdk(projectDir, appGradleFile, issues, cancellationSignal);
+        String sdkDir = readSdkDirForValidation(projectDir, environmentState, issues, cancellationSignal);
+        validateAndroidSdkPackages(projectDir, appGradleFile, sdkDir, compileSdk, issues, cancellationSignal);
 
-        validateXmlFile(new File(projectDir, "app/src/main/AndroidManifest.xml"), issues);
-        validateXmlDirectory(new File(projectDir, "app/src/main/res"), issues);
-        validateSourceDirectory(new File(projectDir, "app/src/main/java"), issues);
-        validateSourceDirectory(new File(projectDir, "app/src/main/kotlin"), issues);
+        validateXmlFile(new File(projectDir, "app/src/main/AndroidManifest.xml"), issues, cancellationSignal);
+        validateXmlDirectory(new File(projectDir, "app/src/main/res"), issues, cancellationSignal);
+        validateSourceDirectory(new File(projectDir, "app/src/main/java"), issues, cancellationSignal);
+        validateSourceDirectory(new File(projectDir, "app/src/main/kotlin"), issues, cancellationSignal);
         return issues;
     }
 
-    private void validateRequiredStructure(File projectDir, ArrayList<BuildIssue> issues) {
+    private void validateRequiredStructure(File projectDir, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
+        throwIfCancelled(cancellationSignal);
         File gradlew = new File(projectDir, "gradlew");
         File appGradle = resolveAppGradleFile(projectDir);
         File manifest = new File(projectDir, "app/src/main/AndroidManifest.xml");
@@ -78,7 +86,8 @@ public class ProjectPreflightChecker {
         }
     }
 
-    private void validateGradleWrapper(File projectDir, ArrayList<BuildIssue> issues) {
+    private void validateGradleWrapper(File projectDir, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
+        throwIfCancelled(cancellationSignal);
         File wrapperJar = new File(projectDir, "gradle/wrapper/gradle-wrapper.jar");
         File wrapperProperties = new File(projectDir, "gradle/wrapper/gradle-wrapper.properties");
         if (!wrapperJar.exists()) {
@@ -107,7 +116,8 @@ public class ProjectPreflightChecker {
         return groovy;
     }
 
-    private int readCompileSdk(File projectDir, File appGradleFile, ArrayList<BuildIssue> issues) {
+    private int readCompileSdk(File projectDir, File appGradleFile, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
+        throwIfCancelled(cancellationSignal);
         if (appGradleFile == null || !appGradleFile.exists()) {
             return -1;
         }
@@ -124,7 +134,8 @@ public class ProjectPreflightChecker {
         return -1;
     }
 
-    private String readSdkDirForValidation(File projectDir, EnvironmentState environmentState, ArrayList<BuildIssue> issues) {
+    private String readSdkDirForValidation(File projectDir, EnvironmentState environmentState, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
+        throwIfCancelled(cancellationSignal);
         File localProperties = new File(projectDir, "local.properties");
         String preferredSdkDir = environmentState == null ? "" : safeText(environmentState.getAndroidSdkDir());
         try {
@@ -167,8 +178,10 @@ public class ProjectPreflightChecker {
         File appGradleFile,
         String sdkDir,
         int compileSdk,
-        ArrayList<BuildIssue> issues
+        ArrayList<BuildIssue> issues,
+        CancellationSignal cancellationSignal
     ) {
+        throwIfCancelled(cancellationSignal);
         File localProperties = new File(projectDir, "local.properties");
         if (!environmentManager.isExistingDirectory(sdkDir)) {
             issues.add(new BuildIssue(localProperties.getAbsolutePath(), -1, "Android SDK 目录不可用。", "先在设置页登记有效的 Android SDK 目录，再重新执行预检查。"));
@@ -311,7 +324,8 @@ public class ProjectPreflightChecker {
         return value.replace("\\:", ":").replace("\\\\", "\\");
     }
 
-    private void validateXmlDirectory(File dir, ArrayList<BuildIssue> issues) {
+    private void validateXmlDirectory(File dir, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
+        throwIfCancelled(cancellationSignal);
         if (!dir.exists() || !dir.isDirectory()) {
             return;
         }
@@ -320,16 +334,18 @@ public class ProjectPreflightChecker {
             return;
         }
         for (int i = 0; i < files.length; i++) {
+            throwIfCancelled(cancellationSignal);
             File file = files[i];
             if (file.isDirectory()) {
-                validateXmlDirectory(file, issues);
+                validateXmlDirectory(file, issues, cancellationSignal);
             } else if (file.getName().toLowerCase().endsWith(".xml")) {
-                validateXmlFile(file, issues);
+                validateXmlFile(file, issues, cancellationSignal);
             }
         }
     }
 
-    private void validateXmlFile(File file, ArrayList<BuildIssue> issues) {
+    private void validateXmlFile(File file, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
+        throwIfCancelled(cancellationSignal);
         if (!file.exists()) {
             return;
         }
@@ -342,7 +358,8 @@ public class ProjectPreflightChecker {
         }
     }
 
-    private void validateSourceDirectory(File dir, ArrayList<BuildIssue> issues) {
+    private void validateSourceDirectory(File dir, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
+        throwIfCancelled(cancellationSignal);
         if (!dir.exists() || !dir.isDirectory()) {
             return;
         }
@@ -351,11 +368,12 @@ public class ProjectPreflightChecker {
             return;
         }
         for (int i = 0; i < files.length; i++) {
+            throwIfCancelled(cancellationSignal);
             File file = files[i];
             if (file.isDirectory()) {
-                validateSourceDirectory(file, issues);
+                validateSourceDirectory(file, issues, cancellationSignal);
             } else if (isTextEditableFile(file)) {
-                validateTextFile(file, issues);
+                validateTextFile(file, issues, cancellationSignal);
             }
         }
     }
@@ -372,7 +390,8 @@ public class ProjectPreflightChecker {
             || name.endsWith(".md");
     }
 
-    private void validateTextFile(File file, ArrayList<BuildIssue> issues) {
+    private void validateTextFile(File file, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
+        throwIfCancelled(cancellationSignal);
         try {
             String content = projectManager.readText(file);
             if (content.indexOf('\u0000') >= 0) {
@@ -383,16 +402,18 @@ public class ProjectPreflightChecker {
             }
             String name = file.getName().toLowerCase();
             if (name.endsWith(".java")) {
-                validateJavaSyntax(file, content, issues);
+                validateJavaSyntax(file, content, issues, cancellationSignal);
             } else if (name.endsWith(".kt")) {
-                validateKotlinSyntax(file, content, issues);
+                validateKotlinSyntax(file, content, issues, cancellationSignal);
             }
+        } catch (CancellationException cancelled) {
+            throw cancelled;
         } catch (Exception e) {
             issues.add(new BuildIssue(file.getAbsolutePath(), -1, "读取文件失败：" + e.getMessage(), "确认文件可读且不是二进制格式。"));
         }
     }
 
-    private void validateJavaSyntax(File file, String content, ArrayList<BuildIssue> issues) {
+    private void validateJavaSyntax(File file, String content, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
         int braceDepth = 0;
         int parenDepth = 0;
         int bracketDepth = 0;
@@ -404,10 +425,12 @@ public class ProjectPreflightChecker {
         char prevPrev = 0;
         String[] lines = content.split("\n", -1);
         for (int lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+            throwIfCancelled(cancellationSignal);
             String line = lines[lineIdx];
             int lineNum = lineIdx + 1;
             inSingleLineComment = false;
             for (int col = 0; col < line.length(); col++) {
+                throwIfCancelled(cancellationSignal);
                 char ch = line.charAt(col);
                 if (inMultiLineComment) {
                     if (ch == '/' && prev == '*') {
@@ -425,7 +448,6 @@ public class ProjectPreflightChecker {
                     }
                 } else if (ch == '/' && prev == '/') {
                     inSingleLineComment = true;
-                    braceDepth -= prevPrev == '{' ? 0 : 0;
                 } else if (ch == '*' && prev == '/') {
                     inMultiLineComment = true;
                 } else if (ch == '"') {
@@ -499,7 +521,7 @@ public class ProjectPreflightChecker {
         }
     }
 
-    private void validateKotlinSyntax(File file, String content, ArrayList<BuildIssue> issues) {
+    private void validateKotlinSyntax(File file, String content, ArrayList<BuildIssue> issues, CancellationSignal cancellationSignal) {
         int braceDepth = 0;
         int parenDepth = 0;
         int bracketDepth = 0;
@@ -512,10 +534,12 @@ public class ProjectPreflightChecker {
         char prev = 0;
         String[] lines = content.split("\n", -1);
         for (int lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+            throwIfCancelled(cancellationSignal);
             String line = lines[lineIdx];
             int lineNum = lineIdx + 1;
             inSingleLineComment = false;
             for (int col = 0; col < line.length(); col++) {
+                throwIfCancelled(cancellationSignal);
                 char ch = line.charAt(col);
                 if (inMultiLineComment) {
                     if (ch == '/' && prev == '*') {
@@ -606,6 +630,12 @@ public class ProjectPreflightChecker {
             return Integer.parseInt(value);
         } catch (Exception e) {
             return -1;
+        }
+    }
+
+    private void throwIfCancelled(CancellationSignal cancellationSignal) {
+        if ((cancellationSignal != null && cancellationSignal.isCancelled()) || Thread.currentThread().isInterrupted()) {
+            throw new CancellationException("预检查已取消");
         }
     }
 
