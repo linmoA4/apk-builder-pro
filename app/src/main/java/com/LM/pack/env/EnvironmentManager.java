@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Environment;
+import android.util.Log;
 import com.LM.pack.model.EnvironmentState;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -18,6 +19,7 @@ import java.util.regex.Pattern;
 import org.json.JSONObject;
 
 public class EnvironmentManager {
+    private static final String TAG = "EnvironmentManager";
 
     public static final String PREFS_NAME = "lm_pack_tool_state";
     private static final String KEY_JDK_REGISTRY = "installed_jdk_registry";
@@ -813,6 +815,7 @@ public class EnvironmentManager {
                 registry.put(name, dir);
             }
         } catch (Exception e) {
+            Log.w(TAG, "解析本地工具链注册表失败", e);
         }
         return registry;
     }
@@ -829,6 +832,7 @@ public class EnvironmentManager {
                 try {
                     jsonObject.put(name, dir);
                 } catch (Exception e) {
+                    Log.w(TAG, "写入本地工具链注册表项失败", e);
                 }
             }
         }
@@ -859,6 +863,7 @@ public class EnvironmentManager {
                 return safeText(matcher.group(1));
             }
         } catch (Exception e) {
+            Log.w(TAG, "读取 Gradle Wrapper 版本失败", e);
         }
         return "";
     }
@@ -909,6 +914,7 @@ public class EnvironmentManager {
                 return safeText(matcher.group(1));
             }
         } catch (Exception e) {
+            Log.w(TAG, "从文件提取配置项失败: " + file.getAbsolutePath(), e);
         }
         return "";
     }

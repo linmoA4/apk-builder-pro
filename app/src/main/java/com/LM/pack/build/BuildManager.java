@@ -1,6 +1,7 @@
 package com.LM.pack.build;
 
 import android.content.Context;
+import android.util.Log;
 import com.LM.pack.env.EnvironmentManager;
 import com.LM.pack.env.IntegrityVerifier;
 import com.LM.pack.model.BuildIssue;
@@ -26,6 +27,7 @@ import java.util.regex.Pattern;
 public class BuildManager {
     public static final int EXIT_CODE_CANCELLED = -2;
     public static final int EXIT_CODE_TIMEOUT = -3;
+    private static final String TAG = "BuildManager";
     private static final String META_DIR = ".lmproject";
     private static final String SIGNING_FILE = "signing.properties";
     private static final String SIGNING_BLOCK_BEGIN = "// APK_BUILDER_PRO_SIGNING_BEGIN";
@@ -388,6 +390,7 @@ public class BuildManager {
                     reader.close();
                 }
             } catch (Exception e) {
+                Log.w(TAG, "关闭构建输出读取器失败", e);
             }
             if (timeoutWatcher != null) {
                 timeoutWatcher.interrupt();
@@ -653,9 +656,11 @@ public class BuildManager {
                 process.waitFor(5, TimeUnit.SECONDS);
             }
         } catch (Exception ignored) {
+            Log.w(TAG, "等待构建进程结束失败，准备强制销毁", ignored);
             try {
                 process.destroyForcibly();
             } catch (Exception innerIgnored) {
+                Log.w(TAG, "强制销毁构建进程失败", innerIgnored);
             }
         }
     }
@@ -920,6 +925,7 @@ public class BuildManager {
                     inputStream.close();
                 }
             } catch (Exception ignored) {
+                Log.w(TAG, "关闭 SHA-256 校验输入流失败", ignored);
             }
         }
     }
@@ -1228,6 +1234,7 @@ public class BuildManager {
                     inputStream.close();
                 }
             } catch (Exception ignored) {
+                Log.w(TAG, "关闭签名配置输入流失败", ignored);
             }
         }
     }

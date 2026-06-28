@@ -1,5 +1,6 @@
 package com.LM.pack.build;
 
+import android.util.Log;
 import com.LM.pack.env.EnvironmentManager;
 import com.LM.pack.env.IntegrityVerifier;
 import com.LM.pack.model.BuildIssue;
@@ -17,6 +18,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import org.xml.sax.SAXParseException;
 
 public class ProjectPreflightChecker {
+    private static final String TAG = "ProjectPreflightChecker";
 
     public interface CancellationSignal {
         boolean isCancelled();
@@ -127,7 +129,7 @@ public class ProjectPreflightChecker {
             if (matcher.find()) {
                 return parseIntSafe(matcher.group(1));
             }
-            issues.add(new BuildIssue(appGradleFile.getAbsolutePath(), -1, "没有识别到 compileSdk。", "请在 `android {}` 中显式声明 `compileSdkVersion 36`，或至少补一个明确的 `compileSdk = 数字`。"));
+            issues.add(new BuildIssue(appGradleFile.getAbsolutePath(), -1, "没有识别到 compileSdk。", "请在 `android {}` 中显式声明 `compileSdkVersion 35`，或至少补一个明确的 `compileSdk = 数字`。"));
         } catch (Exception e) {
             issues.add(new BuildIssue(appGradleFile.getAbsolutePath(), -1, "读取构建脚本失败。", "检查 `app/build.gradle` 是否是可读的 UTF-8 文本。"));
         }
@@ -234,6 +236,7 @@ public class ProjectPreflightChecker {
                 try {
                     zipFile.close();
                 } catch (Exception ignored) {
+                    Log.w(TAG, "关闭 gradle-wrapper.jar 失败", ignored);
                 }
             }
         }
@@ -270,6 +273,7 @@ public class ProjectPreflightChecker {
                 try {
                     inputStream.close();
                 } catch (Exception ignored) {
+                    Log.w(TAG, "关闭 gradle-wrapper.properties 输入流失败", ignored);
                 }
             }
         }
@@ -292,6 +296,7 @@ public class ProjectPreflightChecker {
                 try {
                     inputStream.close();
                 } catch (Exception ignored) {
+                    Log.w(TAG, "关闭 Wrapper 版本输入流失败", ignored);
                 }
             }
         }
@@ -316,6 +321,7 @@ public class ProjectPreflightChecker {
                 return matcher.group(1).trim();
             }
         } catch (Exception e) {
+            Log.w(TAG, "读取 buildToolsVersion 失败", e);
         }
         return "";
     }

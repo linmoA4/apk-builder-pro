@@ -26,6 +26,7 @@ import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -70,6 +71,7 @@ import com.LM.pack.theme.ThemeManager;
 import com.LM.pack.ui.FileTreeListAdapter;
 import com.LM.pack.ui.ProjectListAdapter;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.StringReader;
@@ -85,6 +87,7 @@ import org.xml.sax.SAXParseException;
 import androidx.documentfile.provider.DocumentFile;
 
 public class MainActivity extends Activity {
+    private static final String TAG = "MainActivity";
 
     private static final int REQUEST_FILE_BROWSER = 4101;
     private static final int REQUEST_IMPORT_ZIP = 4102;
@@ -1253,6 +1256,7 @@ public class MainActivity extends Activity {
             int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
             getContentResolver().takePersistableUriPermission(uri, flags);
         } catch (Exception ignored) {
+            Log.w(TAG, "无法持久化读取 URI 权限", ignored);
         }
     }
 
@@ -1271,6 +1275,7 @@ public class MainActivity extends Activity {
                 }
             }
         } catch (Exception ignored) {
+            Log.w(TAG, "读取文档显示名称失败", ignored);
         } finally {
             if (cursor != null) {
                 cursor.close();
@@ -1455,6 +1460,7 @@ public class MainActivity extends Activity {
                             Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
                             startActivity(intent);
                         } catch (Exception ignored) {
+                            Log.w(TAG, "无法打开全部文件访问权限页面", ignored);
                             toast("无法打开授权页面，请到系统设置中手动开启文件访问权限");
                         }
                     }
@@ -2110,6 +2116,7 @@ public class MainActivity extends Activity {
                 items.add("版本：" + buildApkVersionSummary(packageInfo));
             }
         } catch (Exception ignored) {
+            Log.w(TAG, "读取 APK 摘要信息失败", ignored);
         }
         return items.toArray(new String[0]);
     }
@@ -2136,6 +2143,7 @@ public class MainActivity extends Activity {
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivity(Intent.createChooser(intent, "分享 APK"));
         } catch (Exception e) {
+            Log.w(TAG, "分享 APK 失败", e);
             toast("无法分享 APK");
         }
     }
@@ -2148,12 +2156,42 @@ public class MainActivity extends Activity {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);
         } catch (Exception e) {
+            Log.w(TAG, "发起 APK 安装失败", e);
             toast("无法发起安装");
         }
     }
 
-    private Uri getFileUri(File file) {
-        return FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
+    private Uri getFileUri(File file) throws Exception {
+        return FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", copyFileToShareCache(file));
+    }
+
+    private File copyFileToShareCache(File sourceFile) throws Exception {
+        if (sourceFile == null || !sourceFile.exists()) {
+            throw new IllegalStateException("待分享文件不存在");
+        }
+        File shareDir = new File(getCacheDir(), "share");
+        ensureDir(shareDir);
+        File targetFile = new File(shareDir, sanitizeFileName(sourceFile.getName()));
+        FileInputStream inputStream = null;
+        FileOutputStream outputStream = null;
+        try {
+            inputStream = new FileInputStream(sourceFile);
+            outputStream = new FileOutputStream(targetFile, false);
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, len);
+            }
+            outputStream.flush();
+        } finally {
+            if (inputStream != null) {
+                inputStream.close();
+            }
+            if (outputStream != null) {
+                outputStream.close();
+            }
+        }
+        return targetFile;
     }
 
     private String formatFileSize(long bytes) {
@@ -2840,6 +2878,7 @@ public class MainActivity extends Activity {
                 return raw.length() == 0 ? "未限制架构" : raw;
             }
         } catch (Exception e) {
+            Log.w(TAG, "解析 ABI 配置失败", e);
         }
         return "未限制架构";
     }

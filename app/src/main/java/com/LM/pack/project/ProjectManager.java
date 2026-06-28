@@ -2,6 +2,7 @@ package com.LM.pack.project;
 
 import android.content.Context;
 import android.content.res.AssetManager;
+import android.util.Log;
 import com.LM.pack.model.ProjectConfig;
 import com.LM.pack.model.ProjectEntry;
 import com.LM.pack.model.ProjectSigningConfig;
@@ -22,6 +23,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 public class ProjectManager {
+    private static final String TAG = "ProjectManager";
 
     private static final String META_DIR = ".lmproject";
     private static final String META_FILE = "meta.properties";
@@ -160,6 +162,7 @@ public class ProjectManager {
                     inputStream.close();
                 }
             } catch (Exception ignored) {
+                Log.w(TAG, "关闭签名配置输入流失败", ignored);
             }
         }
         return new ProjectSigningConfig(
@@ -352,6 +355,7 @@ public class ProjectManager {
                 return matcher.group(1).trim();
             }
         } catch (Exception e) {
+            Log.w(TAG, "读取应用名称失败", e);
         }
         return "";
     }
@@ -374,6 +378,7 @@ public class ProjectManager {
                 addUniqueNonEmpty(candidates, extractFirst(gradleContent, "applicationId\\s*(?:=\\s*)?[\"']([^\"']+)[\"']"));
             }
         } catch (Exception e) {
+            Log.w(TAG, "从构建脚本读取包名候选失败", e);
         }
 
         try {
@@ -383,6 +388,7 @@ public class ProjectManager {
                 addUniqueNonEmpty(candidates, extractFirst(manifestContent, "package=\"([^\"]+)\""));
             }
         } catch (Exception e) {
+            Log.w(TAG, "从 Manifest 读取包名候选失败", e);
         }
         return candidates;
     }
@@ -401,6 +407,7 @@ public class ProjectManager {
                 return matcher.group(1).trim();
             }
         } catch (Exception e) {
+            Log.w(TAG, "读取版本号失败", e);
         }
         return "";
     }
@@ -773,12 +780,14 @@ public class ProjectManager {
             inputStream = new FileInputStream(metaFile);
             properties.load(inputStream);
         } catch (Exception e) {
+            Log.w(TAG, "读取项目元信息失败", e);
         } finally {
             try {
                 if (inputStream != null) {
                     inputStream.close();
                 }
             } catch (Exception e) {
+                Log.w(TAG, "关闭项目元信息输入流失败", e);
             }
         }
         return properties;
@@ -848,11 +857,43 @@ public class ProjectManager {
     }
 
     private String buildSettingsGradle(ProjectConfig config) {
-        return "rootProject.name = \"" + escapeGradle(config.getAppName()) + "\"\ninclude ':app'\n";
+        return "import org.gradle.api.initialization.resolve.RepositoriesMode\n\n"
+            + "pluginManagement {\n"
+            + "    repositories {\n"
+            + "        google()\n"
+            + "        mavenCentral()\n"
+            + "        gradlePluginPortal()\n"
+            + "    }\n"
+            + "}\n\n"
+            + "dependencyResolutionManagement {\n"
+            + "    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)\n"
+            + "    repositories {\n"
+            + "        google()\n"
+            + "        mavenCentral()\n"
+            + "    }\n"
+            + "}\n\n"
+            + "rootProject.name = \"" + escapeGradle(config.getAppName()) + "\"\n"
+            + "include ':app'\n";
     }
 
     private String buildSettingsGradleKts(ProjectConfig config) {
-        return "rootProject.name = \"" + escapeGradle(config.getAppName()) + "\"\ninclude(\":app\")\n";
+        return "import org.gradle.api.initialization.resolve.RepositoriesMode\n\n"
+            + "pluginManagement {\n"
+            + "    repositories {\n"
+            + "        google()\n"
+            + "        mavenCentral()\n"
+            + "        gradlePluginPortal()\n"
+            + "    }\n"
+            + "}\n\n"
+            + "dependencyResolutionManagement {\n"
+            + "    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)\n"
+            + "    repositories {\n"
+            + "        google()\n"
+            + "        mavenCentral()\n"
+            + "    }\n"
+            + "}\n\n"
+            + "rootProject.name = \"" + escapeGradle(config.getAppName()) + "\"\n"
+            + "include(\":app\")\n";
     }
 
     private File resolveAppBuildGradleFile(File appDir) {
@@ -889,12 +930,6 @@ public class ProjectManager {
             + "        classpath 'com.android.tools.build:gradle:8.5.2'\n"
             + "    }\n"
             + "}\n\n"
-            + "allprojects {\n"
-            + "    repositories {\n"
-            + "        google()\n"
-            + "        mavenCentral()\n"
-            + "    }\n"
-            + "}\n\n"
             + "task clean(type: Delete) {\n"
             + "    delete rootProject.buildDir\n"
             + "}\n";
@@ -904,8 +939,8 @@ public class ProjectManager {
         return "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\n"
             + "android.useAndroidX=true\n"
             + "android.enableJetifier=true\n"
-            + "android.nonTransitiveRClass=false\n"
-            + "android.nonFinalResIds=false\n";
+            + "android.nonTransitiveRClass=true\n"
+            + "android.nonFinalResIds=true\n";
     }
 
     private String buildAppGradle(ProjectConfig config) {
@@ -933,15 +968,15 @@ public class ProjectManager {
             + "    }\n\n"
             + "    buildTypes {\n"
             + "        release {\n"
-            + "            minifyEnabled false\n"
+            + "            minifyEnabled true\n"
             + "            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'\n"
             + "        }\n"
             + "        debug {\n"
             + "            minifyEnabled false\n"
             + "        }\n"
             + "    }\n\n"
-            + "    lintOptions {\n"
-            + "        abortOnError false\n"
+            + "    lint {\n"
+            + "        abortOnError true\n"
             + "    }\n"
             + "}\n\n"
             + "dependencies {\n"

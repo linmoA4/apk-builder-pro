@@ -2,13 +2,13 @@ apply plugin: 'com.android.application'
 
 android {
     namespace 'com.LM.pack'
-    compileSdkVersion 36
+    compileSdkVersion 35
     ndkVersion "27.2.12479018"
 
     defaultConfig {
         applicationId "com.LM.pack"
         minSdkVersion 29
-        targetSdkVersion 36
+        targetSdkVersion 35
         versionCode 1
         versionName "1.0"
         ndk {
@@ -31,7 +31,7 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
@@ -39,8 +39,8 @@ android {
         }
     }
 
-    lintOptions {
-        abortOnError false
+    lint {
+        abortOnError true
     }
 }
 
