@@ -25,10 +25,12 @@ import java.util.regex.Pattern;
 
 public class BuildManager {
     public static final int EXIT_CODE_CANCELLED = -2;
+    public static final int EXIT_CODE_TIMEOUT = -3;
     private static final String META_DIR = ".lmproject";
     private static final String SIGNING_FILE = "signing.properties";
     private static final String SIGNING_BLOCK_BEGIN = "// APK_BUILDER_PRO_SIGNING_BEGIN";
     private static final String SIGNING_BLOCK_END = "// APK_BUILDER_PRO_SIGNING_END";
+    private static final long DEFAULT_BUILD_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(10);
 
     private static final class ManagedSigningScriptState {
         final File targetFile;
@@ -37,6 +39,35 @@ public class BuildManager {
         ManagedSigningScriptState(File targetFile, String originalContent) {
             this.targetFile = targetFile;
             this.originalContent = originalContent;
+        }
+    }
+
+    private static final class ScriptBlockSpan {
+        final int start;
+        final int openBrace;
+        final int endExclusive;
+
+        ScriptBlockSpan(int start, int openBrace, int endExclusive) {
+            this.start = start;
+            this.openBrace = openBrace;
+            this.endExclusive = endExclusive;
+        }
+    }
+
+    private static final class BuildTimeoutState {
+        final long timeoutMillis;
+        volatile boolean triggered;
+
+        BuildTimeoutState(long timeoutMillis) {
+            this.timeoutMillis = timeoutMillis;
+        }
+
+        boolean markTriggered() {
+            if (triggered) {
+                return false;
+            }
+            triggered = true;
+            return true;
         }
     }
 
@@ -208,9 +239,11 @@ public class BuildManager {
     ) {
         Process process = null;
         BufferedReader reader = null;
+        Thread timeoutWatcher = null;
         ArrayList<BuildIssue> issues = new ArrayList<BuildIssue>();
         String apkPath = "";
         ManagedSigningScriptState managedSigningScriptState = null;
+        BuildTimeoutState timeoutState = new BuildTimeoutState(DEFAULT_BUILD_TIMEOUT_MS);
         try {
             File projectRoot = new File(projectDir);
             File gradlew = new File(projectRoot, "gradlew");
@@ -309,10 +342,11 @@ public class BuildManager {
 
             process = processBuilder.start();
             setActiveProcess(process);
+            timeoutWatcher = startBuildTimeoutWatcher(process, listener, timeoutState);
             reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
             String line;
             while ((line = reader.readLine()) != null) {
-                if (cancelRequested) {
+                if (cancelRequested || timeoutState.triggered) {
                     break;
                 }
                 listener.onLogLine(line);
@@ -324,6 +358,10 @@ public class BuildManager {
             }
 
             int exitCode = process.waitFor();
+            if (timeoutState.triggered) {
+                listener.onFinished(createTimedOutResult(apkPath, issues, timeoutState.timeoutMillis));
+                return;
+            }
             if (cancelRequested) {
                 listener.onFinished(createCancelledResult(apkPath, issues));
                 return;
@@ -337,7 +375,9 @@ public class BuildManager {
                 listener.onFinished(new BuildResult(false, exitCode, "真实打包失败，Gradle 退出码：" + exitCode, apkPath, issues));
             }
         } catch (Exception e) {
-            if (cancelRequested) {
+            if (timeoutState.triggered) {
+                listener.onFinished(createTimedOutResult(apkPath, issues, timeoutState.timeoutMillis));
+            } else if (cancelRequested) {
                 listener.onFinished(createCancelledResult(apkPath, issues));
             } else {
                 listener.onFinished(new BuildResult(false, -1, "真实打包异常：" + e.getMessage(), apkPath, issues));
@@ -348,6 +388,9 @@ public class BuildManager {
                     reader.close();
                 }
             } catch (Exception e) {
+            }
+            if (timeoutWatcher != null) {
+                timeoutWatcher.interrupt();
             }
             restoreManagedSigningBlock(managedSigningScriptState, listener);
             clearActiveProcess(process);
@@ -630,6 +673,51 @@ public class BuildManager {
 
     private BuildResult createCancelledResult(String apkPath, ArrayList<BuildIssue> issues) {
         return new BuildResult(false, EXIT_CODE_CANCELLED, "构建已取消", apkPath, issues);
+    }
+
+    private BuildResult createTimedOutResult(String apkPath, ArrayList<BuildIssue> issues, long timeoutMillis) {
+        int timeoutMinutes = (int) Math.max(1L, TimeUnit.MILLISECONDS.toMinutes(timeoutMillis));
+        issues.add(
+            new BuildIssue(
+                "Gradle 构建",
+                -1,
+                "构建超过 " + timeoutMinutes + " 分钟仍未完成，已自动停止。",
+                "如果是首次拉依赖可稍后重试；若反复发生，请检查 Gradle 任务、网络下载或死循环。"
+            )
+        );
+        return new BuildResult(false, EXIT_CODE_TIMEOUT, "构建超时，已在 " + timeoutMinutes + " 分钟后自动取消", apkPath, issues);
+    }
+
+    private Thread startBuildTimeoutWatcher(final Process process, final BuildListener listener, final BuildTimeoutState timeoutState) {
+        Thread watcher = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                long deadlineAt = System.currentTimeMillis() + timeoutState.timeoutMillis;
+                while (!cancelRequested && !timeoutState.triggered) {
+                    if (process == null || !process.isAlive()) {
+                        return;
+                    }
+                    long remaining = deadlineAt - System.currentTimeMillis();
+                    if (remaining <= 0L) {
+                        if (process.isAlive() && timeoutState.markTriggered()) {
+                            if (listener != null) {
+                                listener.onLogLine("构建超过 10 分钟仍未结束，已自动终止 Gradle 进程。");
+                            }
+                            destroyProcessQuietly(process);
+                        }
+                        return;
+                    }
+                    try {
+                        Thread.sleep(Math.min(remaining, 1000L));
+                    } catch (InterruptedException ignored) {
+                        return;
+                    }
+                }
+            }
+        }, "build-timeout-watcher");
+        watcher.setDaemon(true);
+        watcher.start();
+        return watcher;
     }
 
     private File prepareOfflineGradle(ProgressCallback progressCallback, BuildListener listener) {
@@ -1173,10 +1261,7 @@ public class BuildManager {
         }
         String content = readText(targetFile);
         String cleaned = removeManagedSigningBlock(content);
-        String signingBlock = targetFile.getName().endsWith(".kts")
-            ? buildKtsSigningBlock(config)
-            : buildGroovySigningBlock(config);
-        String finalContent = cleaned.trim() + "\n\n" + signingBlock + "\n";
+        String finalContent = injectManagedSigning(cleaned, config, targetFile.getName().endsWith(".kts"));
         writeText(targetFile, finalContent);
         if (listener != null) {
             listener.onLogLine("已将 APK 签名配置注入到 " + targetFile.getName() + "。");
@@ -1204,56 +1289,287 @@ public class BuildManager {
         if (content == null || content.length() == 0) {
             return "";
         }
-        int start = content.indexOf(SIGNING_BLOCK_BEGIN);
-        int end = content.indexOf(SIGNING_BLOCK_END);
-        if (start >= 0 && end > start) {
-            return (content.substring(0, start) + content.substring(end + SIGNING_BLOCK_END.length())).trim();
+        Pattern managedBlockPattern = Pattern.compile(
+            Pattern.quote(SIGNING_BLOCK_BEGIN) + "[\\s\\S]*?" + Pattern.quote(SIGNING_BLOCK_END) + "\\s*",
+            Pattern.MULTILINE
+        );
+        return managedBlockPattern.matcher(content).replaceAll("").trim() + "\n";
+    }
+
+    private String injectManagedSigning(String content, ProjectSigningConfig config, boolean kotlinDsl) {
+        ScriptBlockSpan androidBlock = findBlock(content, "(?m)^\\s*android\\s*\\{", 0, content.length());
+        if (androidBlock == null) {
+            throw new IllegalStateException("未找到 android { } 配置块，无法注入签名配置");
         }
-        return content;
+        String updated = injectSigningConfig(content, androidBlock, config, kotlinDsl);
+        androidBlock = findBlock(updated, "(?m)^\\s*android\\s*\\{", 0, updated.length());
+        if (androidBlock == null) {
+            throw new IllegalStateException("签名注入后未能重新定位 android { } 配置块");
+        }
+        updated = injectReleaseSigning(updated, androidBlock, kotlinDsl);
+        return updated.trim() + "\n";
     }
 
-    private String buildGroovySigningBlock(ProjectSigningConfig config) {
-        return SIGNING_BLOCK_BEGIN + "\n"
-            + "android {\n"
-            + "    signingConfigs {\n"
-            + "        apkBuilderRelease {\n"
-            + "            storeFile file(\"" + escapeGradleString(config.getStoreFilePath()) + "\")\n"
-            + "            storePassword \"" + escapeGradleString(config.getStorePassword()) + "\"\n"
-            + "            keyAlias \"" + escapeGradleString(config.getKeyAlias()) + "\"\n"
-            + "            keyPassword \"" + escapeGradleString(config.getKeyPassword()) + "\"\n"
-            + "            v1SigningEnabled true\n"
-            + "            v2SigningEnabled true\n"
-            + "        }\n"
-            + "    }\n"
-            + "    buildTypes {\n"
-            + "        release {\n"
-            + "            signingConfig signingConfigs.apkBuilderRelease\n"
-            + "        }\n"
-            + "    }\n"
-            + "}\n"
-            + SIGNING_BLOCK_END;
+    private String injectSigningConfig(String content, ScriptBlockSpan androidBlock, ProjectSigningConfig config, boolean kotlinDsl) {
+        ScriptBlockSpan signingConfigsBlock = findBlock(
+            content,
+            "(?m)^\\s*signingConfigs\\s*\\{",
+            androidBlock.openBrace + 1,
+            androidBlock.endExclusive - 1
+        );
+        if (signingConfigsBlock != null) {
+            String blockIndent = getLineIndent(content, signingConfigsBlock.start);
+            String childIndent = blockIndent + detectIndentUnit(blockIndent);
+            String snippet = buildManagedSigningConfigEntry(config, kotlinDsl, childIndent, detectIndentUnit(blockIndent));
+            return insertIntoBlock(content, signingConfigsBlock, snippet);
+        }
+        String androidIndent = getLineIndent(content, androidBlock.start);
+        String childIndent = androidIndent + detectIndentUnit(androidIndent);
+        String snippet = buildManagedSigningConfigBlock(config, kotlinDsl, childIndent, detectIndentUnit(androidIndent));
+        ScriptBlockSpan buildTypesBlock = findBlock(
+            content,
+            "(?m)^\\s*buildTypes\\s*\\{",
+            androidBlock.openBrace + 1,
+            androidBlock.endExclusive - 1
+        );
+        if (buildTypesBlock != null) {
+            return insertAt(content, buildTypesBlock.start, ensureBlankLineBefore(snippet));
+        }
+        return insertIntoBlock(content, androidBlock, snippet);
     }
 
-    private String buildKtsSigningBlock(ProjectSigningConfig config) {
-        return SIGNING_BLOCK_BEGIN + "\n"
-            + "android {\n"
-            + "    signingConfigs {\n"
-            + "        create(\"apkBuilderRelease\") {\n"
-            + "            storeFile = file(\"" + escapeGradleString(config.getStoreFilePath()) + "\")\n"
-            + "            storePassword = \"" + escapeGradleString(config.getStorePassword()) + "\"\n"
-            + "            keyAlias = \"" + escapeGradleString(config.getKeyAlias()) + "\"\n"
-            + "            keyPassword = \"" + escapeGradleString(config.getKeyPassword()) + "\"\n"
-            + "            enableV1Signing = true\n"
-            + "            enableV2Signing = true\n"
-            + "        }\n"
-            + "    }\n"
-            + "    buildTypes {\n"
-            + "        getByName(\"release\") {\n"
-            + "            signingConfig = signingConfigs.getByName(\"apkBuilderRelease\")\n"
-            + "        }\n"
-            + "    }\n"
-            + "}\n"
-            + SIGNING_BLOCK_END;
+    private String injectReleaseSigning(String content, ScriptBlockSpan androidBlock, boolean kotlinDsl) {
+        ScriptBlockSpan buildTypesBlock = findBlock(
+            content,
+            "(?m)^\\s*buildTypes\\s*\\{",
+            androidBlock.openBrace + 1,
+            androidBlock.endExclusive - 1
+        );
+        if (buildTypesBlock == null) {
+            String androidIndent = getLineIndent(content, androidBlock.start);
+            String childIndent = androidIndent + detectIndentUnit(androidIndent);
+            String snippet = buildManagedBuildTypesBlock(kotlinDsl, childIndent, detectIndentUnit(androidIndent));
+            return insertIntoBlock(content, androidBlock, ensureBlankLineBefore(snippet));
+        }
+        ScriptBlockSpan releaseBlock = findBlock(
+            content,
+            kotlinDsl
+                ? "(?m)^\\s*(?:getByName|named|create)\\(\"release\"\\)\\s*\\{"
+                : "(?m)^\\s*release\\s*\\{",
+            buildTypesBlock.openBrace + 1,
+            buildTypesBlock.endExclusive - 1
+        );
+        if (releaseBlock == null) {
+            String buildTypesIndent = getLineIndent(content, buildTypesBlock.start);
+            String childIndent = buildTypesIndent + detectIndentUnit(buildTypesIndent);
+            String snippet = buildManagedReleaseBlock(kotlinDsl, childIndent, detectIndentUnit(buildTypesIndent));
+            return insertIntoBlock(content, buildTypesBlock, ensureBlankLineBefore(snippet));
+        }
+        String releaseBody = content.substring(releaseBlock.openBrace + 1, releaseBlock.endExclusive - 1);
+        releaseBody = stripExistingSigningConfigAssignments(releaseBody);
+        releaseBody = ensureBodyEndsWithNewline(releaseBody);
+        String releaseIndent = getLineIndent(content, releaseBlock.start);
+        String childIndent = releaseIndent + detectIndentUnit(releaseIndent);
+        String snippet = buildManagedReleaseAssignment(kotlinDsl, childIndent);
+        return content.substring(0, releaseBlock.openBrace + 1)
+            + releaseBody
+            + snippet
+            + releaseIndent + "}"
+            + content.substring(releaseBlock.endExclusive);
+    }
+
+    private String buildManagedSigningConfigBlock(ProjectSigningConfig config, boolean kotlinDsl, String baseIndent, String indentUnit) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(baseIndent).append(SIGNING_BLOCK_BEGIN).append('\n');
+        builder.append(baseIndent).append("signingConfigs {\n");
+        builder.append(buildSigningConfigBody(config, kotlinDsl, baseIndent + indentUnit, indentUnit));
+        builder.append(baseIndent).append("}\n");
+        builder.append(baseIndent).append(SIGNING_BLOCK_END).append('\n');
+        return builder.toString();
+    }
+
+    private String buildManagedSigningConfigEntry(ProjectSigningConfig config, boolean kotlinDsl, String baseIndent, String indentUnit) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(baseIndent).append(SIGNING_BLOCK_BEGIN).append('\n');
+        builder.append(buildSigningConfigBody(config, kotlinDsl, baseIndent, indentUnit));
+        builder.append(baseIndent).append(SIGNING_BLOCK_END).append('\n');
+        return builder.toString();
+    }
+
+    private String buildSigningConfigBody(ProjectSigningConfig config, boolean kotlinDsl, String baseIndent, String indentUnit) {
+        StringBuilder builder = new StringBuilder();
+        if (kotlinDsl) {
+            builder.append(baseIndent).append("create(\"apkBuilderRelease\") {\n");
+            builder.append(baseIndent).append(indentUnit).append("storeFile = file(\"").append(escapeGradleString(config.getStoreFilePath())).append("\")\n");
+            builder.append(baseIndent).append(indentUnit).append("storePassword = \"").append(escapeGradleString(config.getStorePassword())).append("\"\n");
+            builder.append(baseIndent).append(indentUnit).append("keyAlias = \"").append(escapeGradleString(config.getKeyAlias())).append("\"\n");
+            builder.append(baseIndent).append(indentUnit).append("keyPassword = \"").append(escapeGradleString(config.getKeyPassword())).append("\"\n");
+            builder.append(baseIndent).append(indentUnit).append("enableV1Signing = true\n");
+            builder.append(baseIndent).append(indentUnit).append("enableV2Signing = true\n");
+            builder.append(baseIndent).append("}\n");
+        } else {
+            builder.append(baseIndent).append("apkBuilderRelease {\n");
+            builder.append(baseIndent).append(indentUnit).append("storeFile file(\"").append(escapeGradleString(config.getStoreFilePath())).append("\")\n");
+            builder.append(baseIndent).append(indentUnit).append("storePassword \"").append(escapeGradleString(config.getStorePassword())).append("\"\n");
+            builder.append(baseIndent).append(indentUnit).append("keyAlias \"").append(escapeGradleString(config.getKeyAlias())).append("\"\n");
+            builder.append(baseIndent).append(indentUnit).append("keyPassword \"").append(escapeGradleString(config.getKeyPassword())).append("\"\n");
+            builder.append(baseIndent).append(indentUnit).append("v1SigningEnabled true\n");
+            builder.append(baseIndent).append(indentUnit).append("v2SigningEnabled true\n");
+            builder.append(baseIndent).append("}\n");
+        }
+        return builder.toString();
+    }
+
+    private String buildManagedBuildTypesBlock(boolean kotlinDsl, String baseIndent, String indentUnit) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(baseIndent).append(SIGNING_BLOCK_BEGIN).append('\n');
+        builder.append(baseIndent).append("buildTypes {\n");
+        if (kotlinDsl) {
+            builder.append(baseIndent).append(indentUnit).append("getByName(\"release\") {\n");
+            builder.append(baseIndent).append(indentUnit).append(indentUnit).append("signingConfig = signingConfigs.getByName(\"apkBuilderRelease\")\n");
+            builder.append(baseIndent).append(indentUnit).append("}\n");
+        } else {
+            builder.append(baseIndent).append(indentUnit).append("release {\n");
+            builder.append(baseIndent).append(indentUnit).append(indentUnit).append("signingConfig signingConfigs.apkBuilderRelease\n");
+            builder.append(baseIndent).append(indentUnit).append("}\n");
+        }
+        builder.append(baseIndent).append("}\n");
+        builder.append(baseIndent).append(SIGNING_BLOCK_END).append('\n');
+        return builder.toString();
+    }
+
+    private String buildManagedReleaseBlock(boolean kotlinDsl, String baseIndent, String indentUnit) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(baseIndent).append(SIGNING_BLOCK_BEGIN).append('\n');
+        if (kotlinDsl) {
+            builder.append(baseIndent).append("getByName(\"release\") {\n");
+            builder.append(baseIndent).append(indentUnit).append("signingConfig = signingConfigs.getByName(\"apkBuilderRelease\")\n");
+            builder.append(baseIndent).append("}\n");
+        } else {
+            builder.append(baseIndent).append("release {\n");
+            builder.append(baseIndent).append(indentUnit).append("signingConfig signingConfigs.apkBuilderRelease\n");
+            builder.append(baseIndent).append("}\n");
+        }
+        builder.append(baseIndent).append(SIGNING_BLOCK_END).append('\n');
+        return builder.toString();
+    }
+
+    private String buildManagedReleaseAssignment(boolean kotlinDsl, String baseIndent) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(baseIndent).append(SIGNING_BLOCK_BEGIN).append('\n');
+        if (kotlinDsl) {
+            builder.append(baseIndent).append("signingConfig = signingConfigs.getByName(\"apkBuilderRelease\")\n");
+        } else {
+            builder.append(baseIndent).append("signingConfig signingConfigs.apkBuilderRelease\n");
+        }
+        builder.append(baseIndent).append(SIGNING_BLOCK_END).append('\n');
+        return builder.toString();
+    }
+
+    private String stripExistingSigningConfigAssignments(String content) {
+        return content.replaceAll("(?m)^\\s*signingConfig(?:\\s*=|\\s+).*(?:\\r?\\n)?", "");
+    }
+
+    private String ensureBodyEndsWithNewline(String body) {
+        if (body == null || body.length() == 0) {
+            return "\n";
+        }
+        return body.endsWith("\n") ? body : body + "\n";
+    }
+
+    private String ensureBlankLineBefore(String snippet) {
+        return "\n" + snippet;
+    }
+
+    private String insertIntoBlock(String content, ScriptBlockSpan block, String snippet) {
+        int insertIndex = block.endExclusive - 1;
+        String normalizedSnippet = ensureBodyEndsWithNewline(snippet);
+        if (insertIndex > 0) {
+            char previous = content.charAt(insertIndex - 1);
+            if (previous != '\n' && previous != '\r') {
+                normalizedSnippet = "\n" + normalizedSnippet;
+            }
+        }
+        return insertAt(content, insertIndex, normalizedSnippet);
+    }
+
+    private String insertAt(String content, int index, String snippet) {
+        return content.substring(0, index) + snippet + content.substring(index);
+    }
+
+    private ScriptBlockSpan findBlock(String content, String regex, int regionStart, int regionEnd) {
+        if (content == null || regionStart < 0 || regionEnd <= regionStart || regionEnd > content.length()) {
+            return null;
+        }
+        Matcher matcher = Pattern.compile(regex, Pattern.MULTILINE).matcher(content);
+        matcher.region(regionStart, regionEnd);
+        if (!matcher.find()) {
+            return null;
+        }
+        int openBrace = content.indexOf('{', matcher.start());
+        if (openBrace < 0 || openBrace >= regionEnd) {
+            return null;
+        }
+        int closeBrace = findMatchingBrace(content, openBrace);
+        if (closeBrace < 0) {
+            return null;
+        }
+        return new ScriptBlockSpan(matcher.start(), openBrace, closeBrace + 1);
+    }
+
+    private int findMatchingBrace(String content, int openBrace) {
+        int depth = 0;
+        boolean inSingleQuote = false;
+        boolean inDoubleQuote = false;
+        for (int i = openBrace; i < content.length(); i++) {
+            char c = content.charAt(i);
+            char previous = i > 0 ? content.charAt(i - 1) : '\0';
+            if (c == '"' && !inSingleQuote && previous != '\\') {
+                inDoubleQuote = !inDoubleQuote;
+                continue;
+            }
+            if (c == '\'' && !inDoubleQuote && previous != '\\') {
+                inSingleQuote = !inSingleQuote;
+                continue;
+            }
+            if (inSingleQuote || inDoubleQuote) {
+                continue;
+            }
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private String getLineIndent(String content, int index) {
+        int lineStart = index;
+        while (lineStart > 0) {
+            char c = content.charAt(lineStart - 1);
+            if (c == '\n' || c == '\r') {
+                break;
+            }
+            lineStart--;
+        }
+        int cursor = lineStart;
+        while (cursor < content.length()) {
+            char c = content.charAt(cursor);
+            if (c == ' ' || c == '\t') {
+                cursor++;
+                continue;
+            }
+            break;
+        }
+        return content.substring(lineStart, cursor);
+    }
+
+    private String detectIndentUnit(String baseIndent) {
+        return baseIndent.indexOf('\t') >= 0 ? "\t" : "    ";
     }
 
     private String escapeGradleString(String value) {

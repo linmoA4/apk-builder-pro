@@ -232,11 +232,18 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onStop() {
+        flushPendingAutoSave();
+        super.onStop();
+    }
+
+    @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         if (outState == null) {
             return;
         }
+        flushPendingAutoSave();
         outState.putInt(STATE_VIEW_PAGE, viewPager == null ? 0 : viewPager.getCurrentItem());
         outState.putString(STATE_CURRENT_PROJECT_DIR, currentProject == null ? "" : currentProject.getProjectDir());
         outState.putString(STATE_CURRENT_FILE_PATH, currentOpenFile == null ? "" : currentOpenFile.getAbsolutePath());
@@ -2293,7 +2300,9 @@ public class MainActivity extends Activity {
     }
 
     private void flushPendingAutoSave() {
-        handler.removeCallbacks(autoSaveRunnable);
+        if (handler != null && autoSaveRunnable != null) {
+            handler.removeCallbacks(autoSaveRunnable);
+        }
         saveCurrentFile();
     }
 
@@ -2739,7 +2748,11 @@ public class MainActivity extends Activity {
                         toast("打包成功");
                         showBuildSuccessDialog(result);
                     } else {
+                        boolean buildTimedOut = result.getExitCode() == BuildManager.EXIT_CODE_TIMEOUT;
                         logManager.appendLogLine("ERROR", result.getMessage());
+                        if (buildTimedOut) {
+                            toast("构建超时，已自动取消");
+                        }
                         if (!lastBuildIssues.isEmpty()) {
                             appendIssueListToLogs("构建失败的问题列表", lastBuildIssues);
                             if (!maybeShowWrapperRepairDialog("构建失败，可点击定位错误", lastBuildIssues)) {
