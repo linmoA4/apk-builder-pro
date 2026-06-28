@@ -192,7 +192,7 @@ public class SettingsActivity extends Activity {
         preparingEmbeddedTools = true;
         showProgressOverlay(
             "自动检测环境",
-            "正在按" + environmentManager.getDownloadRouteDisplayName() + "准备 SDK / JDK 21 / NDK r27 / Gradle 8.7 ...",
+            "正在按" + environmentManager.getDownloadRouteDisplayName() + "准备 SDK / JDK 21 / 核心 SDK 组件 / NDK r27 / Gradle 8.7 ...",
             0,
             true
         );
@@ -208,7 +208,7 @@ public class SettingsActivity extends Activity {
         toolchainInstaller.installEmbeddedSdk(new ToolchainInstaller.InstallListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
-                handler.post(() -> showProgressOverlay("准备 Android SDK", message, blendProgress(0, 42, percent), indeterminate));
+                handler.post(() -> showProgressOverlay("准备 Android SDK", message, blendProgress(0, 36, percent), indeterminate));
             }
 
             @Override
@@ -229,13 +229,13 @@ public class SettingsActivity extends Activity {
     private void prepareExternalJdkThenNdk(final int embeddedJdkIndex, final int embeddedNdkIndex, final boolean userTriggered) {
         boolean needJdk = embeddedJdkIndex >= 0 && !environmentManager.isSelectedJdkInstalled(embeddedJdkIndex, environmentState);
         if (!needJdk) {
-            prepareExternalNdk(embeddedNdkIndex, userTriggered);
+            prepareCoreSdkPackagesThenNdk(embeddedNdkIndex, userTriggered);
             return;
         }
         toolchainInstaller.installJdk(embeddedJdkIndex, new ToolchainInstaller.InstallListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
-                handler.post(() -> showProgressOverlay("准备 JDK 21", message, blendProgress(42, 20, percent), indeterminate));
+                handler.post(() -> showProgressOverlay("准备 JDK 21", message, blendProgress(36, 18, percent), indeterminate));
             }
 
             @Override
@@ -246,7 +246,7 @@ public class SettingsActivity extends Activity {
                         environmentManager.saveSelectedJdkIndex(embeddedJdkIndex);
                         selectedJdkIndex = embeddedJdkIndex;
                     }
-                    prepareExternalNdk(embeddedNdkIndex, userTriggered);
+                    prepareCoreSdkPackagesThenNdk(embeddedNdkIndex, userTriggered);
                 });
             }
 
@@ -255,6 +255,65 @@ public class SettingsActivity extends Activity {
                 handler.post(() -> finishPreparationWithError(message));
             }
         });
+    }
+
+    private void prepareCoreSdkPackagesThenNdk(final int embeddedNdkIndex, final boolean userTriggered) {
+        final String sdkDir = environmentState == null ? "" : safeText(environmentState.getAndroidSdkDir(), "");
+        final File sdkRoot = sdkDir.length() == 0 ? null : new File(sdkDir);
+        final File sdkManager = new File(environmentManager.getSdkManagerPath());
+        final String jdkDir = resolveAnyAvailableJdkDir();
+        if (sdkRoot == null || !sdkRoot.isDirectory() || !sdkManager.exists() || jdkDir.length() == 0) {
+            prepareExternalNdk(embeddedNdkIndex, userTriggered);
+            return;
+        }
+        final ArrayList<String> packages = new ArrayList<String>();
+        if (!isSdkPackageInstalled(sdkRoot, "platform-tools")) {
+            packages.add("platform-tools");
+        }
+        if (!isSdkPackageInstalled(sdkRoot, "build-tools;36.0.0")) {
+            packages.add("build-tools;36.0.0");
+        }
+        if (!isSdkPackageInstalled(sdkRoot, "platforms;android-36")) {
+            packages.add("platforms;android-36");
+        }
+        if (packages.isEmpty()) {
+            prepareExternalNdk(embeddedNdkIndex, userTriggered);
+            return;
+        }
+        new Thread(() -> {
+            try {
+                ensureAcceptedSdkLicenses(sdkRoot);
+                int total = packages.size();
+                for (int i = 0; i < packages.size(); i++) {
+                    final int currentIndex = i;
+                    final String packageName = packages.get(i);
+                    final int stagePercent = Math.max(4, ((currentIndex) * 100) / total);
+                    handler.post(() -> showProgressOverlay(
+                        "补齐核心 SDK 组件",
+                        "正在安装 " + packageName + "（" + (currentIndex + 1) + "/" + total + "）",
+                        blendProgress(54, 14, stagePercent),
+                        false
+                    ));
+                    runSdkManagerInstall(sdkManager, sdkRoot, jdkDir, packageName, new InstallLogListener() {
+                        @Override
+                        public void onLog(String line) {
+                            if (line == null || line.trim().length() == 0) {
+                                return;
+                            }
+                            handler.post(() -> showProgressOverlay(
+                                "补齐核心 SDK 组件",
+                                simplifySdkManagerLine(line),
+                                blendProgress(54, 14, Math.max(4, stagePercent)),
+                                false
+                            ));
+                        }
+                    });
+                }
+                handler.post(() -> prepareExternalNdk(embeddedNdkIndex, userTriggered));
+            } catch (final Exception e) {
+                handler.post(() -> finishPreparationWithError("补齐核心 SDK 组件失败：" + safeText(e.getMessage(), "未知错误")));
+            }
+        }).start();
     }
 
     private void prepareExternalNdk(final int embeddedNdkIndex, final boolean userTriggered) {
@@ -266,7 +325,7 @@ public class SettingsActivity extends Activity {
         toolchainInstaller.installNdk(embeddedNdkIndex, new ToolchainInstaller.InstallListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
-                handler.post(() -> showProgressOverlay("准备 NDK r27", message, blendProgress(62, 18, percent), indeterminate));
+                handler.post(() -> showProgressOverlay("准备 NDK r27", message, blendProgress(68, 14, percent), indeterminate));
             }
 
             @Override
@@ -296,7 +355,7 @@ public class SettingsActivity extends Activity {
         buildManager.prepareOfflineGradleAsync(new BuildManager.OfflineGradleListener() {
             @Override
             public void onProgress(final String message, final int percent, final boolean indeterminate) {
-                handler.post(() -> showProgressOverlay("准备 Gradle 8.7", message, blendProgress(80, 20, percent), indeterminate));
+                handler.post(() -> showProgressOverlay("准备 Gradle 8.7", message, blendProgress(82, 18, percent), indeterminate));
             }
 
             @Override
@@ -316,7 +375,7 @@ public class SettingsActivity extends Activity {
         hideProgressOverlay();
         refreshUi();
         if (userTriggered) {
-            toast("外置 SDK / JDK 21 / NDK 27 / Gradle 8.7 已准备完成");
+            toast("外置 SDK / JDK 21 / 核心 SDK 组件 / NDK 27 / Gradle 8.7 已准备完成");
         }
     }
 
