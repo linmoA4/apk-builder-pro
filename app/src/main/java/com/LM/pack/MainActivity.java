@@ -290,6 +290,14 @@ public class MainActivity extends Activity {
         android.view.LayoutInflater inflater = getLayoutInflater();
         homePane = (LinearLayout) inflater.inflate(R.layout.page_home, null);
         editorPane = (LinearLayout) inflater.inflate(R.layout.page_editor, null);
+        homePane.setLayoutParams(new RecyclerView.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        editorPane.setLayoutParams(new RecyclerView.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ));
 
         java.util.List<View> pages = new java.util.ArrayList<>();
         pages.add(homePane);
@@ -3493,7 +3501,22 @@ public class MainActivity extends Activity {
 
         @Override
         public PageHolder onCreateViewHolder(ViewGroup parent, int viewType) {
-            return new PageHolder(pages.get(viewType));
+            View page = pages.get(viewType);
+            if (page.getParent() instanceof ViewGroup) {
+                ((ViewGroup) page.getParent()).removeView(page);
+            }
+            ViewGroup.LayoutParams layoutParams = page.getLayoutParams();
+            if (!(layoutParams instanceof RecyclerView.LayoutParams)) {
+                layoutParams = new RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                );
+            } else {
+                layoutParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                layoutParams.height = ViewGroup.LayoutParams.MATCH_PARENT;
+            }
+            page.setLayoutParams(layoutParams);
+            return new PageHolder(page);
         }
 
         @Override

@@ -166,7 +166,7 @@ public class SettingsActivity extends Activity {
         btnDownloadRoute.setText("下载路线：" + environmentManager.getDownloadRouteDisplayName());
         btnJdkPreference.setText("JDK 偏好：" + simplifyToolLabel(environmentManager.getSelectedJdkName(selectedJdkIndex)));
         btnNdkPreference.setText("NDK 偏好：" + simplifyToolLabel(environmentManager.getSelectedNdkName(selectedNdkIndex)));
-        btnInstallAndroidApis.setText(buildInstallApiButtonText());
+        btnInstallAndroidApis.setText(buildInstallSdkPackagesButtonText());
     }
 
     private void maybePrepareExternalTools(boolean userTriggered) {
@@ -393,22 +393,22 @@ public class SettingsActivity extends Activity {
 
     private void showAndroidApiInstallDialog() {
         if (!environmentManager.isAndroidSdkRegistered(environmentState)) {
-            toast("请先把 Android SDK 准备好，再安装 Android API");
+            toast("请先把 Android SDK 准备好，再管理 SDK 组件");
             return;
         }
         if (!new File(environmentManager.getSdkManagerPath()).exists()) {
             toast("当前没有找到 sdkmanager，请先完成环境准备");
             return;
         }
-        final int[] apiLevels = {29, 30, 31, 32, 33, 34, 35, 36};
-        final String[] labels = new String[apiLevels.length];
-        for (int i = 0; i < apiLevels.length; i++) {
-            labels[i] = buildAndroidApiLabel(apiLevels[i]);
+        final SdkPackageOption[] options = buildSdkPackageOptions();
+        final String[] labels = new String[options.length];
+        for (int i = 0; i < options.length; i++) {
+            labels[i] = options[i].label;
         }
         final Dialog dialog = createAppDialog(
-            "安装 Android API",
+            "管理 Android SDK 组件",
             environmentManager.isSdkLicenseAccepted()
-                ? "支持多选。勾选后会一次性安装所选平台版本。"
+                ? "支持多选。可以一次性补齐 Platform-Tools、Build-Tools 和 Android API。"
                 : "首次安装前需要显式确认 Android SDK 许可证。"
         );
         final ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
@@ -421,39 +421,44 @@ public class SettingsActivity extends Activity {
         btnPrimary.setText("安装所选");
         btnSecondary.setText("关闭");
         btnNeutral.setVisibility(View.VISIBLE);
-        btnNeutral.setText("全选");
+        btnNeutral.setText("勾选缺失项");
         btnSecondary.setOnClickListener(v -> dialog.dismiss());
         btnNeutral.setOnClickListener(v -> {
             for (int i = 0; i < labels.length; i++) {
-                listView.setItemChecked(i, true);
+                listView.setItemChecked(i, options[i].missing);
             }
         });
+        for (int i = 0; i < options.length; i++) {
+            if (options[i].missing) {
+                listView.setItemChecked(i, true);
+            }
+        }
         btnPrimary.setOnClickListener(v -> {
             SparseBooleanArray checked = listView.getCheckedItemPositions();
-            ArrayList<Integer> selected = new ArrayList<Integer>();
+            ArrayList<String> selectedPackages = new ArrayList<String>();
             for (int i = 0; i < labels.length; i++) {
                 if (checked.get(i)) {
-                    selected.add(apiLevels[i]);
+                    selectedPackages.add(options[i].packageName);
                 }
             }
-            if (selected.isEmpty()) {
-                toast("请先至少选择一个 Android API");
+            if (selectedPackages.isEmpty()) {
+                toast("请先至少选择一个 SDK 组件");
                 return;
             }
             dialog.dismiss();
-            maybeConfirmSdkLicenseThenInstall(selected);
+            maybeConfirmSdkLicenseThenInstall(selectedPackages);
         });
         dialog.show();
     }
 
-    private void maybeConfirmSdkLicenseThenInstall(final ArrayList<Integer> apiLevels) {
+    private void maybeConfirmSdkLicenseThenInstall(final ArrayList<String> packageNames) {
         if (environmentManager.isSdkLicenseAccepted()) {
-            installSelectedAndroidApis(apiLevels);
+            installSelectedSdkPackages(packageNames);
             return;
         }
         final Dialog dialog = createAppDialog(
             "确认 Android SDK 许可证",
-            "安装 Android API 前，需要你显式确认：将按当前 SDK 目录写入许可证记录，并用 sdkmanager 安装所选组件。"
+            "安装 SDK 组件前，需要你显式确认：将按当前 SDK 目录写入许可证记录，并用 sdkmanager 安装所选组件。"
         );
         ListView listView = (ListView) dialog.findViewById(R.id.lvDialogItems);
         Button btnPrimary = (Button) dialog.findViewById(R.id.btnDialogPrimary);
@@ -472,13 +477,13 @@ public class SettingsActivity extends Activity {
         btnPrimary.setOnClickListener(v -> {
             dialog.dismiss();
             environmentManager.saveSdkLicenseAccepted(true);
-            installSelectedAndroidApis(apiLevels);
+            installSelectedSdkPackages(packageNames);
         });
         dialog.show();
     }
 
-    private void installSelectedAndroidApis(final ArrayList<Integer> apiLevels) {
-        if (apiLevels == null || apiLevels.isEmpty()) {
+    private void installSelectedSdkPackages(final ArrayList<String> packageNames) {
+        if (packageNames == null || packageNames.isEmpty()) {
             return;
         }
         final String sdkDir = environmentState == null ? "" : safeText(environmentState.getAndroidSdkDir(), "");
@@ -492,36 +497,37 @@ public class SettingsActivity extends Activity {
             return;
         }
         final ArrayList<String> packages = new ArrayList<String>();
-        if (!isSdkPackageInstalled(new File(sdkDir), "platform-tools")) {
-            packages.add("platform-tools");
-        }
-        for (int i = 0; i < apiLevels.size(); i++) {
-            String packageName = "platforms;android-" + apiLevels.get(i);
-            if (!isSdkPackageInstalled(new File(sdkDir), packageName)) {
+        final File sdkRoot = new File(sdkDir);
+        for (int i = 0; i < packageNames.size(); i++) {
+            String packageName = safeText(packageNames.get(i), "");
+            if (packageName.length() == 0) {
+                continue;
+            }
+            if (!isSdkPackageInstalled(sdkRoot, packageName) && !packages.contains(packageName)) {
                 packages.add(packageName);
             }
         }
         if (packages.isEmpty()) {
-            toast("所选 Android API 都已经安装好了");
+            toast("所选 SDK 组件都已经安装好了");
             return;
         }
         final String jdkDir = resolveAnyAvailableJdkDir();
-        showProgressOverlay("安装 Android API", "正在准备安装任务...", 2, false);
+        showProgressOverlay("安装 SDK 组件", "正在准备安装任务...", 2, false);
         new Thread(() -> {
             try {
-                ensureAcceptedSdkLicenses(new File(sdkDir));
+                ensureAcceptedSdkLicenses(sdkRoot);
                 int total = packages.size();
                 for (int i = 0; i < packages.size(); i++) {
                     final int currentIndex = i;
                     final String packageName = packages.get(i);
                     final int startPercent = (currentIndex * 100) / total;
                     handler.post(() -> showProgressOverlay(
-                        "安装 Android API",
+                        "安装 SDK 组件",
                         "正在安装 " + packageName + "（" + (currentIndex + 1) + "/" + total + "）",
                         Math.max(4, startPercent),
                         false
                     ));
-                    runSdkManagerInstall(sdkManager, new File(sdkDir), jdkDir, packageName, new InstallLogListener() {
+                    runSdkManagerInstall(sdkManager, sdkRoot, jdkDir, packageName, new InstallLogListener() {
                         @Override
                         public void onLog(String line) {
                             if (line == null || line.trim().length() == 0) {
@@ -529,13 +535,13 @@ public class SettingsActivity extends Activity {
                             }
                             handler.post(() -> {
                                 int livePercent = Math.max(4, startPercent);
-                                showProgressOverlay("安装 Android API", simplifySdkManagerLine(line), livePercent, false);
+                                showProgressOverlay("安装 SDK 组件", simplifySdkManagerLine(line), livePercent, false);
                             });
                         }
                     });
                     final int donePercent = ((currentIndex + 1) * 100) / total;
                     handler.post(() -> showProgressOverlay(
-                        "安装 Android API",
+                        "安装 SDK 组件",
                         packageName + " 已安装完成",
                         Math.min(100, Math.max(8, donePercent)),
                         false
@@ -545,12 +551,12 @@ public class SettingsActivity extends Activity {
                     hideProgressOverlay();
                     environmentState = environmentManager.loadState();
                     refreshUi();
-                    toast("所选 Android API 已安装完成");
+                    toast("所选 SDK 组件已安装完成");
                 });
             } catch (final Exception e) {
                 handler.post(() -> {
                     hideProgressOverlay();
-                    toast("安装 Android API 失败：" + safeText(e.getMessage(), "未知错误"));
+                    toast("安装 SDK 组件失败：" + safeText(e.getMessage(), "未知错误"));
                 });
             }
         }).start();
@@ -573,6 +579,11 @@ public class SettingsActivity extends Activity {
         panel.addView(buildEnvironmentRow("Android SDK", environmentManager.isAndroidSdkRegistered(environmentState)
             ? "已准备：" + safeText(environmentState.getAndroidSdkDir(), "未登记")
             : "未准备"));
+        panel.addView(buildEnvironmentRow("命令行工具", buildSdkCmdlineToolsSummary()));
+        panel.addView(buildEnvironmentRow("Platform-Tools", buildInstalledPlatformToolsSummary()));
+        panel.addView(buildEnvironmentRow("Build-Tools", buildInstalledBuildToolsSummary()));
+        panel.addView(buildEnvironmentRow("Android API", buildInstalledApiSummary().length() == 0 ? "未安装" : buildInstalledApiSummary()));
+        panel.addView(buildEnvironmentRow("SDK 许可证", environmentManager.isSdkLicenseAccepted() ? "已确认" : "未确认"));
         panel.addView(buildEnvironmentRow("JDK", buildInstalledJdkSummary()));
         panel.addView(buildEnvironmentRow("NDK", buildInstalledNdkSummary()));
         panel.addView(buildEnvironmentRow("Gradle", buildManager.isOfflineGradlePrepared() ? "8.7" : "未准备"));
@@ -779,6 +790,7 @@ public class SettingsActivity extends Activity {
     private String buildEnvironmentSummary() {
         StringBuilder builder = new StringBuilder();
         builder.append("Android SDK：").append(environmentManager.isAndroidSdkRegistered(environmentState) ? "已准备" : "未准备").append('\n');
+        builder.append("SDK 组件：").append(buildInstalledSdkComponentSummary()).append('\n');
         builder.append("JDK：").append(buildInstalledJdkSummary()).append('\n');
         builder.append("NDK：").append(buildInstalledNdkSummary()).append('\n');
         builder.append("Gradle：").append(buildManager.isOfflineGradlePrepared() ? "8.7 已准备" : "8.7 未准备").append('\n');
@@ -797,13 +809,13 @@ public class SettingsActivity extends Activity {
         String gradleStatus = buildManager.isOfflineGradlePrepared() ? "已准备" : "未准备";
         return "环境不是只有一个版本。这里会统一检查 Android SDK、JDK、NDK、Gradle。"
             + "\n当前路线：" + environmentManager.getDownloadRouteDisplayName()
-            + "\n当前状态：SDK " + sdkStatus + "；JDK " + buildInstalledJdkSummary() + "；NDK " + buildInstalledNdkSummary() + "；Gradle " + gradleStatus + "。";
+            + "\n当前状态：SDK " + sdkStatus + "；组件 " + buildInstalledSdkComponentSummary() + "；JDK " + jdkStatus + "；NDK " + ndkStatus + "；Gradle " + gradleStatus + "。";
     }
 
     private String buildConfigSummary() {
         return "你可以分别切换 JDK、NDK 和下载路线。"
             + "\n国内路线优先镜像，国外路线优先官方源。"
-            + "\nAndroid API 现在支持多选后一次安装。"
+            + "\nSDK 组件现在支持多选后一次安装，会一起管理 Platform-Tools、Build-Tools 和 Android API。"
             + "\n打包前应用还会根据 `compileSdk`、`ndkVersion`、Gradle Wrapper 和架构做推荐。";
     }
 
@@ -849,9 +861,9 @@ public class SettingsActivity extends Activity {
         return allReady ? "重新检测环境" : "自动检测环境";
     }
 
-    private String buildInstallApiButtonText() {
-        String installed = buildInstalledApiSummary();
-        return installed.length() == 0 ? "安装 Android API" : "安装 Android API（已装 " + installed + "）";
+    private String buildInstallSdkPackagesButtonText() {
+        String summary = buildInstalledSdkComponentSummary();
+        return summary.length() == 0 ? "管理 Android SDK 组件" : "管理 Android SDK 组件（" + summary + "）";
     }
 
     private int blendProgress(int startPercent, int weightPercent, int stagePercent) {
@@ -908,6 +920,62 @@ public class SettingsActivity extends Activity {
             }
         });
         return apis.isEmpty() ? "" : android.text.TextUtils.join(" / ", apis);
+    }
+
+    private String buildInstalledBuildToolsSummary() {
+        if (!environmentManager.isAndroidSdkRegistered(environmentState)) {
+            return "未安装";
+        }
+        File buildToolsDir = new File(environmentState.getAndroidSdkDir(), "build-tools");
+        File[] children = buildToolsDir.listFiles();
+        if (children == null || children.length == 0) {
+            return "未安装";
+        }
+        ArrayList<String> versions = new ArrayList<String>();
+        for (int i = 0; i < children.length; i++) {
+            if (children[i].isDirectory()) {
+                versions.add(children[i].getName());
+            }
+        }
+        if (versions.isEmpty()) {
+            return "未安装";
+        }
+        java.util.Collections.sort(versions, (a, b) -> compareVersionNames(a, b));
+        return android.text.TextUtils.join(" / ", versions);
+    }
+
+    private String buildInstalledPlatformToolsSummary() {
+        if (!environmentManager.isAndroidSdkRegistered(environmentState)) {
+            return "未安装";
+        }
+        return isSdkPackageInstalled(new File(environmentState.getAndroidSdkDir()), "platform-tools") ? "已安装" : "未安装";
+    }
+
+    private String buildSdkCmdlineToolsSummary() {
+        File sdkManager = new File(environmentManager.getSdkManagerPath());
+        return sdkManager.exists() ? "已准备" : "未准备";
+    }
+
+    private String buildInstalledSdkComponentSummary() {
+        if (!environmentManager.isAndroidSdkRegistered(environmentState)) {
+            return "未安装";
+        }
+        ArrayList<String> parts = new ArrayList<String>();
+        if (new File(environmentManager.getSdkManagerPath()).exists()) {
+            parts.add("命令行工具");
+        }
+        if (isSdkPackageInstalled(new File(environmentState.getAndroidSdkDir()), "platform-tools")) {
+            parts.add("Platform-Tools");
+        }
+        String buildTools = buildInstalledBuildToolsSummary();
+        if (!"未安装".equals(buildTools)) {
+            parts.add("Build-Tools " + buildTools);
+        }
+        String apis = buildInstalledApiSummary();
+        if (apis.length() > 0) {
+            parts.add("API " + apis);
+        }
+        return parts.isEmpty() ? "未安装" : android.text.TextUtils.join("；", parts);
     }
 
     private String simplifyToolLabel(String name) {
@@ -979,7 +1047,69 @@ public class SettingsActivity extends Activity {
         if (packageName.startsWith("platforms;android-")) {
             return new File(new File(sdkRoot, "platforms"), packageName.substring("platforms;".length())).isDirectory();
         }
+        if (packageName.startsWith("build-tools;")) {
+            return new File(new File(sdkRoot, "build-tools"), packageName.substring("build-tools;".length())).isDirectory();
+        }
         return false;
+    }
+
+    private SdkPackageOption[] buildSdkPackageOptions() {
+        ArrayList<SdkPackageOption> options = new ArrayList<SdkPackageOption>();
+        File sdkRoot = environmentManager.isAndroidSdkRegistered(environmentState)
+            ? new File(environmentState.getAndroidSdkDir())
+            : null;
+        boolean platformToolsInstalled = isSdkPackageInstalled(sdkRoot, "platform-tools");
+        options.add(new SdkPackageOption(
+            "platform-tools",
+            "基础组件 · Platform-Tools" + (platformToolsInstalled ? "  · 已安装" : ""),
+            !platformToolsInstalled
+        ));
+        for (int i = EnvironmentManager.ANDROID_BUILD_TOOLS.length - 1; i >= 0; i--) {
+            String version = EnvironmentManager.ANDROID_BUILD_TOOLS[i][0];
+            String packageName = "build-tools;" + version;
+            boolean installed = isSdkPackageInstalled(sdkRoot, packageName);
+            options.add(new SdkPackageOption(
+                packageName,
+                "构建工具 · Build-Tools " + version + (installed ? "  · 已安装" : ""),
+                !installed
+            ));
+        }
+        for (int i = EnvironmentManager.ANDROID_API_LEVELS.length - 1; i >= 0; i--) {
+            int apiLevel = EnvironmentManager.ANDROID_API_LEVELS[i];
+            String packageName = "platforms;android-" + apiLevel;
+            boolean installed = isSdkPackageInstalled(sdkRoot, packageName);
+            options.add(new SdkPackageOption(
+                packageName,
+                buildAndroidApiLabel(apiLevel),
+                !installed
+            ));
+        }
+        return options.toArray(new SdkPackageOption[0]);
+    }
+
+    private int compareVersionNames(String first, String second) {
+        String[] firstParts = safeText(first, "").split("\\.");
+        String[] secondParts = safeText(second, "").split("\\.");
+        int max = Math.max(firstParts.length, secondParts.length);
+        for (int i = 0; i < max; i++) {
+            int firstValue = parseVersionPart(firstParts, i);
+            int secondValue = parseVersionPart(secondParts, i);
+            if (firstValue != secondValue) {
+                return firstValue - secondValue;
+            }
+        }
+        return safeText(first, "").compareToIgnoreCase(safeText(second, ""));
+    }
+
+    private int parseVersionPart(String[] parts, int index) {
+        if (parts == null || index < 0 || index >= parts.length) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(parts[index]);
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     private String resolveAnyAvailableJdkDir() {
@@ -1175,5 +1305,17 @@ public class SettingsActivity extends Activity {
 
     private interface InstallLogListener {
         void onLog(String line);
+    }
+
+    private static class SdkPackageOption {
+        final String packageName;
+        final String label;
+        final boolean missing;
+
+        SdkPackageOption(String packageName, String label, boolean missing) {
+            this.packageName = packageName;
+            this.label = label;
+            this.missing = missing;
+        }
     }
 }
